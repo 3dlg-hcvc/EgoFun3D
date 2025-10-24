@@ -46,30 +46,3 @@ def save_segmentation(image: np.ndarray | PILImage.Image, mask: np.ndarray, answ
     plt.close()
 
     np.save(f"{save_dir}/segmentation_mask_{id}.npy", mask)
-
-
-def get_gt_pcd_openfungraph(full_pcd_path: str, part_annotation_path: str, seg_id: str, role: str = "receiver" | "effector") -> np.ndarray:
-    """
-    Extract ground truth part point cloud from full point cloud based on part annotations.
-
-    Args:
-        full_pcd_path (str): Path to the full point cloud .npy file.
-        part_annotation_path (str): Path to the part annotation .json file.
-        seg_id (str): Segment ID to extract the part from.
-        role (str): Role of the part, either "receiver" or "effector".
-
-    Returns:
-        np.ndarray: Extracted part point cloud of shape (K, 3).
-    """
-    full_pcd = pcu.load_mesh_v(full_pcd_path, np.float32)  # (N, 3)
-    with open(part_annotation_path, "r") as f:
-        annotations = json.load(f)
-    if seg_id not in annotations:
-        raise ValueError(f"Segment ID {seg_id} not found in annotations.")
-    part_indices = annotations[seg_id]["indices"]
-    if not part_indices:
-        raise ValueError(f"No indices found for role {role} in segment {seg_id}.")
-    part_pcd = full_pcd[part_indices]
-    return part_pcd
-
-
