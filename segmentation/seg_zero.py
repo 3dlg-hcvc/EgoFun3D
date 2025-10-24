@@ -17,7 +17,7 @@ from typing import Tuple
 
 
 class SegZero:
-    def __init__(self, reasoning_model_path: str, segmentation_model_path: str, device: str = "cuda"):
+    def __init__(self, reasoning_model_path: str, segmentation_model_path: str, moge_model_path: str, device: str = "cuda"):
         self.device = device
         #We recommend enabling flash_attention_2 for better acceleration and memory saving, especially in multi-image and video scenarios.
         self.reasoning_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
@@ -38,8 +38,8 @@ class SegZero:
             "Output the bbox(es) and point(s) inside the interested object(s) in JSON format." \
             "i.e., <think> thinking process here </think>" \
             "<answer>{Answer}</answer>"
-        
-        self.monocular_model = MoGeModel.from_pretrained("Ruicheng/moge-2-vitl-normal").to(device)
+
+        self.monocular_model = MoGeModel.from_pretrained(moge_model_path).to(device)
 
 
     def extract_bbox_points_think(self, output_text, x_factor, y_factor):
@@ -160,6 +160,7 @@ def build_refseg_model(segmentation_config: dict) -> SegZero:
         return SegZero(
             reasoning_model_path=segmentation_config["reasoning_model_path"],
             segmentation_model_path=segmentation_config["segmentation_model_path"],
+            moge_model_path=segmentation_config["moge_model_path"],
             device=segmentation_config.get("device", "cuda")
         )
     else:
