@@ -1,0 +1,27 @@
+name: "default"
+
+dataset:
+  name: "OpenFunGraph"
+  root_path: "./FunGraph3D"
+  meta_file: "./FunGraph3D/test_clips.json"
+
+vlm:
+  vlm_model: "gemini-2.5-flash"
+  prompt_template: "This is a video. Analyze this video and answer the following questions: \
+                    1. Which part of the object receives human action? \
+                    2. Which part of the object reacts to human action? \
+                    Please describe the name and features of the part as well as the spatial relationship with surrounding objects. \
+                    Please only answer in this template: \
+                    {1: {name: xxx, description: aaa}, 2: {name: yyy, description: bbb}} \
+                    Substitue \"xxx\" and \"yyy\" with the name of the part of the object, \"aaa\" and \"bbb\" with the description of the part. \
+                    DO NOT answer any other information."
+
+segmentation:
+  model: "SegZero"
+  reasoning_model_path: "Seg-Zero/pretrained_models/VisionReasoner-7B"
+  segmentation_model_path: "facebook/sam2.1-hiera-large"
+  device: "cuda"
+  use_gt_depth: false
+  save_results: true
+
+save_root_dir: "./outputs"

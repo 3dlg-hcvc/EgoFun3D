@@ -1,0 +1,166 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+from transformers import Qwen2VLForConditionalGeneration, Qwen2_5_VLForConditionalGeneration, AutoProcessor
+from qwen_vl_utils import process_vision_info
+import torch
+from torchvision.transforms.functional import pil_to_tensor
+import json
+from PIL import Image as PILImage
+import re
+from sam2.sam2_image_predictor import SAM2ImagePredictor
+import numpy as np
+import matplotlib.pyplot as plt
+from moge.model.v2 import MoGeModel # Let's try MoGe-2
+import utils3d
+
+from typing import Tuple
+
+
+class SegZero:
+    def __init__(self, reasoning_model_path: str, segmentation_model_path: str, device: str = "cuda"):
+        self.device = device
+        #We recommend enabling flash_attention_2 for better acceleration and memory saving, especially in multi-image and video scenarios.
+        self.reasoning_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            reasoning_model_path,
+            torch_dtype=torch.bfloat16,
+            attn_implementation="flash_attention_2",
+            device_map="auto",
+        )
+        self.segmentation_model = SAM2ImagePredictor.from_pretrained(segmentation_model_path)
+        self.reasoning_model.eval()
+        # default processer
+        self.processor = AutoProcessor.from_pretrained(reasoning_model_path, padding_side="left")
+
+        self.question_template = \
+            "Please find \"{Question}\" with bboxs and points." \
+            "Compare the difference between object(s) and find the most closely matched object(s)." \
+            "Output the thinking process in <think> </think> and final answer in <answer> </answer> tags." \
+            "Output the bbox(es) and point(s) inside the interested object(s) in JSON format." \
+            "i.e., <think> thinking process here </think>" \
+            "<answer>{Answer}</answer>"
+        
+        self.monocular_model = MoGeModel.from_pretrained("Ruicheng/moge-2-vitl-normal").to(device)
+
+
+    def extract_bbox_points_think(self, output_text, x_factor, y_factor):
+        json_match = re.search(r'<answer>\s*(.*?)\s*</answer>', output_text, re.DOTALL)
+        if json_match:
+            data = json.loads(json_match.group(1))
+            pred_bboxes = [[
+                int(item['bbox_2d'][0] * x_factor + 0.5),
+                int(item['bbox_2d'][1] * y_factor + 0.5),
+                int(item['bbox_2d'][2] * x_factor + 0.5),
+                int(item['bbox_2d'][3] * y_factor + 0.5)
+            ] for item in data]
+            pred_points = [[
+                int(item['point_2d'][0] * x_factor + 0.5),
+                int(item['point_2d'][1] * y_factor + 0.5)
+            ] for item in data]
+        
+        think_pattern = r'<think>([^<]+)</think>'
+        think_match = re.search(think_pattern, output_text)
+        think_text = ""
+        if think_match:
+            think_text = think_match.group(1)
+        
+        return pred_bboxes, pred_points, think_text
+    
+
+    def segment(self, image: PILImage.Image, part_description: str) -> Tuple[np.ndarray, dict]:
+        original_width, original_height = image.size
+        resize_size = 1080
+        x_factor, y_factor = original_width/resize_size, original_height/resize_size
+        
+        messages = []
+        message = [{
+            "role": "user",
+            "content": [
+            {
+                "type": "image", 
+                "image": image.resize((resize_size, resize_size), PILImage.BILINEAR)
+            },
+            {   
+                "type": "text",
+                "text": self.question_template.format(
+                    Question=part_description.lower().strip("."),
+                    Answer="[{\"bbox_2d\": [10,100,200,210], \"point_2d\": [30,110]}, {\"bbox_2d\": [225,296,706,786], \"point_2d\": [302,410]}]"
+                )    
+            }
+        ]
+        }]
+        messages.append(message)
+
+        # Preparation for inference
+        text = [self.processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True) for msg in messages]
+        
+        #pdb.set_trace()
+        image_inputs, video_inputs = process_vision_info(messages)
+        #pdb.set_trace()
+        inputs = self.processor(
+            text=text,
+            images=image_inputs,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pt",
+        )
+        inputs = inputs.to(self.device)
+        
+        # Inference: Generation of the output
+        generated_ids = self.reasoning_model.generate(**inputs, use_cache=True, max_new_tokens=1024, do_sample=False)
+        
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+        ]
+        output_text = self.processor.batch_decode(
+            generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )
+        
+        print(output_text[0])
+        # pdb.set_trace()
+        bboxes, points, think = self.extract_bbox_points_think(output_text[0], x_factor, y_factor)
+        answer_dict = {"points": points, "thinking": think}
+        print(points, len(points))
+        
+        with torch.inference_mode(), torch.autocast(self.device, dtype=torch.bfloat16):
+            mask_all = np.zeros((image.height, image.width), dtype=bool)
+            self.segmentation_model.set_image(image)
+            for bbox, point in zip(bboxes, points):
+                masks, scores, _ = self.segmentation_model.predict(
+                    point_coords=[point],
+                    point_labels=[1],
+                    box=bbox
+                )
+                sorted_ind = np.argsort(scores)[::-1]
+                masks = masks[sorted_ind]
+                mask = masks[0].astype(bool)
+                mask_all = np.logical_or(mask_all, mask)
+
+        return mask_all, answer_dict
+
+
+    def get_part_pcd(self, image: PILImage.Image, part_mask: np.ndarray, cam_pose: np.ndarray, gt_depth: np.ndarray = None, gt_intrinsics: np.ndarray = None) -> np.ndarray:
+        if gt_depth is not None and gt_intrinsics is not None:
+            points_map = utils3d.np.depth_map_to_point_map(gt_depth, gt_intrinsics, np.eye(4))
+            valid_mask = gt_depth > 0
+            valid_part_mask = np.logical_and(valid_mask, part_mask) # H, W
+            valid_part_points = points_map[valid_part_mask]
+        else:
+            image_tensor = pil_to_tensor(image).to(self.device).to(torch.float32) / 255.0
+            output = self.monocular_model.infer(image_tensor)
+            valid_mask = output["mask"].cpu().numpy()
+            valid_part_mask = np.logical_and(valid_mask, part_mask) # H, W
+            points_map = output["points"].cpu().numpy() # H, W, 3
+            valid_part_points = points_map[valid_part_mask]
+        valid_part_points = valid_part_points @ cam_pose[:3, :3].T + cam_pose[:3, 3:].T
+        return valid_part_points
+    
+
+def build_refseg_model(segmentation_config: dict) -> SegZero:
+    if segmentation_config.model == "SegZero":
+        return SegZero(
+            reasoning_model_path=segmentation_config["reasoning_model_path"],
+            segmentation_model_path=segmentation_config["segmentation_model_path"],
+            device=segmentation_config.get("device", "cuda")
+        )
+    else:
+        raise ValueError(f"Unsupported segmentation model: {segmentation_config.model}")
