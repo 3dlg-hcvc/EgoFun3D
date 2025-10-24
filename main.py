@@ -50,7 +50,7 @@ def evaluate(eval_dataset, vlm_prompter, refseg_model, config, save_dir):
 def main(config: omegaconf.DictConfig):
     print("Start experiment:", config.name)
     exp_time = datetime.now().strftime("%Y%m%d-%H%M%S")
-    save_dir = f"{config.save_dir}/{config.name}_{exp_time}"
+    save_dir = f"{config.save_root_dir}/{config.name}_{exp_time}"
     print("Results will be saved to:", save_dir)
 
     eval_dataset = build_dataset(config.dataset)
