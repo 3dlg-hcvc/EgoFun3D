@@ -23,7 +23,7 @@ def evaluate(eval_dataset, vlm_prompter, refseg_model, config, save_dir):
         for role in grouped_results.keys():
             print(f"Role: {role}, Details: {grouped_results[role]}")
             part_description = grouped_results[role]["description"]
-            video_frame_list = data["ego_video_frame_path_list"]
+            video_frame_list = data["ego_video_rgb_list"]
             for frame_id, video_frame in enumerate(video_frame_list):
                 mask, answer_dict = refseg_model.segment(video_frame, part_description)
                 if config.segmentation.use_gt_depth:
