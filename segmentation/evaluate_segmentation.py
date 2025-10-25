@@ -18,8 +18,8 @@ def compute_part_chamfer_distance(gt_pcd: np.ndarray, pred_pcd: np.ndarray, devi
     Returns:
         float: Chamfer Distance between the two point clouds.
     """
-    gt_tensor = torch.from_numpy(gt_pcd).unsqueeze(0).to(device)  # (1, N, 3)
-    pred_tensor = torch.from_numpy(pred_pcd).unsqueeze(0).float().to(device)  # (1, M, 3)
+    gt_tensor = torch.from_numpy(gt_pcd).unsqueeze(0).to(torch.float32).to(device)  # (1, N, 3)
+    pred_tensor = torch.from_numpy(pred_pcd).unsqueeze(0).to(torch.float32).to(device)  # (1, M, 3)
 
     chamfer_dist, _ = chamfer_distance(gt_tensor, pred_tensor)
     return chamfer_dist.item()
