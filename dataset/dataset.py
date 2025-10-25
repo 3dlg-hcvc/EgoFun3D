@@ -103,6 +103,7 @@ class OpenFunGraphDataset(BaseDataset):
             raise ValueError(f"Segment ID {seg_id} not found in annotations.")
         gt_annotations = {}
         for role in ["receiver", "effector"]:
+            print(annotations[seg_id].keys())
             part_name = annotations[seg_id][role]["label"]
             part_indices = annotations[seg_id][role]["indices"]
             if not part_indices:
