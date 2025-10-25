@@ -37,7 +37,9 @@ class OpenFunGraphDataset(BaseDataset):
     def __init__(self, root_path: str, meta_file_path: str):
         super().__init__(root_path, meta_file_path)
         for func_type in self.metadata.keys():
-            for clip in self.metadata[func_type]:
+            clip_list = self.metadata[func_type]
+            for clip in clip_list:
+                print(f"Loading clip: {clip}")
                 scene_name, seg_id = clip.split("-")
                 ego_video_path = os.path.join(self.root_path, scene_name, f"seg{seg_id}.MP4")
                 ego_video_frame_dir = os.path.join(self.root_path, scene_name, f"seg{seg_id}")
