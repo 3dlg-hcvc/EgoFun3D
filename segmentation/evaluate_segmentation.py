@@ -1,10 +1,10 @@
 import numpy as np
 import torch
 from pytorch3d.loss import chamfer_distance
-import point_cloud_utils as pcu
 import json
 import matplotlib.pyplot as plt
 from PIL import Image as PILImage
+import os
 
 
 def compute_part_chamfer_distance(gt_pcd: np.ndarray, pred_pcd: np.ndarray, device: str) -> float:
@@ -26,6 +26,8 @@ def compute_part_chamfer_distance(gt_pcd: np.ndarray, pred_pcd: np.ndarray, devi
 
 
 def save_segmentation(image: np.ndarray | PILImage.Image, mask: np.ndarray, answer_dict: dict, save_dir: str, id: str):
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
     with open(f"{save_dir}/segmentation_answer_{id}.json", "w") as f:
         json.dump(answer_dict, f, indent=4)
     
