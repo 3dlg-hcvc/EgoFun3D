@@ -52,7 +52,7 @@ class OpenFunGraphDataset(BaseDataset):
                 rgb_list = []
                 depth_list = []
                 camera_list = []
-                for frame_path in ego_depth_path_list:
+                for depth_id, frame_path in enumerate(ego_depth_path_list):
                     frame_name = os.path.basename(frame_path)
                     frame_idx = int(os.path.splitext(frame_name)[0])
                     image = PILImage.open(ego_video_path_list[frame_idx])
@@ -60,7 +60,7 @@ class OpenFunGraphDataset(BaseDataset):
                     rgb_list.append(image)
                     depth = np.load(frame_path)
                     depth_list.append(depth)
-                    with open(ego_camera_path_list[frame_idx], "r") as f:
+                    with open(ego_camera_path_list[depth_id], "r") as f:
                         camera = json.load(f)
                     camera["intrinsics"] = np.array(camera["intrinsics"])
                     camera["extrinsics"] = np.array(camera["extrinsics"])
