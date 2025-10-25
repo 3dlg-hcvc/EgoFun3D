@@ -7,6 +7,7 @@ from torchvision.transforms.functional import pil_to_tensor
 import json
 from PIL import Image as PILImage
 import re
+from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 import numpy as np
 import matplotlib.pyplot as plt
@@ -26,7 +27,9 @@ class SegZero:
             attn_implementation="flash_attention_2",
             device_map="auto",
         )
-        self.segmentation_model = SAM2ImagePredictor.from_pretrained(segmentation_model_path)
+        sam2_config = "configs/sam2.1/sam2.1_hiera_l.yaml"
+        sam2_checkpoint = f"{segmentation_model_path}/sam2.1_hiera_large.pt"
+        self.segmentation_model = SAM2ImagePredictor(build_sam2(sam2_config, sam2_checkpoint))
         self.reasoning_model.eval()
         # default processer
         self.processor = AutoProcessor.from_pretrained(reasoning_model_path, padding_side="left")
