@@ -5,7 +5,7 @@ import os
 from dataset.dataset import build_dataset
 from segmentation.prompt_vlm import build_vlm_prompter
 from segmentation.seg_zero import build_refseg_model
-from segmentation.evaluate_segmentation import compute_part_chamfer_distance, save_segmentation
+from segmentation.evaluate_segmentation import compute_part_chamfer_distance_per_frame, save_segmentation
 
 
 def parse_args():
@@ -37,7 +37,7 @@ def evaluate(eval_dataset, vlm_prompter, refseg_model, config, save_dir):
                     cam_pose = camera["extrinsics"]
                     part_pcd = refseg_model.get_part_pcd(video_frame, mask, cam_pose)
                 gt_part_pcd = gt_annotation[role]["part_pcd"]
-                chamfer_dist = compute_part_chamfer_distance(gt_part_pcd, part_pcd, config.segmentation.device)
+                chamfer_dist = compute_part_chamfer_distance_per_frame(gt_part_pcd, part_pcd, cam_pose, gt_intrinsics, video_frame.shape[:2], config.segmentation.device)
                 print(f"Frame {frame_id}: Chamfer Distance for role {role}: {chamfer_dist}")
                 answer_dict["chamfer_distance"] = chamfer_dist
                 save_segmentation(
