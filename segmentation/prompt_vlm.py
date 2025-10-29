@@ -30,13 +30,15 @@ class VLM_Prompter:
         def clean(t: str) -> str:
             return re.sub(r'\s+', ' ', t).strip()
 
-        assert len(pairs) == 2, "Expected exactly two parts in the output."
         grouped = {}
-        for i, (name, desc) in enumerate(pairs):
-            name_c = clean(name)
-            desc_c = clean(desc)
-            role = "receiver" if i == 0 else "effector"
-            grouped[role] = {"name": name_c, "description": desc_c}
+        if len(pairs) == 2:
+            for i, (name, desc) in enumerate(pairs):
+                name_c = clean(name)
+                desc_c = clean(desc)
+                role = "receiver" if i == 0 else "effector"
+                grouped[role] = {"name": name_c, "description": desc_c}
+        else:
+            print("Warning: Unexpected number of parts found in VLM output.")
         return grouped
 
 

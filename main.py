@@ -18,7 +18,9 @@ def evaluate(eval_dataset, vlm_prompter, refseg_model, config, save_dir):
     # Run segmentation
     for data in eval_dataset:
         ego_video_path = data["ego_video_path"]
-        grouped_results = vlm_prompter.prompt(ego_video_path)
+        grouped_results = {}
+        while len(grouped_results.keys()) != 2:
+            grouped_results = vlm_prompter.prompt(ego_video_path)
         for role in grouped_results.keys():
             print(f"Role: {role}, Details: {grouped_results[role]}")
             part_description = grouped_results[role]["description"]
