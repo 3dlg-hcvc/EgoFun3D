@@ -35,6 +35,25 @@ def compute_part_chamfer_distance_per_frame(gt_pcd: np.ndarray, pred_pcd: np.nda
     return chamfer_dist.item()
 
 
+def compute_part_iou(gt_mask: np.ndarray, pred_mask: np.ndarray) -> float:
+    """
+    Compute Intersection over Union (IoU) between two binary masks.
+
+    Args:
+        gt_mask (np.ndarray): Ground truth binary mask.
+        pred_mask (np.ndarray): Predicted binary mask.
+
+    Returns:
+        float: IoU score.
+    """
+    intersection = np.logical_and(gt_mask, pred_mask).sum()
+    union = np.logical_or(gt_mask, pred_mask).sum()
+    if union == 0:
+        return 1.0 if intersection == 0 else 0.0
+    iou = intersection / union
+    return iou
+
+
 def save_segmentation(image: np.ndarray | PILImage.Image, mask: np.ndarray, answer_dict: dict, save_dir: str, id: str):
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)

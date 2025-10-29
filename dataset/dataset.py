@@ -51,9 +51,14 @@ class OpenFunGraphDataset(BaseDataset):
                 ego_video_camera_dir = os.path.join(self.root_path, scene_name, f"seg{seg_id}_camera")
                 ego_camera_path_list = glob.glob(os.path.join(ego_video_camera_dir, "*.json"))
                 ego_camera_path_list.sort()
+                ego_video_seg_dir = os.path.join(self.root_path, scene_name, f"seg{seg_id}_seg_annotation")
+                ego_seg_path_list = glob.glob(os.path.join(ego_video_seg_dir, "*.npy"))
+                ego_seg_path_list.sort()
                 rgb_list = []
                 depth_list = []
                 camera_list = []
+                gt_receiver_mask_list = []
+                gt_effector_mask_list = []
                 for depth_id, frame_path in enumerate(ego_depth_path_list):
                     frame_name = os.path.basename(frame_path)
                     frame_idx = int(os.path.splitext(frame_name)[0])
@@ -67,10 +72,15 @@ class OpenFunGraphDataset(BaseDataset):
                     camera["intrinsics"] = np.array(camera["intrinsics"])
                     camera["extrinsics"] = np.array(camera["extrinsics"])
                     camera_list.append(camera)
+                    seg_mask = np.load(ego_seg_path_list[frame_idx])
+                    gt_receiver_mask = (seg_mask == 1)
+                    gt_effector_mask = (seg_mask == 2)
+                    gt_receiver_mask_list.append(gt_receiver_mask)
+                    gt_effector_mask_list.append(gt_effector_mask)
 
                 part_annotation_path = os.path.join(self.root_path, scene_name, "refined_annotations.json")
                 full_pcd_path = os.path.join(self.root_path, scene_name, f"{scene_name}.ply")
-                gt_annotation = self.get_gt_annotation_openfungraph(full_pcd_path, part_annotation_path, seg_id)
+                gt_pcd_annotation = self.get_gt_annotation_openfungraph(full_pcd_path, part_annotation_path, seg_id)
                 data_dict = {
                     "func_type": func_type,
                     "scene_name": scene_name,
@@ -79,7 +89,9 @@ class OpenFunGraphDataset(BaseDataset):
                     "ego_video_rgb_list": rgb_list,
                     "ego_video_depth_list": depth_list,
                     "ego_video_camera_list": camera_list,
-                    "gt_annotation": gt_annotation
+                    "gt_receiver_mask_list": gt_receiver_mask_list,
+                    "gt_effector_mask_list": gt_effector_mask_list,
+                    "gt_pcd_annotation": gt_pcd_annotation
                 }
                 self.data.append(data_dict)
 

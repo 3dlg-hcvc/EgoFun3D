@@ -5,7 +5,7 @@ import os
 from dataset.dataset import build_dataset
 from segmentation.prompt_vlm import build_vlm_prompter
 from segmentation.seg_zero import build_refseg_model
-from segmentation.evaluate_segmentation import compute_part_chamfer_distance_per_frame, save_segmentation
+from segmentation.evaluate_segmentation import compute_part_iou, save_segmentation
 
 
 def parse_args():
@@ -17,7 +17,6 @@ def parse_args():
 def evaluate(eval_dataset, vlm_prompter, refseg_model, config, save_dir):
     # Run segmentation
     for data in eval_dataset:
-        gt_annotation = data["gt_annotation"]
         ego_video_path = data["ego_video_path"]
         grouped_results = vlm_prompter.prompt(ego_video_path)
         for role in grouped_results.keys():
@@ -26,20 +25,9 @@ def evaluate(eval_dataset, vlm_prompter, refseg_model, config, save_dir):
             video_frame_list = data["ego_video_rgb_list"]
             for frame_id, video_frame in enumerate(video_frame_list):
                 mask, answer_dict = refseg_model.segment(video_frame, part_description)
-                if config.segmentation.use_gt_depth:
-                    camera = data["ego_video_camera_list"][frame_id]
-                    gt_depth = data["ego_video_depth_list"][frame_id]
-                    gt_intrinsics = camera["intrinsics"]
-                    cam_pose = camera["extrinsics"]
-                    part_pcd = refseg_model.get_part_pcd(video_frame, mask, cam_pose, gt_depth, gt_intrinsics)
-                else:
-                    camera = data["ego_video_camera_list"][frame_id]
-                    cam_pose = camera["extrinsics"]
-                    part_pcd = refseg_model.get_part_pcd(video_frame, mask, cam_pose)
-                gt_part_pcd = gt_annotation[role]["part_pcd"]
-                chamfer_dist = compute_part_chamfer_distance_per_frame(gt_part_pcd, part_pcd, cam_pose, gt_intrinsics, video_frame.shape[:2], config.segmentation.device)
-                print(f"Frame {frame_id}: Chamfer Distance for role {role}: {chamfer_dist}")
-                answer_dict["chamfer_distance"] = chamfer_dist
+                gt_mask = data[f"gt_{role}_mask_list"][frame_id]
+                iou = compute_part_iou(gt_mask, mask)
+                answer_dict["iou"] = iou
                 save_segmentation(
                     video_frame, mask, answer_dict,
                     save_dir=f"{save_dir}/{data['scene_name']}/{data['seg_id']}/segmentation/{role}",
