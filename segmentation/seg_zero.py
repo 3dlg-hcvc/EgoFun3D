@@ -171,8 +171,8 @@ class SegZero:
         print("convert to pixel coordinates...")
         kptsA, kptsB = self.feature_matching_model.to_pixel_coordinates(matches, H, W, H, W)
         print("finish conversion.")
-        kptsA = kptsA.cpu().numpy()
-        kptsB = kptsB.cpu().numpy()
+        kptsA = kptsA.cpu().numpy().astype(np.int32)
+        kptsB = kptsB.cpu().numpy().astype(np.int32)
         # Filter keypoints with part masks
         current_part_kpts = kptsA[current_part_mask[kptsA[:,1], kptsA[:,0]]]
         anchor_part_kpts = kptsB[anchor_part_mask[kptsB[:, 1], kptsB[:,0]]]
