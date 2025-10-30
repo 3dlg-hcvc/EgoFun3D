@@ -1,3 +1,5 @@
 FunGraph3D/
 SingleObj/
 outputs/
+__pycache__/
+*/__pycache__/
