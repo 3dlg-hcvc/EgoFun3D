@@ -190,7 +190,8 @@ class SegZero:
             return np.eye(4)
         # Estimate transformation
         print("estimate transformation...")
-        current2anchor, current2anchor_rot = utils3d.np.solve_pose(current_part_3dkpts[np.newaxis, ...], anchor_part_3dkpts[np.newaxis, ...], mode="rigid")
+        print(current_part_3dkpts.shape, anchor_part_3dkpts.shape)
+        current2anchor, current2anchor_rot = utils3d.np.solve_pose(p=current_part_3dkpts[np.newaxis, ...], q=anchor_part_3dkpts[np.newaxis, ...], mode="rigid")
         print("finish estimation.")
         print(current2anchor.shape)
         return current2anchor[0]
