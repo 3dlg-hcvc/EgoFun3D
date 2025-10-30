@@ -43,7 +43,7 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLM_Prompter, refseg_model:
                 )
 
                 cam_pose = np.array(data["ego_video_camera_list"][frame_id]["extrinsics"])
-                if config.use_gt_depth:
+                if config.segmentation.use_gt_depth:
                     gt_depth = data["ego_video_depth_list"][frame_id]
                     gt_intrinsics = data["ego_video_camera_list"][frame_id]["intrinsics"]
                 else:
