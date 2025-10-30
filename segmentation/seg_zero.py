@@ -12,6 +12,7 @@ from sam2.sam2_image_predictor import SAM2ImagePredictor
 import numpy as np
 import matplotlib.pyplot as plt
 from moge.model.v2 import MoGeModel # Let's try MoGe-2
+from romatch import roma_indoor
 import utils3d
 
 from typing import Tuple
@@ -43,6 +44,7 @@ class SegZero:
             "<answer>{Answer}</answer>"
 
         self.monocular_model = MoGeModel.from_pretrained(moge_model_path).to(device)
+        self.feature_matching_model = roma_indoor(device=device)
 
 
     def extract_bbox_points_think(self, output_text, x_factor, y_factor):
@@ -141,7 +143,7 @@ class SegZero:
         return mask_all, answer_dict
 
 
-    def get_part_pcd(self, image: PILImage.Image, part_mask: np.ndarray, cam_pose: np.ndarray, gt_depth: np.ndarray = None, gt_intrinsics: np.ndarray = None) -> np.ndarray:
+    def get_part_pcd(self, image: PILImage.Image, part_mask: np.ndarray, cam_pose: np.ndarray, gt_depth: np.ndarray = None, gt_intrinsics: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray]:
         if gt_depth is not None and gt_intrinsics is not None:
             points_map = utils3d.np.depth_map_to_point_map(gt_depth, gt_intrinsics, np.eye(4))
             valid_mask = gt_depth > 0
@@ -154,8 +156,37 @@ class SegZero:
             valid_part_mask = np.logical_and(valid_mask, part_mask) # H, W
             points_map = output["points"].cpu().numpy() # H, W, 3
             valid_part_points = points_map[valid_part_mask]
-        valid_part_points = valid_part_points @ cam_pose[:3, :3].T + cam_pose[:3, 3:].T
-        return valid_part_points
+        valid_part_points = valid_part_points @ cam_pose[:3, :3].T + cam_pose[:3, 3:].T # point cloud in world coord but not in rest state
+        return valid_part_points, points_map
+    
+
+    def compute_part_transformation(self, current_image_path: str, current_point_map: np.ndarray, current_part_mask: np.ndarray, anchor_image_path: str, anchor_point_map: np.ndarray, anchor_part_mask: np.ndarray) -> np.ndarray:
+        warp, certainty = self.feature_matching_model.match(current_image_path, anchor_image_path, device=self.device)
+        # Sample matches for estimation
+        matches, certainty = self.feature_matching_model.sample(warp, certainty)
+        # Convert to pixel coordinates (RoMa produces matches in [-1,1]x[-1,1])
+        H, W = current_part_mask.shape
+        kptsA, kptsB = self.feature_matching_model.to_pixel_coordinates(matches, H, W, H, W)
+        # Filter keypoints with part masks
+        current_part_kpts = kptsA[current_part_mask[kptsA[:,1], kptsA[:,0]]]
+        anchor_part_kpts = kptsB[anchor_part_mask[kptsB[:, 1], kptsB[:,0]]]
+        current_part_3dkpts = current_point_map[current_part_kpts[:,1], current_part_kpts[:,0]]
+        anchor_part_3dkpts = anchor_point_map[anchor_part_kpts[:,1], anchor_part_kpts[:,0]]
+        if len(current_part_3dkpts) < 10 or len(anchor_part_3dkpts) < 10:
+            print("Not enough keypoints for transformation estimation.")
+            return np.eye(4)
+        # Estimate transformation
+        current2anchor, current2anchor_rot = utils3d.solve_pose(current_part_3dkpts, anchor_part_3dkpts, mode="rigid")
+        return current2anchor
+    
+
+    def fuse_part_pcds(self, part_pcd_list: list[np.ndarray], transformation_list: list[np.ndarray]) -> np.ndarray:
+        fused_part_pcd = []
+        for part_pcd, transformation in zip(part_pcd_list, transformation_list):
+            part_pcd_anchored = part_pcd @ transformation[:3, :3].T + transformation[:3, 3:].T
+            fused_part_pcd.append(part_pcd_anchored)
+        fused_part_pcd = np.concatenate(fused_part_pcd, axis=0)
+        return fused_part_pcd
     
 
 def build_refseg_model(segmentation_config: dict) -> SegZero:

@@ -45,7 +45,7 @@ class OpenFunGraphDataset(BaseDataset):
                 ego_video_frame_dir = os.path.join(self.root_path, scene_name, f"seg{seg_id}")
                 ego_video_path_list = glob.glob(os.path.join(ego_video_frame_dir, "*.jpg"))
                 ego_video_path_list.sort()
-                ego_video_depth_dir = os.path.join(self.root_path, scene_name, f"seg{seg_id}_depth")
+                ego_video_depth_dir = os.path.join(self.root_path, scene_name, f"seg{seg_id}_complete_depth")
                 ego_depth_path_list = glob.glob(os.path.join(ego_video_depth_dir, "*.npy"))
                 ego_depth_path_list.sort()
                 ego_video_camera_dir = os.path.join(self.root_path, scene_name, f"seg{seg_id}_camera")
@@ -55,6 +55,7 @@ class OpenFunGraphDataset(BaseDataset):
                 ego_seg_path_list = glob.glob(os.path.join(ego_video_seg_dir, "*.npy"))
                 ego_seg_path_list.sort()
                 rgb_list = []
+                rgb_path_list = []
                 depth_list = []
                 camera_list = []
                 gt_receiver_mask_list = []
@@ -63,6 +64,7 @@ class OpenFunGraphDataset(BaseDataset):
                     frame_name = os.path.basename(frame_path)
                     frame_idx = int(os.path.splitext(frame_name)[0])
                     image = PILImage.open(ego_video_path_list[frame_idx])
+                    rgb_path_list.append(ego_video_path_list[frame_idx])
                     image = image.convert("RGB")
                     rgb_list.append(image)
                     depth = np.load(frame_path)
@@ -87,6 +89,7 @@ class OpenFunGraphDataset(BaseDataset):
                     "seg_id": seg_id,
                     "ego_video_path": ego_video_path,
                     "ego_video_rgb_list": rgb_list,
+                    "ego_video_rgb_path_list": rgb_path_list,
                     "ego_video_depth_list": depth_list,
                     "ego_video_camera_list": camera_list,
                     "gt_receiver_mask_list": gt_receiver_mask_list,

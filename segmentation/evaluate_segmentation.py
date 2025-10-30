@@ -1,14 +1,14 @@
 import numpy as np
 import torch
 from pytorch3d.loss import chamfer_distance
-import utils3d
+import open3d as o3d
 import json
 import matplotlib.pyplot as plt
 from PIL import Image as PILImage
 import os
 
 
-def compute_part_chamfer_distance_per_frame(gt_pcd: np.ndarray, pred_pcd: np.ndarray, cam_pose: np.ndarray, cam_intrinsics: np.ndarray, image_shape: tuple, device: str) -> float:
+def compute_part_chamfer_distance(gt_pcd: np.ndarray, pred_pcd: np.ndarray, device: str) -> float:
     """
     Compute Chamfer Distance between two point clouds.
 
@@ -19,15 +19,6 @@ def compute_part_chamfer_distance_per_frame(gt_pcd: np.ndarray, pred_pcd: np.nda
     Returns:
         float: Chamfer Distance between the two point clouds.
     """
-    uv_coords, linear_depths = utils3d.np.project_cv(gt_pcd, cam_pose, cam_intrinsics)  # (N, 2), (N,)
-    xy_coords = uv_coords * linear_depths[:, None]  # (N, 2)
-    in_frame_points_mask = (
-        (xy_coords[:, 0] >= 0) &
-        (xy_coords[:, 0] < image_shape[1]) &
-        (xy_coords[:, 1] >= 0) &
-        (xy_coords[:, 1] < image_shape[0])
-    )
-    gt_pcd = gt_pcd[in_frame_points_mask]
     gt_tensor = torch.from_numpy(gt_pcd).unsqueeze(0).to(torch.float32).to(device)  # (1, N, 3)
     pred_tensor = torch.from_numpy(pred_pcd).unsqueeze(0).to(torch.float32).to(device)  # (1, M, 3)
 
@@ -77,3 +68,16 @@ def save_segmentation(image: np.ndarray | PILImage.Image, mask: np.ndarray, answ
     plt.close()
 
     np.save(f"{save_dir}/segmentation_mask_{id}.npy", mask)
+
+
+def save_pcd(pcd: np.ndarray, save_path: str):
+    """
+    Save point cloud to a .ply file.
+
+    Args:
+        pcd (np.ndarray): Point cloud of shape (N, 3).
+        save_path (str): Path to save the .ply file.
+    """
+    pcd_o3d = o3d.geometry.PointCloud()
+    pcd_o3d.points = o3d.utility.Vector3dVector(pcd)
+    o3d.io.write_point_cloud(save_path, pcd_o3d)
