@@ -159,29 +159,20 @@ class SegZero:
     
 
     def compute_part_transformation(self, current_image_path: str, current_point_map: np.ndarray, current_part_mask: np.ndarray, anchor_image_path: str, anchor_point_map: np.ndarray, anchor_part_mask: np.ndarray) -> np.ndarray:
-        print("Computing part transformation...")
-        print("compute feature matching...")
         warp, certainty = self.feature_matching_model.match(current_image_path, anchor_image_path, device=self.device)
-        print("finish feature matching.")
         # Sample matches for estimation
-        print("compute sampling...")
         matches, certainty = self.feature_matching_model.sample(warp, certainty)
-        print("finish sampling.")
         # Convert to pixel coordinates (RoMa produces matches in [-1,1]x[-1,1])
         H, W = current_part_mask.shape
-        print("convert to pixel coordinates...")
         kptsA, kptsB = self.feature_matching_model.to_pixel_coordinates(matches, H, W, H, W)
-        print("finish conversion.")
         kptsA = kptsA.cpu().numpy().astype(np.int32)
         kptsB = kptsB.cpu().numpy().astype(np.int32)
-        print("number of keypoints:", len(kptsA), len(kptsB))
         # Filter keypoints with part masks
         kptsA_index = current_part_mask[kptsA[:,1], kptsA[:,0]]
         kptsB_index = anchor_part_mask[kptsB[:,1], kptsB[:,0]]
         valid_index = np.logical_and(kptsA_index, kptsB_index)
         kptsA = kptsA[valid_index]
         kptsB = kptsB[valid_index]
-        print("number of valid keypoints:", len(kptsA), len(kptsB))
         # current_part_kpts = kptsA[current_part_mask[kptsA[:,1], kptsA[:,0]]]
         # anchor_part_kpts = kptsB[anchor_part_mask[kptsB[:, 1], kptsB[:,0]]]
         current_part_3dkpts = current_point_map[kptsA[:,1], kptsA[:,0]]
@@ -190,12 +181,8 @@ class SegZero:
             print("Not enough keypoints for transformation estimation.")
             return np.eye(4)
         # Estimate transformation
-        print("estimate transformation...")
-        print(current_part_3dkpts.shape, anchor_part_3dkpts.shape)
         current2anchor = self.estimate_se3_transformation(anchor_part_3dkpts, current_part_3dkpts)
-        print("finish estimation.")
-        print(current2anchor.shape)
-        return current2anchor[0]
+        return current2anchor
     
 
     def estimate_se3_transformation(self, target_xyz: np.ndarray, source_xyz: np.ndarray) -> np.ndarray:
