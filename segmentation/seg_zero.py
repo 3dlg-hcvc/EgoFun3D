@@ -7,7 +7,6 @@ from torchvision.transforms.functional import pil_to_tensor
 import json
 from PIL import Image as PILImage
 import re
-from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 import numpy as np
 import matplotlib.pyplot as plt
@@ -28,11 +27,9 @@ class SegZero:
             attn_implementation="flash_attention_2",
             device_map="auto",
         )
-        sam2_config = "configs/sam2.1/sam2.1_hiera_l.yaml"
-        sam2_checkpoint = f"{segmentation_model_path}/sam2.1_hiera_large.pt"
-        self.segmentation_model = SAM2ImagePredictor(build_sam2(sam2_config, sam2_checkpoint))
+        self.segmentation_model = SAM2ImagePredictor.from_pretrained("facebook/sam2.1-hiera-large")
         self.reasoning_model.eval()
-        # default processer
+        # default processor
         self.processor = AutoProcessor.from_pretrained(reasoning_model_path, padding_side="left")
 
         self.question_template = \
@@ -161,12 +158,19 @@ class SegZero:
     
 
     def compute_part_transformation(self, current_image_path: str, current_point_map: np.ndarray, current_part_mask: np.ndarray, anchor_image_path: str, anchor_point_map: np.ndarray, anchor_part_mask: np.ndarray) -> np.ndarray:
+        print("Computing part transformation...")
+        print("compute feature matching...")
         warp, certainty = self.feature_matching_model.match(current_image_path, anchor_image_path, device=self.device)
+        print("finish feature matching.")
         # Sample matches for estimation
+        print("compute sampling...")
         matches, certainty = self.feature_matching_model.sample(warp, certainty)
+        print("finish sampling.")
         # Convert to pixel coordinates (RoMa produces matches in [-1,1]x[-1,1])
         H, W = current_part_mask.shape
+        print("convert to pixel coordinates...")
         kptsA, kptsB = self.feature_matching_model.to_pixel_coordinates(matches, H, W, H, W)
+        print("finish conversion.")
         # Filter keypoints with part masks
         current_part_kpts = kptsA[current_part_mask[kptsA[:,1], kptsA[:,0]]]
         anchor_part_kpts = kptsB[anchor_part_mask[kptsB[:, 1], kptsB[:,0]]]
@@ -176,7 +180,9 @@ class SegZero:
             print("Not enough keypoints for transformation estimation.")
             return np.eye(4)
         # Estimate transformation
+        print("estimate transformation...")
         current2anchor, current2anchor_rot = utils3d.solve_pose(current_part_3dkpts, anchor_part_3dkpts, mode="rigid")
+        print("finish estimation.")
         return current2anchor
     
 

@@ -19,9 +19,10 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLM_Prompter, refseg_model:
     # Run segmentation
     for data in eval_dataset:
         ego_video_path = data["ego_video_path"]
-        grouped_results = {}
-        while len(grouped_results.keys()) != 2:
-            grouped_results = vlm_prompter.prompt(ego_video_path)
+        # grouped_results = {}
+        # while len(grouped_results.keys()) != 2:
+        #     grouped_results = vlm_prompter.prompt(ego_video_path)
+        grouped_results = {"receiver": {'name': 'Knob', 'description': 'A small, round, light brown/orange wooden knob located on the lower-right portion of the right kitchen cabinet door. It is flush with the surface of the door and serves as a handle.'}}
         for role in grouped_results.keys():
             print(f"Role: {role}, Details: {grouped_results[role]}")
             part_description = grouped_results[role]["description"]
