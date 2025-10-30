@@ -183,9 +183,10 @@ class SegZero:
             return np.eye(4)
         # Estimate transformation
         print("estimate transformation...")
-        current2anchor, current2anchor_rot = utils3d.solve_pose(current_part_3dkpts, anchor_part_3dkpts, mode="rigid")
+        current2anchor, current2anchor_rot = utils3d.solve_pose(current_part_3dkpts[np.newaxis, ...], anchor_part_3dkpts[np.newaxis, ...], mode="rigid")
         print("finish estimation.")
-        return current2anchor
+        print(current2anchor.shape)
+        return current2anchor[0]
     
 
     def fuse_part_pcds(self, part_pcd_list: list[np.ndarray], transformation_list: list[np.ndarray]) -> np.ndarray:
