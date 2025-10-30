@@ -6,6 +6,7 @@ import torch
 from torchvision.transforms.functional import pil_to_tensor
 import json
 from PIL import Image as PILImage
+import open3d as o3d
 import re
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 import numpy as np
@@ -191,10 +192,23 @@ class SegZero:
         # Estimate transformation
         print("estimate transformation...")
         print(current_part_3dkpts.shape, anchor_part_3dkpts.shape)
-        current2anchor, current2anchor_rot = utils3d.np.solve_pose(p=current_part_3dkpts[np.newaxis, ...], q=anchor_part_3dkpts[np.newaxis, ...])
+        current2anchor = self.estimate_se3_transformation(anchor_part_3dkpts, current_part_3dkpts)
         print("finish estimation.")
         print(current2anchor.shape)
         return current2anchor[0]
+    
+
+    def estimate_se3_transformation(self, target_xyz: np.ndarray, source_xyz: np.ndarray) -> np.ndarray:
+        source_pcd = o3d.geometry.PointCloud()
+        source_pcd.points = o3d.utility.Vector3dVector(source_xyz)
+        target_pcd = o3d.geometry.PointCloud()
+        target_pcd.points = o3d.utility.Vector3dVector(target_xyz)
+        correspondences = np.arange(source_xyz.shape[0])
+        correspondences = np.vstack([correspondences, correspondences], dtype=np.int32).T
+        p2p_registration = o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling=False)
+        source2target = p2p_registration.compute_transformation(source_pcd, target_pcd, o3d.utility.Vector2iVector(correspondences))
+        return source2target
+
     
 
     def fuse_part_pcds(self, part_pcd_list: list[np.ndarray], transformation_list: list[np.ndarray]) -> np.ndarray:
