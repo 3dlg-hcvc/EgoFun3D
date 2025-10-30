@@ -173,11 +173,18 @@ class SegZero:
         print("finish conversion.")
         kptsA = kptsA.cpu().numpy().astype(np.int32)
         kptsB = kptsB.cpu().numpy().astype(np.int32)
+        print("number of keypoints:", len(kptsA), len(kptsB))
         # Filter keypoints with part masks
-        current_part_kpts = kptsA[current_part_mask[kptsA[:,1], kptsA[:,0]]]
-        anchor_part_kpts = kptsB[anchor_part_mask[kptsB[:, 1], kptsB[:,0]]]
-        current_part_3dkpts = current_point_map[current_part_kpts[:,1], current_part_kpts[:,0]]
-        anchor_part_3dkpts = anchor_point_map[anchor_part_kpts[:,1], anchor_part_kpts[:,0]]
+        kptsA_index = current_part_mask[kptsA[:,1], kptsA[:,0]]
+        kptsB_index = anchor_part_mask[kptsB[:,1], kptsB[:,0]]
+        valid_index = np.logical_and(kptsA_index, kptsB_index)
+        kptsA = kptsA[valid_index]
+        kptsB = kptsB[valid_index]
+        print("number of valid keypoints:", len(kptsA), len(kptsB))
+        # current_part_kpts = kptsA[current_part_mask[kptsA[:,1], kptsA[:,0]]]
+        # anchor_part_kpts = kptsB[anchor_part_mask[kptsB[:, 1], kptsB[:,0]]]
+        current_part_3dkpts = current_point_map[kptsA[:,1], kptsA[:,0]]
+        anchor_part_3dkpts = anchor_point_map[kptsB[:,1], kptsB[:,0]]
         if len(current_part_3dkpts) < 10 or len(anchor_part_3dkpts) < 10:
             print("Not enough keypoints for transformation estimation.")
             return np.eye(4)
