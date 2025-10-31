@@ -75,8 +75,8 @@ class OpenFunGraphDataset(BaseDataset):
                     camera["extrinsics"] = np.array(camera["extrinsics"])
                     camera_list.append(camera)
                     seg_mask = np.load(ego_seg_path_list[frame_idx])
-                    gt_receiver_mask = (seg_mask == 1)
-                    gt_effector_mask = (seg_mask == 2)
+                    gt_receiver_mask = (seg_mask == 2)
+                    gt_effector_mask = (seg_mask == 3)
                     gt_receiver_mask_list.append(gt_receiver_mask)
                     gt_effector_mask_list.append(gt_effector_mask)
 
