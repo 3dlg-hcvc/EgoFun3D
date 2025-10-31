@@ -15,6 +15,7 @@ vlm:
                     {1: {name: xxx, description: aaa}, 2: {name: yyy, description: bbb}} \
                     Substitue \"xxx\" and \"yyy\" with the name of the part of the object, \"aaa\" and \"bbb\" with the description of the part. \
                     DO NOT answer any other information."
+  max_query: 10
 
 segmentation:
   model: "SegZero"
@@ -24,5 +25,6 @@ segmentation:
   device: "cuda"
   use_gt_depth: false
   save_results: true
+  max_query: 10
 
 save_root_dir: "./outputs"

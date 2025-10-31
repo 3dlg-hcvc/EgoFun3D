@@ -20,8 +20,10 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLM_Prompter, refseg_model:
     for data in eval_dataset:
         ego_video_path = data["ego_video_path"]
         grouped_results = {}
-        while len(grouped_results.keys()) != 2:
+        query_count = 0
+        while len(grouped_results.keys()) != 2 and query_count < config.vlm.max_query:
             grouped_results = vlm_prompter.prompt(ego_video_path)
+            query_count += 1
         for role in grouped_results.keys():
             print(f"Role: {role}, Details: {grouped_results[role]}")
             part_description = grouped_results[role]["description"]
@@ -32,7 +34,11 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLM_Prompter, refseg_model:
             anchor_point_map = None  # To be computed when needed
             anchor_part_mask = None  # To be computed when needed
             for frame_id, video_frame in enumerate(video_frame_list):
-                mask, answer_dict = refseg_model.segment(video_frame, part_description)
+                answer_dict = None
+                seg_query_count = 0
+                while answer_dict is None and seg_query_count < config.segmentation.max_query:
+                    mask, answer_dict = refseg_model.segment(video_frame, part_description)
+                    seg_query_count += 1
                 gt_mask = data[f"gt_{role}_mask_list"][frame_id]
                 iou = compute_part_iou(gt_mask, mask)
                 answer_dict["iou"] = iou

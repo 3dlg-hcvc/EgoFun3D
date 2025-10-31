@@ -59,6 +59,9 @@ class SegZero:
                 int(item['point_2d'][0] * x_factor + 0.5),
                 int(item['point_2d'][1] * y_factor + 0.5)
             ] for item in data]
+        else:
+            pred_bboxes = None
+            pred_points = None
         
         think_pattern = r'<think>([^<]+)</think>'
         think_match = re.search(think_pattern, output_text)
@@ -121,6 +124,9 @@ class SegZero:
         print(output_text[0])
         # pdb.set_trace()
         bboxes, points, think = self.extract_bbox_points_think(output_text[0], x_factor, y_factor)
+        if bboxes is None or points is None:
+            print("Error in parsing segmentation output.")
+            return np.zeros((original_height, original_width), dtype=bool), None
         answer_dict = {"points": points, "thinking": think}
         print(points, len(points))
         
@@ -196,7 +202,6 @@ class SegZero:
         source2target = p2p_registration.compute_transformation(source_pcd, target_pcd, o3d.utility.Vector2iVector(correspondences))
         return source2target
 
-    
 
     def fuse_part_pcds(self, part_pcd_list: list[np.ndarray], transformation_list: list[np.ndarray]) -> np.ndarray:
         fused_part_pcd = []
