@@ -24,6 +24,9 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLM_Prompter, refseg_model:
         while len(grouped_results.keys()) != 2 and query_count < config.vlm.max_query:
             grouped_results = vlm_prompter.prompt(ego_video_path)
             query_count += 1
+        if len(grouped_results.keys()) != 2:
+            print(f"Warning: VLM did not return two parts for video {ego_video_path}. Skipping this sample.")
+            continue
         for role in grouped_results.keys():
             print(f"Role: {role}, Details: {grouped_results[role]}")
             part_description = grouped_results[role]["description"]
@@ -39,6 +42,9 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLM_Prompter, refseg_model:
                 while answer_dict is None and seg_query_count < config.segmentation.max_query:
                     mask, answer_dict = refseg_model.segment(video_frame, part_description)
                     seg_query_count += 1
+                if answer_dict is None:
+                    print(f"Warning: Segmentation model failed for frame {frame_id} in video {ego_video_path}. Skipping this frame.")
+                    continue
                 gt_mask = data[f"gt_{role}_mask_list"][frame_id]
                 iou = compute_part_iou(gt_mask, mask)
                 answer_dict["iou"] = iou
