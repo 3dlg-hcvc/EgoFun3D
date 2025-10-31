@@ -44,29 +44,35 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLM_Prompter, refseg_model:
                     seg_query_count += 1
                 if answer_dict is None:
                     print(f"Warning: Segmentation model failed for frame {frame_id} in video {ego_video_path}. Skipping this frame.")
-                    continue
-                gt_mask = data[f"gt_{role}_mask_list"][frame_id]
-                iou = compute_part_iou(gt_mask, mask)
-                answer_dict["iou"] = iou
-                save_segmentation(
-                    video_frame, mask, answer_dict,
-                    save_dir=f"{save_dir}/{data['scene_name']}/{data['seg_id']}/segmentation/{role}",
-                    id=f"{frame_id:04d}"
-                )
-
-                cam_pose = np.array(data["ego_video_camera_list"][frame_id]["extrinsics"])
-                if config.segmentation.use_gt_depth:
-                    gt_depth = data["ego_video_depth_list"][frame_id]
-                    gt_intrinsics = data["ego_video_camera_list"][frame_id]["intrinsics"]
                 else:
-                    gt_depth = None
-                    gt_intrinsics = None
-                part_pcd_world, current_point_map = refseg_model.get_part_pcd(video_frame, mask, cam_pose, gt_depth, gt_intrinsics)
-                part_pcd_list.append(part_pcd_world)
+                    gt_mask = data[f"gt_{role}_mask_list"][frame_id]
+                    iou = compute_part_iou(gt_mask, mask)
+                    answer_dict["iou"] = iou
+                    save_segmentation(
+                        video_frame, mask, answer_dict,
+                        save_dir=f"{save_dir}/{data['scene_name']}/{data['seg_id']}/segmentation/{role}",
+                        id=f"{frame_id:04d}"
+                    )
+
+                    cam_pose = np.array(data["ego_video_camera_list"][frame_id]["extrinsics"])
+                    if config.segmentation.use_gt_depth:
+                        gt_depth = data["ego_video_depth_list"][frame_id]
+                        gt_intrinsics = data["ego_video_camera_list"][frame_id]["intrinsics"]
+                    else:
+                        gt_depth = None
+                        gt_intrinsics = None
+                    part_pcd_world, current_point_map = refseg_model.get_part_pcd(video_frame, mask, cam_pose, gt_depth, gt_intrinsics)
+                    part_pcd_list.append(part_pcd_world)
+                
                 if frame_id == 0:
-                    transformation_list.append(np.eye(4))
-                    anchor_point_map = current_point_map
-                    anchor_part_mask = mask
+                    if answer_dict is not None:
+                        transformation_list.append(np.eye(4))
+                        anchor_point_map = current_point_map
+                        anchor_part_mask = mask
+                    else:
+                        anchor_part_mask = np.ones((video_frame.height, video_frame.width), dtype=bool)
+                        _, current_point_map = refseg_model.get_part_pcd(video_frame, anchor_part_mask, cam_pose, gt_depth, gt_intrinsics)
+                        anchor_point_map = current_point_map
                 else:
                     current_image_path = data["ego_video_rgb_path_list"][frame_id]
                     transformation = refseg_model.compute_part_transformation(
