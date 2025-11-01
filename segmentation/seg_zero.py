@@ -149,7 +149,8 @@ class SegZero:
 
     def get_part_pcd(self, image: PILImage.Image, part_mask: np.ndarray, cam_pose: np.ndarray, gt_depth: np.ndarray = None, gt_intrinsics: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray]:
         if gt_depth is not None and gt_intrinsics is not None:
-            points_map = utils3d.np.depth_map_to_point_map(gt_depth, gt_intrinsics, np.eye(4))
+            # points_map = utils3d.np.depth_map_to_point_map(gt_depth, gt_intrinsics, np.eye(4))
+            points_map = self.depth2xyz(gt_depth, gt_intrinsics, cam_type="opencv")
             valid_mask = gt_depth > 0
             valid_part_mask = np.logical_and(valid_mask, part_mask) # H, W
             valid_part_points = points_map[valid_part_mask]
@@ -201,6 +202,48 @@ class SegZero:
         p2p_registration = o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling=False)
         source2target = p2p_registration.compute_transformation(source_pcd, target_pcd, o3d.utility.Vector2iVector(correspondences))
         return source2target
+    
+
+    def depth2xyz(self, depth_image: np.ndarray, intrinsics: np.ndarray, cam_type: str) -> np.ndarray:
+        # Get the shape of the depth image
+        H, W = depth_image.shape
+
+        # Create meshgrid for pixel coordinates (u, v)
+        u, v = np.meshgrid(np.arange(W), np.arange(H))
+
+        # Flatten the grid to a 1D array of pixel coordinates
+        u = u.flatten()
+        v = v.flatten()
+
+        # Flatten the depth image to a 1D array of depth values
+        if depth_image.dtype == np.uint16:
+            depth = depth_image.flatten() / 1000.0
+        else:
+            depth = depth_image.flatten()
+
+        # Camera intrinsic matrix (3x3)
+        fx, fy = intrinsics[0, 0], intrinsics[1, 1]
+        cx, cy = intrinsics[0, 2], intrinsics[1, 2]
+
+        # Calculate the 3D coordinates (x, y, z) from depth
+        # Use the formula:
+        #   X = (u - cx) * depth / fx
+        #   Y = (v - cy) * depth / fy
+        #   Z = depth
+        x = (u - cx) * depth / fx
+        y = (v - cy) * depth / fy
+        z = depth
+
+        # Stack the x, y, z values into a 3D point cloud
+        point_cloud = np.vstack((x, y, z)).T
+
+        if cam_type == "opengl":
+            point_cloud = point_cloud * np.array([1, -1, -1])
+
+        # Reshape the point cloud to the original depth image shape [H, W, 3]
+        point_cloud = point_cloud.reshape(H, W, 3)
+
+        return point_cloud
 
 
     def fuse_part_pcds(self, part_pcd_list: list[np.ndarray], transformation_list: list[np.ndarray]) -> np.ndarray:
