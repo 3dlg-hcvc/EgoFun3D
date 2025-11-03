@@ -170,6 +170,10 @@ class SegZero:
         # Sample matches for estimation
         matches, certainty = self.feature_matching_model.sample(warp, certainty)
         # Convert to pixel coordinates (RoMa produces matches in [-1,1]x[-1,1])
+        certainty_mask = certainty > 0.95
+        matches = matches[certainty_mask]
+        certainty = certainty[certainty_mask]
+        
         H, W = current_part_mask.shape
         kptsA, kptsB = self.feature_matching_model.to_pixel_coordinates(matches, H, W, H, W)
         kptsA = kptsA.cpu().numpy().astype(np.int32)
