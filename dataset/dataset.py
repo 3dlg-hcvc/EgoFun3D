@@ -2,6 +2,7 @@ import json
 import numpy as np
 import os
 import point_cloud_utils as pcu
+import open3d as o3d
 from PIL import Image as PILImage
 import glob
 
@@ -130,12 +131,118 @@ class OpenFunGraphDataset(BaseDataset):
             }
         gt_annotations["relation"] = annotations[seg_id]["description"]
         return gt_annotations
+    
+
+class iPhoneDataset(BaseDataset):
+    def __init__(self, root_path: str, meta_file_path: str):
+        super().__init__(root_path, meta_file_path)
+        for func_type in self.metadata.keys():
+            clip_list = self.metadata[func_type]
+            for clip in clip_list:
+                print(f"Loading clip: {clip}")
+                scene_name, seg_id = clip.split("-")
+                ego_video_path = os.path.join(self.root_path, scene_name, f"seg{seg_id}", f"seg{seg_id}.MP4")
+                ego_video_frame_dir = os.path.join(self.root_path, scene_name, f"seg{seg_id}", "rgbd_sampled")
+                ego_video_path_list = glob.glob(os.path.join(ego_video_frame_dir, "*.jpg"))
+                ego_video_path_list.sort()
+                ego_video_depth_dir = os.path.join(self.root_path, scene_name, f"seg{seg_id}", f"prompt_depth")
+                ego_depth_path_list = glob.glob(os.path.join(ego_video_depth_dir, "*.npy"))
+                ego_depth_path_list.sort(key=lambda x: int(os.path.splitext(os.path.basename(x))[0]))
+                ego_video_camera_file = os.path.join(self.root_path, scene_name, f"seg{seg_id}", "ego_camera2world.json")
+                with open(ego_video_camera_file, "r") as f:
+                    ego_camera_data = json.load(f)
+                ego_camera_intrinsics_file = os.path.join(self.root_path, scene_name, f"seg{seg_id}", "intrinsics.json")
+                with open(ego_camera_intrinsics_file, "r") as f:
+                    ego_camera_intrinsics = json.load(f)
+                intrinsics = np.array(ego_camera_intrinsics["intrinsics"])
+                ego_video_seg_dir = os.path.join(self.root_path, scene_name, f"seg{seg_id}", f"seg{seg_id}_seg_annotation")
+                ego_seg_path_list = glob.glob(os.path.join(ego_video_seg_dir, "*.npy"))
+                ego_seg_path_list.sort()
+                rgb_list = []
+                rgb_path_list = []
+                depth_list = []
+                camera_list = []
+                gt_receiver_mask_list = []
+                gt_effector_mask_list = []
+                for frame_id, frame_path in enumerate(ego_video_path_list):
+                    frame_name = os.path.basename(frame_path)
+                    frame_idx = int(os.path.splitext(frame_name)[0])
+                    image = PILImage.open(frame_path)
+                    rgb_path_list.append(frame_path)
+                    image = image.convert("RGB")
+                    rgb_list.append(image)
+                    depth = np.load(ego_depth_path_list[frame_id])
+                    depth_list.append(depth)
+                    camera = {"intrinsics": intrinsics, "extrinsics": np.array(ego_camera_data[str(frame_id)])}
+                    camera_list.append(camera)
+                    seg_mask = np.load(ego_seg_path_list[frame_idx])
+                    gt_receiver_mask = (seg_mask == 2)
+                    gt_effector_mask = (seg_mask == 3)
+                    gt_receiver_mask_list.append(gt_receiver_mask)
+                    gt_effector_mask_list.append(gt_effector_mask)
+                
+                part_annotation_path = os.path.join(self.root_path, scene_name, "part_annotation_singleobj.json")
+                full_pcd_path = os.path.join(self.root_path, scene_name, f"mesh align.ply")
+                gt_pcd_annotation = self.get_gt_annotation_openfungraph(full_pcd_path, part_annotation_path, seg_id)
+                data_dict = {
+                    "func_type": func_type,
+                    "scene_name": scene_name,
+                    "seg_id": seg_id,
+                    "ego_video_path": ego_video_path,
+                    "ego_video_rgb_list": rgb_list,
+                    "ego_video_rgb_path_list": rgb_path_list,
+                    "ego_video_depth_list": depth_list,
+                    "ego_video_camera_list": camera_list,
+                    "gt_receiver_mask_list": gt_receiver_mask_list,
+                    "gt_effector_mask_list": gt_effector_mask_list,
+                    "gt_pcd_annotation": gt_pcd_annotation
+                }
+                self.data.append(data_dict)
+
+
+    def get_gt_annotation_openfungraph(self, full_mesh_path: str, part_annotation_path: str, seg_id: str) -> dict:
+        """
+        Extract ground truth part annotation.
+
+        Args:
+            full_mesh_path (str): Path to the full mesh .ply file.
+            part_annotation_path (str): Path to the part annotation .json file.
+            seg_id (str): Segment ID to extract the part from.
+
+        Returns:
+            dict: Extracted ground truth annotations for the specified segment ID.
+        """
+        full_mesh = o3d.io.read_triangle_mesh(full_mesh_path)
+        with open(part_annotation_path, "r") as f:
+            annotations = json.load(f)
+        if seg_id not in annotations:
+            raise ValueError(f"Segment ID {seg_id} not found in annotations.")
+        gt_annotations = {}
+        for role in ["receiver", "effector"]:
+            print(annotations[seg_id].keys())
+            part_name = annotations[seg_id][role]["label"]
+            part_indices = annotations[seg_id][role]["indices"]
+            if not part_indices:
+                raise ValueError(f"No indices found for role {role} in segment {seg_id}.")
+            part_mesh = full_mesh.select_by_index(part_indices)
+            part_pcd = part_mesh.sample_points_uniformly(number_of_points=10000)
+            gt_annotations[role] = {
+                "part_name": part_name,
+                "part_pcd": part_pcd
+            }
+        gt_annotations["relation"] = annotations[seg_id]["description"]
+        return gt_annotations
 
 
 def build_dataset(dataset_config: dict) -> BaseDataset:
     dataset_name = dataset_config["name"]
     if dataset_name == "OpenFunGraph":
         return OpenFunGraphDataset(
+            root_path=dataset_config["root_path"],
+            meta_file_path=dataset_config["meta_file"]
+        )
+    elif dataset_name == "iPhone":
+        return iPhoneDataset(
             root_path=dataset_config["root_path"],
             meta_file_path=dataset_config["meta_file"]
         )
