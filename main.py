@@ -4,9 +4,10 @@ from datetime import datetime
 import numpy as np
 import os
 from dataset.dataset import BaseDataset, build_dataset
-from segmentation.prompt_vlm import VLM_Prompter, build_vlm_prompter
+from segmentation.prompt_vlm import VLMPrompter, build_vlm_prompter
 from segmentation.seg_zero import SegZero, build_refseg_model
-from segmentation.evaluate_segmentation import compute_part_iou, compute_part_chamfer_distance, save_segmentation, save_pcd
+from segmentation.fusion import FeatureMatchingFusion
+from segmentation.evaluate_segmentation import compute_part_iou_video, compute_part_chamfer_distance, save_segmentation_video, save_pcd
 
 
 def parse_args():
@@ -15,15 +16,11 @@ def parse_args():
     return parser.parse_args()
 
 
-def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLM_Prompter, refseg_model: SegZero, config: omegaconf.DictConfig, save_dir: str):
+def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLMPrompter, refseg_model: SegZero, fusion_model: FeatureMatchingFusion, config: omegaconf.DictConfig, save_dir: str):
     # Run segmentation
     for data in eval_dataset:
         ego_video_path = data["ego_video_path"]
-        grouped_results = {}
-        query_count = 0
-        while len(grouped_results.keys()) != 2 and query_count < config.vlm.max_query:
-            grouped_results = vlm_prompter.prompt(ego_video_path)
-            query_count += 1
+        grouped_results = vlm_prompter.prompt(ego_video_path)
         if len(grouped_results.keys()) != 2:
             print(f"Warning: VLM did not return two parts for video {ego_video_path}. Skipping this sample.")
             continue
@@ -31,56 +28,21 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLM_Prompter, refseg_model:
             print(f"Role: {role}, Details: {grouped_results[role]}")
             part_description = grouped_results[role]["description"]
             video_frame_list = data["ego_video_rgb_list"]
-            part_pcd_list = []
-            transformation_list = []
-            anchor_image_path = data["ego_video_rgb_path_list"][0]
-            anchor_point_map = None  # To be computed when needed
-            anchor_part_mask = None  # To be computed when needed
-            for frame_id, video_frame in enumerate(video_frame_list):
-                answer_dict = None
-                seg_query_count = 0
-                while answer_dict is None and seg_query_count < config.segmentation.max_query:
-                    mask, answer_dict = refseg_model.segment(video_frame, part_description)
-                    seg_query_count += 1
-                if answer_dict is None:
-                    print(f"Warning: Segmentation model failed for frame {frame_id} in video {ego_video_path}. Skipping this frame.")
-                else:
-                    gt_mask = data[f"gt_{role}_mask_list"][frame_id]
-                    iou = compute_part_iou(gt_mask, mask)
-                    answer_dict["iou"] = iou
-                    save_segmentation(
-                        video_frame, mask, answer_dict,
-                        save_dir=f"{save_dir}/{data['scene_name']}/{data['seg_id']}/segmentation/{role}",
-                        id=f"{frame_id:04d}"
-                    )
+            pred_mask_list, answer_dict_list, valid_frame_ids = refseg_model.segment_video(video_frame_list, part_description)
+            valid_image_path_list = [data["ego_video_rgb_path_list"][i] for i in valid_frame_ids]
+            valid_cam_pose_list = [np.array(data["ego_video_camera_list"][i]["extrinsics"]) for i in valid_frame_ids]
+            if config.segmentation.use_gt_depth:
+                gt_depth_list = [data["ego_video_depth_list"][i] for i in valid_frame_ids]
+                gt_intrinsics_list = [data["ego_video_camera_list"][i]["intrinsics"] for i in valid_frame_ids]
+            else:
+                gt_depth_list = None
+                gt_intrinsics_list = None
+            fused_part_pcd = fusion_model.fuse_part_pcds(valid_image_path_list, pred_mask_list, valid_cam_pose_list, gt_depth_list, gt_intrinsics_list)
 
-                    cam_pose = np.array(data["ego_video_camera_list"][frame_id]["extrinsics"])
-                    if config.segmentation.use_gt_depth:
-                        gt_depth = data["ego_video_depth_list"][frame_id]
-                        gt_intrinsics = data["ego_video_camera_list"][frame_id]["intrinsics"]
-                    else:
-                        gt_depth = None
-                        gt_intrinsics = None
-                    part_pcd_world, current_point_map = refseg_model.get_part_pcd(video_frame, mask, cam_pose, gt_depth, gt_intrinsics)
-                    part_pcd_list.append(part_pcd_world)
-                
-                if frame_id == 0:
-                    if answer_dict is not None:
-                        transformation_list.append(np.eye(4))
-                        anchor_point_map = current_point_map
-                        anchor_part_mask = mask
-                    else:
-                        anchor_part_mask = np.ones((video_frame.height, video_frame.width), dtype=bool)
-                        _, current_point_map = refseg_model.get_part_pcd(video_frame, anchor_part_mask, cam_pose, gt_depth, gt_intrinsics)
-                        anchor_point_map = current_point_map
-                else:
-                    current_image_path = data["ego_video_rgb_path_list"][frame_id]
-                    transformation = refseg_model.compute_part_transformation(
-                        current_image_path, current_point_map, mask,
-                        anchor_image_path, anchor_point_map, anchor_part_mask
-                    )
-                    transformation_list.append(transformation)
-            fused_part_pcd = refseg_model.fuse_part_pcds(part_pcd_list, transformation_list)
+            gt_mask_list = data[f"gt_{role}_mask_list"]
+            iou_list = compute_part_iou_video(gt_mask_list, pred_mask_list, valid_frame_ids)
+            save_segmentation_video(video_frame_list, pred_mask_list, answer_dict_list, valid_frame_ids, iou_list, save_dir)
+
             # Save fused point cloud
             gt_part_pcd = data["gt_pcd_annotation"][role]["part_pcd"]
             chamfer_dist = compute_part_chamfer_distance(gt_part_pcd, fused_part_pcd, refseg_model.device)

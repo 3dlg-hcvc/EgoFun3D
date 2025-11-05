@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 from PIL import Image as PILImage
 import os
 
+from typing import List
+
 
 def compute_part_chamfer_distance(gt_pcd: np.ndarray, pred_pcd: np.ndarray, device: str) -> float:
     """
@@ -40,14 +42,28 @@ def compute_part_iou(gt_mask: np.ndarray, pred_mask: np.ndarray) -> float:
     intersection = np.logical_and(gt_mask, pred_mask).sum()
     union = np.logical_or(gt_mask, pred_mask).sum()
     if union == 0:
-        return 1.0 if intersection == 0 else 0.0
-    iou = intersection / union
+        if np.sum(gt_mask) == 0 and np.sum(pred_mask) < 20:
+            iou = 1.0
+        else:
+            iou = 0
+    else:
+        iou = intersection / union
     return iou
 
 
+def compute_part_iou_video(gt_mask_list: list[np.ndarray], pred_mask_list: list[np.ndarray], valid_frame_ids: list[int]) -> List[float]:
+    iou_scores = []
+    for frame_id in range(len(gt_mask_list)):
+        if frame_id not in valid_frame_ids:
+            pred_mask = np.zeros_like(gt_mask_list[frame_id], dtype=bool)
+        else:
+            pred_mask = pred_mask_list[valid_frame_ids.index(frame_id)]
+        iou = compute_part_iou(gt_mask_list[frame_id], pred_mask)
+        iou_scores.append(iou)
+    return iou_scores
+
+
 def save_segmentation(image: np.ndarray | PILImage.Image, mask: np.ndarray, answer_dict: dict, save_dir: str, id: str):
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
     with open(f"{save_dir}/segmentation_answer_{id}.json", "w") as f:
         json.dump(answer_dict, f, indent=4)
     
@@ -68,6 +84,21 @@ def save_segmentation(image: np.ndarray | PILImage.Image, mask: np.ndarray, answ
     plt.close()
 
     np.save(f"{save_dir}/segmentation_mask_{id}.npy", mask)
+
+
+def save_segmentation_video(image_list: List[np.ndarray | PILImage.Image], mask_list: List[np.ndarray], answer_dict_list: List[dict], valid_frame_ids: List[int], iou_list: List[float], save_dir: str):
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    
+    for frame_id in range(len(image_list)):
+        if frame_id not in valid_frame_ids:
+            pred_mask = np.zeros_like(mask_list[0], dtype=bool)
+        else:
+            pred_mask = mask_list[valid_frame_ids.index(frame_id)]
+        answer_dict = answer_dict_list[frame_id]
+        answer_dict["iou"] = iou_list[frame_id]
+        save_segmentation(image_list[frame_id], pred_mask, answer_dict, save_dir, f"{frame_id:04d}")
+    
 
 
 def save_pcd(pcd: np.ndarray, save_path: str):

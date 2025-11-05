@@ -3,23 +3,18 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 from transformers import Qwen2VLForConditionalGeneration, Qwen2_5_VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 import torch
-from torchvision.transforms.functional import pil_to_tensor
 import json
 from PIL import Image as PILImage
-import open3d as o3d
 import re
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 import numpy as np
-import matplotlib.pyplot as plt
-from moge.model.v2 import MoGeModel # Let's try MoGe-2
-from romatch import roma_indoor
-import utils3d
+from segmentation.prompt_vlm import build_vlm_prompter
 
-from typing import Tuple
+from typing import List, Tuple
 
 
 class SegZero:
-    def __init__(self, reasoning_model_path: str, segmentation_model_path: str, moge_model_path: str, device: str = "cuda"):
+    def __init__(self, reasoning_model_path: str, segmentation_model_path: str, segment_judge_config: dict, max_query: int = 10, device: str = "cuda"):
         self.device = device
         #We recommend enabling flash_attention_2 for better acceleration and memory saving, especially in multi-image and video scenarios.
         self.reasoning_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
@@ -28,7 +23,7 @@ class SegZero:
             attn_implementation="flash_attention_2",
             device_map="auto",
         )
-        self.segmentation_model = SAM2ImagePredictor.from_pretrained("facebook/sam2.1-hiera-large")
+        self.segmentation_model = SAM2ImagePredictor.from_pretrained(segmentation_model_path)
         self.reasoning_model.eval()
         # default processor
         self.processor = AutoProcessor.from_pretrained(reasoning_model_path, padding_side="left")
@@ -40,9 +35,9 @@ class SegZero:
             "Output the bbox(es) and point(s) inside the interested object(s) in JSON format." \
             "i.e., <think> thinking process here </think>" \
             "<answer>{Answer}</answer>"
+        self.max_query = max_query
 
-        self.monocular_model = MoGeModel.from_pretrained(moge_model_path).to(device)
-        self.feature_matching_model = roma_indoor(device=device)
+        self.seg_judge = build_vlm_prompter(segment_judge_config)
 
 
     def extract_bbox_points_think(self, output_text, x_factor, y_factor):
@@ -72,7 +67,7 @@ class SegZero:
         return pred_bboxes, pred_points, think_text
     
 
-    def segment(self, image: PILImage.Image, part_description: str) -> Tuple[np.ndarray, dict]:
+    def segment_image(self, image: PILImage.Image, part_description: str) -> Tuple[np.ndarray, dict]:
         original_width, original_height = image.size
         resize_size = 1080
         x_factor, y_factor = original_width/resize_size, original_height/resize_size
@@ -147,117 +142,26 @@ class SegZero:
         return mask_all, answer_dict
 
 
-    def get_part_pcd(self, image: PILImage.Image, part_mask: np.ndarray, cam_pose: np.ndarray, gt_depth: np.ndarray = None, gt_intrinsics: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray]:
-        if gt_depth is not None and gt_intrinsics is not None:
-            # points_map = utils3d.np.depth_map_to_point_map(gt_depth, gt_intrinsics, np.eye(4))
-            points_map = self.depth2xyz(gt_depth, gt_intrinsics, cam_type="opencv")
-            valid_mask = gt_depth > 0
-            valid_part_mask = np.logical_and(valid_mask, part_mask) # H, W
-            valid_part_points = points_map[valid_part_mask]
-        else:
-            image_tensor = pil_to_tensor(image).to(self.device).to(torch.float32) / 255.0
-            output = self.monocular_model.infer(image_tensor)
-            valid_mask = output["mask"].cpu().numpy()
-            valid_part_mask = np.logical_and(valid_mask, part_mask) # H, W
-            points_map = output["points"].cpu().numpy() # H, W, 3
-            valid_part_points = points_map[valid_part_mask]
-        valid_part_points = valid_part_points @ cam_pose[:3, :3].T + cam_pose[:3, 3:].T # point cloud in world coord but not in rest state
-        return valid_part_points, points_map
-    
+    def segment_video(self, video_frame_list: list[PILImage.Image], part_description: str) -> Tuple[List[np.ndarray], List[dict], List[int]]:
+        mask_list = []
+        answer_dict_list = []
+        valid_frame_ids = []
+        for frame_id, frame in enumerate(video_frame_list):
+            print(f"Segmenting frame {frame_id} ...")
+            seg_query_count = 0
+            answer_dict = None
+            while answer_dict is None and seg_query_count < self.max_query:
+                mask, answer_dict = self.segment_image(frame, part_description)
+                seg_query_count += 1
+            if answer_dict is None:
+                print(f"Warning: Segmentation model failed for frame {frame_id} in video. Skipping this frame.")
+                continue
+            else:
+                valid_frame_ids.append(frame_id)
+                answer_dict_list.append(answer_dict)
+                mask_list.append(mask)
+        return mask_list, answer_dict_list, valid_frame_ids
 
-    def compute_part_transformation(self, current_image_path: str, current_point_map: np.ndarray, current_part_mask: np.ndarray, anchor_image_path: str, anchor_point_map: np.ndarray, anchor_part_mask: np.ndarray) -> np.ndarray:
-        warp, certainty = self.feature_matching_model.match(current_image_path, anchor_image_path, device=self.device)
-        # Sample matches for estimation
-        matches, certainty = self.feature_matching_model.sample(warp, certainty)
-        # Convert to pixel coordinates (RoMa produces matches in [-1,1]x[-1,1])
-        certainty_mask = certainty > 0.95
-        matches = matches[certainty_mask]
-        certainty = certainty[certainty_mask]
-        
-        H, W = current_part_mask.shape
-        kptsA, kptsB = self.feature_matching_model.to_pixel_coordinates(matches, H, W, H, W)
-        kptsA = kptsA.cpu().numpy().astype(np.int32)
-        kptsB = kptsB.cpu().numpy().astype(np.int32)
-        # Filter keypoints with part masks
-        kptsA_index = current_part_mask[kptsA[:,1], kptsA[:,0]]
-        kptsB_index = anchor_part_mask[kptsB[:,1], kptsB[:,0]]
-        valid_index = np.logical_and(kptsA_index, kptsB_index)
-        kptsA = kptsA[valid_index]
-        kptsB = kptsB[valid_index]
-        # current_part_kpts = kptsA[current_part_mask[kptsA[:,1], kptsA[:,0]]]
-        # anchor_part_kpts = kptsB[anchor_part_mask[kptsB[:, 1], kptsB[:,0]]]
-        current_part_3dkpts = current_point_map[kptsA[:,1], kptsA[:,0]]
-        anchor_part_3dkpts = anchor_point_map[kptsB[:,1], kptsB[:,0]]
-        if len(current_part_3dkpts) < 10 or len(anchor_part_3dkpts) < 10:
-            print("Not enough keypoints for transformation estimation.")
-            return np.eye(4)
-        # Estimate transformation
-        current2anchor = self.estimate_se3_transformation(anchor_part_3dkpts, current_part_3dkpts)
-        return current2anchor
-    
-
-    def estimate_se3_transformation(self, target_xyz: np.ndarray, source_xyz: np.ndarray) -> np.ndarray:
-        source_pcd = o3d.geometry.PointCloud()
-        source_pcd.points = o3d.utility.Vector3dVector(source_xyz)
-        target_pcd = o3d.geometry.PointCloud()
-        target_pcd.points = o3d.utility.Vector3dVector(target_xyz)
-        correspondences = np.arange(source_xyz.shape[0])
-        correspondences = np.vstack([correspondences, correspondences], dtype=np.int32).T
-        p2p_registration = o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling=False)
-        source2target = p2p_registration.compute_transformation(source_pcd, target_pcd, o3d.utility.Vector2iVector(correspondences))
-        return source2target
-    
-
-    def depth2xyz(self, depth_image: np.ndarray, intrinsics: np.ndarray, cam_type: str) -> np.ndarray:
-        # Get the shape of the depth image
-        H, W = depth_image.shape
-
-        # Create meshgrid for pixel coordinates (u, v)
-        u, v = np.meshgrid(np.arange(W), np.arange(H))
-
-        # Flatten the grid to a 1D array of pixel coordinates
-        u = u.flatten()
-        v = v.flatten()
-
-        # Flatten the depth image to a 1D array of depth values
-        if depth_image.dtype == np.uint16:
-            depth = depth_image.flatten() / 1000.0
-        else:
-            depth = depth_image.flatten()
-
-        # Camera intrinsic matrix (3x3)
-        fx, fy = intrinsics[0, 0], intrinsics[1, 1]
-        cx, cy = intrinsics[0, 2], intrinsics[1, 2]
-
-        # Calculate the 3D coordinates (x, y, z) from depth
-        # Use the formula:
-        #   X = (u - cx) * depth / fx
-        #   Y = (v - cy) * depth / fy
-        #   Z = depth
-        x = (u - cx) * depth / fx
-        y = (v - cy) * depth / fy
-        z = depth
-
-        # Stack the x, y, z values into a 3D point cloud
-        point_cloud = np.vstack((x, y, z)).T
-
-        if cam_type == "opengl":
-            point_cloud = point_cloud * np.array([1, -1, -1])
-
-        # Reshape the point cloud to the original depth image shape [H, W, 3]
-        point_cloud = point_cloud.reshape(H, W, 3)
-
-        return point_cloud
-
-
-    def fuse_part_pcds(self, part_pcd_list: list[np.ndarray], transformation_list: list[np.ndarray]) -> np.ndarray:
-        fused_part_pcd = []
-        for part_pcd, transformation in zip(part_pcd_list, transformation_list):
-            part_pcd_anchored = part_pcd @ transformation[:3, :3].T + transformation[:3, 3:].T
-            fused_part_pcd.append(part_pcd_anchored)
-        fused_part_pcd = np.concatenate(fused_part_pcd, axis=0)
-        return fused_part_pcd
-    
 
 def build_refseg_model(segmentation_config: dict) -> SegZero:
     if segmentation_config.model == "SegZero":
