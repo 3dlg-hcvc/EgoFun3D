@@ -26,5 +26,13 @@ segmentation:
   use_gt_depth: false
   save_results: true
   max_query: 10
+  vlm_judge:
+    model: "gemini-2.5-flash"
+    prompt_template: "Here are two images. The first image is the original image. I do segmentation on the first image, based on this text description: {PartDescription}. \
+                      The result is shown in the second image, marked in green. Do you think the segmentation result in the second image is accurate or not. Please answer in this template: \
+                      {answer: xxx, reason: yyy} \
+                      Substitute \"xxx\" with 'yes' or 'no' and \"yyy\" with the reason of your answer. \
+                      DO NOT answer any other information."
+    max_query: 3
 
 save_root_dir: "./outputs"
