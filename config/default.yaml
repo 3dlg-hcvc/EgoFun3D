@@ -21,7 +21,6 @@ segmentation:
   model: "SegZero"
   reasoning_model_path: "Seg-Zero/pretrained_models/VisionReasoner-7B"
   segmentation_model_path: "facebook/sam2.1-hiera-large"
-  moge_model_path: "Ruicheng/moge-2-vitl-normal"
   device: "cuda"
   use_gt_depth: false
   save_results: true
@@ -34,5 +33,8 @@ segmentation:
                       Substitute \"xxx\" with 'yes' or 'no' and \"yyy\" with the reason of your answer. \
                       DO NOT answer any other information."
     max_query: 3
+fusion:
+  moge_model_path: "Ruicheng/moge-2-vitl-normal"
+  device: "cuda"
 
 save_root_dir: "./outputs"

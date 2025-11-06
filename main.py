@@ -66,8 +66,9 @@ def main(config: omegaconf.DictConfig):
     # Initialize segmentation models
     vlm_prompter = build_vlm_prompter(config.vlm)
     refseg_model = build_refseg_model(config.segmentation)
+    fusion_model = FeatureMatchingFusion(config.fusion.moge_model_path, device=config.fusion.device)
 
-    evaluate(eval_dataset, vlm_prompter, refseg_model, config, save_dir)
+    evaluate(eval_dataset, vlm_prompter, refseg_model, fusion_model, config, save_dir)
 
 
 if __name__ == "__main__":
