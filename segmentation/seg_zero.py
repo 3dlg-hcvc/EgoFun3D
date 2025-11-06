@@ -170,7 +170,7 @@ def build_refseg_model(segmentation_config: dict) -> SegZero:
             segmentation_model_path=segmentation_config["segmentation_model_path"],
             segment_judge_config=segmentation_config["vlm_judge"],
             max_query=segmentation_config["max_query"],
-            device=segmentation_config.get("device", "cuda")
+            device=segmentation_config["device"]
         )
     else:
         raise ValueError(f"Unsupported segmentation model: {segmentation_config.model}")
