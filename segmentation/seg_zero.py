@@ -142,10 +142,11 @@ class SegZero:
         return mask_all, answer_dict
 
 
-    def segment_video(self, video_frame_list: list[PILImage.Image], part_description: str) -> Tuple[List[np.ndarray], List[dict], List[int]]:
+    def segment_video(self, video_frame_list: list[PILImage.Image], part_description: str) -> Tuple[List[np.ndarray], List[dict], List[int], List[dict]]:
         mask_list = []
         answer_dict_list = []
         valid_frame_ids = []
+        vlm_judge_response_list = []
         for frame_id, frame in enumerate(video_frame_list):
             print(f"Segmenting frame {frame_id} ...")
             seg_query_count = 0
@@ -155,12 +156,21 @@ class SegZero:
                 seg_query_count += 1
             if answer_dict is None:
                 print(f"Warning: Segmentation model failed for frame {frame_id} in video. Skipping this frame.")
-                continue
+                answer_dict_list.append({"points": [], "thinking": ""})
+                pred_mask = np.zeros((frame.height, frame.width), dtype=bool)
+                mask_list.append(pred_mask)
             else:
-                valid_frame_ids.append(frame_id)
+                vlm_judge_response = None
+                judge_query_count = 0
+                while vlm_judge_response is None and judge_query_count < self.max_query:
+                    vlm_judge_response = self.seg_judge.prompt(frame, mask, part_description)
+                    print(f"Segmentation Judge Response: {vlm_judge_response}")
+                vlm_judge_response_list.append(vlm_judge_response)
+                if vlm_judge_response is not None and vlm_judge_response["answer"] == "yes":
+                    valid_frame_ids.append(frame_id)
                 answer_dict_list.append(answer_dict)
                 mask_list.append(mask)
-        return mask_list, answer_dict_list, valid_frame_ids
+        return mask_list, answer_dict_list, valid_frame_ids, vlm_judge_response_list
 
 
 def build_refseg_model(segmentation_config: dict) -> SegZero:

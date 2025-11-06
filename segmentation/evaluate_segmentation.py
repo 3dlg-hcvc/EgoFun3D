@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from PIL import Image as PILImage
 import os
 
-from typing import List
+from typing import List, Tuple
 
 
 def compute_part_chamfer_distance(gt_pcd: np.ndarray, pred_pcd: np.ndarray, device: str) -> float:
@@ -51,16 +51,16 @@ def compute_part_iou(gt_mask: np.ndarray, pred_mask: np.ndarray) -> float:
     return iou
 
 
-def compute_part_iou_video(gt_mask_list: list[np.ndarray], pred_mask_list: list[np.ndarray], valid_frame_ids: list[int]) -> List[float]:
-    iou_scores = []
+def compute_part_iou_video(gt_mask_list: list[np.ndarray], pred_mask_list: list[np.ndarray], valid_frame_ids: list[int]) -> Tuple[List[float], List[float]]:
+    filtered_iou_scores = []
+    origin_iou_scores = []
     for frame_id in range(len(gt_mask_list)):
-        if frame_id not in valid_frame_ids:
-            pred_mask = np.zeros_like(gt_mask_list[frame_id], dtype=bool)
-        else:
-            pred_mask = pred_mask_list[valid_frame_ids.index(frame_id)]
+        pred_mask = pred_mask_list[frame_id]
         iou = compute_part_iou(gt_mask_list[frame_id], pred_mask)
-        iou_scores.append(iou)
-    return iou_scores
+        origin_iou_scores.append(iou)
+        if frame_id in valid_frame_ids:
+            filtered_iou_scores.append(iou)
+    return filtered_iou_scores, origin_iou_scores
 
 
 def save_segmentation(image: np.ndarray | PILImage.Image, mask: np.ndarray, answer_dict: dict, save_dir: str, id: str):
@@ -86,17 +86,21 @@ def save_segmentation(image: np.ndarray | PILImage.Image, mask: np.ndarray, answ
     np.save(f"{save_dir}/segmentation_mask_{id}.npy", mask)
 
 
-def save_segmentation_video(image_list: List[np.ndarray | PILImage.Image], mask_list: List[np.ndarray], answer_dict_list: List[dict], valid_frame_ids: List[int], iou_list: List[float], save_dir: str):
+def save_segmentation_video(image_list: List[np.ndarray | PILImage.Image], mask_list: List[np.ndarray], answer_dict_list: List[dict], valid_frame_ids: List[int], 
+                            original_iou_list: List[float], filtered_iou_list: List[float], save_dir: str):
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     
     for frame_id in range(len(image_list)):
         if frame_id not in valid_frame_ids:
             pred_mask = np.zeros_like(mask_list[0], dtype=bool)
+            filtered_iou = -1
         else:
             pred_mask = mask_list[valid_frame_ids.index(frame_id)]
+            filtered_iou = filtered_iou_list[valid_frame_ids.index(frame_id)]
         answer_dict = answer_dict_list[frame_id]
-        answer_dict["iou"] = iou_list[frame_id]
+        answer_dict["iou"] = original_iou_list[frame_id]
+        answer_dict["filtered_iou"] = filtered_iou
         save_segmentation(image_list[frame_id], pred_mask, answer_dict, save_dir, f"{frame_id:04d}")
 
 

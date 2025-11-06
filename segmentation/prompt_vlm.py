@@ -95,7 +95,7 @@ class VLMSegJudge(VLMPrompter):
 
 
     def post_process_output(self, output_text: str) -> dict:
-        pairs = re.findall(r'\{\s*answer:\s*(.*?)\s*,\s*reason:\s*(.*?)\s*\}', output_text, flags=re.S)
+        pairs = re.findall(r'\s*<answer>\s*(.*?)\s*</answer>\s*<reason>\s*(.*?)\s*</reason>', output_text, flags=re.S)
 
         def clean(t: str) -> str:
             return re.sub(r'\s+', ' ', t).strip()

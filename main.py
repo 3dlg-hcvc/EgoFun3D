@@ -33,7 +33,8 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLMPrompter, refseg_model: 
             print(f"Role: {role}, Details: {grouped_results[role]}")
             part_description = grouped_results[role]["description"]
             video_frame_list = data["ego_video_rgb_list"]
-            pred_mask_list, answer_dict_list, valid_frame_ids = refseg_model.segment_video(video_frame_list, part_description)
+            pred_mask_list, answer_dict_list, valid_frame_ids, vlm_judge_response_list = refseg_model.segment_video(video_frame_list, part_description)
+            valid_mask_list = [pred_mask_list[i] for i in valid_frame_ids]
             valid_image_path_list = [data["ego_video_rgb_path_list"][i] for i in valid_frame_ids]
             valid_cam_pose_list = [np.array(data["ego_video_camera_list"][i]["extrinsics"]) for i in valid_frame_ids]
             if config.segmentation.use_gt_depth:
@@ -42,11 +43,11 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLMPrompter, refseg_model: 
             else:
                 gt_depth_list = None
                 gt_intrinsics_list = None
-            fused_part_pcd = fusion_model.fuse_part_pcds(valid_image_path_list, pred_mask_list, valid_cam_pose_list, gt_depth_list, gt_intrinsics_list)
+            fused_part_pcd = fusion_model.fuse_part_pcds(valid_image_path_list, valid_mask_list, valid_cam_pose_list, gt_depth_list, gt_intrinsics_list)
 
             gt_mask_list = data[f"gt_{role}_mask_list"]
-            iou_list = compute_part_iou_video(gt_mask_list, pred_mask_list, valid_frame_ids)
-            save_segmentation_video(video_frame_list, pred_mask_list, answer_dict_list, valid_frame_ids, iou_list, save_dir)
+            vlm_filtered_iou_list, original_iou_list = compute_part_iou_video(gt_mask_list, pred_mask_list, valid_frame_ids)
+            save_segmentation_video(video_frame_list, pred_mask_list, answer_dict_list, valid_frame_ids, original_iou_list, vlm_filtered_iou_list, save_dir)
 
             # Save fused point cloud
             gt_part_pcd = data["gt_pcd_annotation"][role]["part_pcd"]
