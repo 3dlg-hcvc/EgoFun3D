@@ -33,7 +33,7 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLMPrompter, refseg_model: 
             print(f"Role: {role}, Details: {grouped_results[role]}")
             part_description = grouped_results[role]["description"]
             video_frame_list = data["ego_video_rgb_list"]
-            pred_mask_list, answer_dict_list, valid_frame_ids, vlm_judge_response_list = refseg_model.segment_video(video_frame_list, part_description)
+            pred_mask_list, answer_dict_list, valid_frame_ids = refseg_model.segment_video(video_frame_list, part_description)
             valid_mask_list = [pred_mask_list[i] for i in valid_frame_ids]
             valid_image_path_list = [data["ego_video_rgb_path_list"][i] for i in valid_frame_ids]
             valid_cam_pose_list = [np.array(data["ego_video_camera_list"][i]["extrinsics"]) for i in valid_frame_ids]
