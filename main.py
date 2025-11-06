@@ -25,8 +25,10 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLMPrompter, refseg_model: 
             print(f"Warning: VLM did not return two parts for video {ego_video_path}. Skipping this sample.")
             continue
         else:
-            save_dir = f"{save_dir}/{data['scene_name']}/{data['seg_id']}/vlm_narrator"
-            save_vlm_output(grouped_results, save_dir)
+            save_vlm_dir = f"{save_dir}/{data['scene_name']}/{data['seg_id']}/vlm_narrator"
+            if not os.path.exists(save_vlm_dir):
+                os.makedirs(save_vlm_dir)
+            save_vlm_output(grouped_results, save_vlm_dir)
         for role in grouped_results.keys():
             print(f"Role: {role}, Details: {grouped_results[role]}")
             part_description = grouped_results[role]["description"]
