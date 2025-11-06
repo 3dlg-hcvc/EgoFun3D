@@ -98,7 +98,6 @@ def save_segmentation_video(image_list: List[np.ndarray | PILImage.Image], mask_
         answer_dict = answer_dict_list[frame_id]
         answer_dict["iou"] = iou_list[frame_id]
         save_segmentation(image_list[frame_id], pred_mask, answer_dict, save_dir, f"{frame_id:04d}")
-    
 
 
 def save_pcd(pcd: np.ndarray, save_path: str):
@@ -112,3 +111,15 @@ def save_pcd(pcd: np.ndarray, save_path: str):
     pcd_o3d = o3d.geometry.PointCloud()
     pcd_o3d.points = o3d.utility.Vector3dVector(pcd)
     o3d.io.write_point_cloud(save_path, pcd_o3d)
+
+
+def save_vlm_output(output_dict: dict, save_path: str):
+    """
+    Save VLM output dictionary to a JSON file.
+
+    Args:
+        output_dict (dict): VLM output dictionary.
+        save_path (str): Path to save the JSON file.
+    """
+    with open(f"{save_path}/vlm_analysis.json", "w") as f:
+        json.dump(output_dict, f, indent=4)

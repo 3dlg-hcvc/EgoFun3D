@@ -7,7 +7,7 @@ from dataset.dataset import BaseDataset, build_dataset
 from segmentation.prompt_vlm import VLMPrompter, build_vlm_prompter
 from segmentation.seg_zero import SegZero, build_refseg_model
 from segmentation.fusion import FeatureMatchingFusion
-from segmentation.evaluate_segmentation import compute_part_iou_video, compute_part_chamfer_distance, save_segmentation_video, save_pcd
+from segmentation.evaluate_segmentation import compute_part_iou_video, compute_part_chamfer_distance, save_segmentation_video, save_pcd, save_vlm_output
 
 
 def parse_args():
@@ -24,6 +24,9 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLMPrompter, refseg_model: 
         if len(grouped_results.keys()) != 2:
             print(f"Warning: VLM did not return two parts for video {ego_video_path}. Skipping this sample.")
             continue
+        else:
+            save_dir = f"{save_dir}/{data['scene_name']}/{data['seg_id']}/vlm_narrator"
+            save_vlm_output(grouped_results, save_dir)
         for role in grouped_results.keys():
             print(f"Role: {role}, Details: {grouped_results[role]}")
             part_description = grouped_results[role]["description"]
