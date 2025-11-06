@@ -111,7 +111,17 @@ class VLMSegJudge(VLMPrompter):
 
 
 def build_vlm_prompter(vlm_config: dict) -> VLMPrompter:
-    return VLMPrompter(
-        vlm_model=vlm_config.vlm_model,
-        prompt_template=vlm_config.prompt_template
-    )
+    if vlm_config["role"] == "video_narrator":
+        return VLMVideoNarrator(
+            vlm_model=vlm_config.vlm_model,
+            prompt_template=vlm_config.prompt_template,
+            max_query=vlm_config.max_query
+        )
+    elif vlm_config["role"] == "segmentation_judge":
+        return VLMSegJudge(
+            vlm_model=vlm_config.vlm_model,
+            prompt_template=vlm_config.prompt_template,
+            max_query=vlm_config.max_query
+        )
+    else:
+        raise ValueError(f"Unknown VLM role: {vlm_config['role']}")

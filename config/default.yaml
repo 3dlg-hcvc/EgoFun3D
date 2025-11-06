@@ -6,6 +6,7 @@ dataset:
   meta_file: "./FunGraph3D/test_clips.json"
 
 vlm:
+  role: "video_narrator"
   vlm_model: "gemini-2.5-flash"
   prompt_template: "This is a video. Analyze this video and answer the following questions: \
                     1. Which part of the object receives human action? \
@@ -26,6 +27,7 @@ segmentation:
   save_results: true
   max_query: 10
   vlm_judge:
+    role: "segmentation_judge"
     vlm_model: "gemini-2.5-flash"
     prompt_template: "Here are two images. The first image is the original image. I do segmentation on the first image, based on this text description: {PartDescription}. \
                       The result is shown in the second image, marked in green. Do you think the segmentation result in the second image is accurate or not. Please answer in this template: \
