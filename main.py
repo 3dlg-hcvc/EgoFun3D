@@ -65,6 +65,8 @@ def main(config: omegaconf.DictConfig):
     exp_time = datetime.now().strftime("%Y%m%d-%H%M%S")
     save_dir = f"{config.save_root_dir}/{config.name}_{exp_time}"
     print("Results will be saved to:", save_dir)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
 
     with open(f"{save_dir}/config.yaml", "w") as f:
         omegaconf.OmegaConf.save(config, f)
