@@ -168,6 +168,7 @@ def build_refseg_model(segmentation_config: dict) -> SegZero:
         return SegZero(
             reasoning_model_path=segmentation_config["reasoning_model_path"],
             segmentation_model_path=segmentation_config["segmentation_model_path"],
+            segment_judge_config=segmentation_config["vlm_judge"],
             moge_model_path=segmentation_config["moge_model_path"],
             device=segmentation_config.get("device", "cuda")
         )
