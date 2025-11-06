@@ -74,9 +74,9 @@ class VLMSegJudge(VLMPrompter):
         origin_image = np.array(image)
         overlay_image = self.overlay_mask(image, mask)
         _, encoded_overlay_buffer = cv2.imencode('.jpg', overlay_image)
-        overlay_image_bytes = base64.b64encode(encoded_overlay_buffer)
+        overlay_image_bytes = encoded_overlay_buffer.tobytes()
         _, encoded_origin_buffer = cv2.imencode('.jpg', origin_image)
-        origin_image_bytes = base64.b64encode(encoded_origin_buffer)
+        origin_image_bytes = encoded_origin_buffer.tobytes()
 
         response = self.client.models.generate_content(
             model=self.vlm_model, contents=genai.types.Content(
