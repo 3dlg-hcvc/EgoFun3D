@@ -34,6 +34,9 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLMPrompter, refseg_model: 
             part_description = grouped_results[role]["description"]
             video_frame_list = data["ego_video_rgb_list"]
             pred_mask_list, answer_dict_list, valid_frame_ids = refseg_model.segment_video(video_frame_list, part_description)
+            if len(valid_frame_ids) == 0:
+                print(f"Warning: No valid frames found for part {role} in video {ego_video_path}. Skipping this part.")
+                continue
             valid_mask_list = [pred_mask_list[i] for i in valid_frame_ids]
             valid_image_path_list = [data["ego_video_rgb_path_list"][i] for i in valid_frame_ids]
             valid_cam_pose_list = [np.array(data["ego_video_camera_list"][i]["extrinsics"]) for i in valid_frame_ids]
