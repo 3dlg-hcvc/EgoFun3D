@@ -34,7 +34,7 @@ class FeatureMatchingFusion:
 
 
     def compute_part_transformation(self, current_image_path: str, current_point_map: np.ndarray, current_part_mask: np.ndarray, anchor_image_path: str, anchor_point_map: np.ndarray, anchor_part_mask: np.ndarray) -> np.ndarray:
-        warp, certainty = self.feature_matching_model.match(current_image_path, anchor_image_path, device=self.device)
+        warp, certainty = self.feature_matching_model.match(anchor_image_path, current_image_path, device=self.device)
         # Sample matches for estimation
         matches, certainty = self.feature_matching_model.sample(warp, certainty)
         # Convert to pixel coordinates (RoMa produces matches in [-1,1]x[-1,1])
@@ -54,13 +54,13 @@ class FeatureMatchingFusion:
         kptsB = kptsB[valid_index]
         # current_part_kpts = kptsA[current_part_mask[kptsA[:,1], kptsA[:,0]]]
         # anchor_part_kpts = kptsB[anchor_part_mask[kptsB[:, 1], kptsB[:,0]]]
-        current_part_3dkpts = current_point_map[kptsA[:,1], kptsA[:,0]]
-        anchor_part_3dkpts = anchor_point_map[kptsB[:,1], kptsB[:,0]]
+        anchor_part_3dkpts = anchor_point_map[kptsA[:,1], kptsA[:,0]]
+        current_part_3dkpts = current_point_map[kptsB[:,1], kptsB[:,0]]
         if len(current_part_3dkpts) < 10 or len(anchor_part_3dkpts) < 10:
             print("Not enough keypoints for transformation estimation.")
             return np.eye(4)
         # Estimate transformation
-        current2anchor = estimate_se3_transformation(anchor_part_3dkpts, current_part_3dkpts)
+        current2anchor = estimate_se3_transformation(current_part_3dkpts, anchor_part_3dkpts)
         return current2anchor
     
 
