@@ -47,7 +47,10 @@ def evaluate(eval_dataset:BaseDataset, vlm_prompter: VLMPrompter, refseg_model: 
 
             gt_mask_list = data[f"gt_{role}_mask_list"]
             vlm_filtered_iou_list, original_iou_list = compute_part_iou_video(gt_mask_list, pred_mask_list, valid_frame_ids)
-            save_segmentation_video(video_frame_list, pred_mask_list, answer_dict_list, valid_frame_ids, original_iou_list, vlm_filtered_iou_list, save_dir)
+            save_2d_segmentation_dir = f"{save_dir}/{data['scene_name']}/{data['seg_id']}/segmentation_{role}"
+            if not os.path.exists(save_2d_segmentation_dir):
+                os.makedirs(save_2d_segmentation_dir)
+            save_segmentation_video(video_frame_list, pred_mask_list, answer_dict_list, valid_frame_ids, original_iou_list, vlm_filtered_iou_list, save_2d_segmentation_dir)
 
             # Save fused point cloud
             gt_part_pcd = data["gt_pcd_annotation"][role]["part_pcd"]
