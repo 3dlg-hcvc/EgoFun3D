@@ -66,6 +66,9 @@ def main(config: omegaconf.DictConfig):
     save_dir = f"{config.save_root_dir}/{config.name}_{exp_time}"
     print("Results will be saved to:", save_dir)
 
+    with open(f"{save_dir}/config.yaml", "w") as f:
+        omegaconf.OmegaConf.save(config, f)
+
     eval_dataset = build_dataset(config.dataset)
 
     # Initialize segmentation models
