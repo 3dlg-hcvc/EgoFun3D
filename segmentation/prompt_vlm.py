@@ -71,27 +71,32 @@ class VLMSegJudge(VLMPrompter):
         return overlay
 
     def prompt(self, image: PILImage.Image, mask: np.ndarray, part_description: str) -> dict:
+        grouped_results = {}
+        query_count = 0
         origin_image = np.array(image)
         overlay_image = self.overlay_mask(image, mask)
         _, encoded_overlay_buffer = cv2.imencode('.jpg', overlay_image)
         overlay_image_bytes = encoded_overlay_buffer.tobytes()
         _, encoded_origin_buffer = cv2.imencode('.jpg', origin_image)
         origin_image_bytes = encoded_origin_buffer.tobytes()
+        while len(grouped_results.keys()) != 2 and query_count < self.max_query:
 
-        response = self.client.models.generate_content(
-            model=self.vlm_model, contents=genai.types.Content(
-                parts=[
-                    genai.types.Part.from_bytes(
-                        data=origin_image_bytes, mime_type='image/jpeg'
-                    ),
-                    genai.types.Part.from_bytes(
-                        data=overlay_image_bytes, mime_type='image/jpeg'
-                    ),
-                    genai.types.Part(text=self.prompt_template.format(PartDescription=part_description))
-                ]
+            response = self.client.models.generate_content(
+                model=self.vlm_model, contents=genai.types.Content(
+                    parts=[
+                        genai.types.Part.from_bytes(
+                            data=origin_image_bytes, mime_type='image/jpeg'
+                        ),
+                        genai.types.Part.from_bytes(
+                            data=overlay_image_bytes, mime_type='image/jpeg'
+                        ),
+                        genai.types.Part(text=self.prompt_template.format(PartDescription=part_description))
+                    ]
+                )
             )
-        )
-        return self.post_process_output(response.text)
+            grouped_results = self.post_process_output(response.text)
+            query_count += 1
+        return grouped_results
 
 
     def post_process_output(self, output_text: str) -> dict:

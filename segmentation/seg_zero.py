@@ -159,13 +159,9 @@ class SegZero:
                 pred_mask = np.zeros((frame.height, frame.width), dtype=bool)
                 mask_list.append(pred_mask)
             else:
-                vlm_judge_response = None
-                judge_query_count = 0
-                while vlm_judge_response is None and judge_query_count < self.max_query:
-                    vlm_judge_response = self.seg_judge.prompt(frame, mask, part_description)
-                    print(f"Segmentation Judge Response: {vlm_judge_response}")
-                answer_dict["vlm_judge"] = vlm_judge_response if vlm_judge_response is not None else {}
-                if vlm_judge_response is not None and vlm_judge_response["answer"] == "yes":
+                vlm_judge_response = self.seg_judge.prompt(frame, mask, part_description)
+                answer_dict["vlm_judge"] = vlm_judge_response if len(vlm_judge_response.keys()) == 2 else {}
+                if len(vlm_judge_response.keys()) == 2 and vlm_judge_response["answer"] == "yes":
                     valid_frame_ids.append(frame_id)
                 answer_dict_list.append(answer_dict)
                 mask_list.append(mask)
