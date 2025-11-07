@@ -93,11 +93,10 @@ def save_segmentation_video(image_list: List[np.ndarray | PILImage.Image], mask_
     
     for frame_id in range(len(image_list)):
         if frame_id not in valid_frame_ids:
-            pred_mask = np.zeros_like(mask_list[0], dtype=bool)
             filtered_iou = -1
         else:
-            pred_mask = mask_list[valid_frame_ids.index(frame_id)]
             filtered_iou = filtered_iou_list[valid_frame_ids.index(frame_id)]
+        pred_mask = mask_list[frame_id]
         answer_dict = answer_dict_list[frame_id]
         answer_dict["iou"] = original_iou_list[frame_id]
         answer_dict["filtered_iou"] = filtered_iou
