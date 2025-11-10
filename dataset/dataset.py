@@ -182,7 +182,7 @@ class iPhoneDataset(BaseDataset):
                     gt_effector_mask_list.append(gt_effector_mask)
                 
                 part_annotation_path = os.path.join(self.root_path, scene_name, "part_annotation_singleobj.json")
-                full_pcd_path = os.path.join(self.root_path, scene_name, f"mesh_aligned.glb")
+                full_pcd_path = os.path.join(self.root_path, scene_name, "mesh_aligned.ply")
                 gt_pcd_annotation = self.get_gt_annotation_openfungraph(full_pcd_path, part_annotation_path, seg_id)
                 data_dict = {
                     "func_type": func_type,
