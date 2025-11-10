@@ -154,7 +154,7 @@ class iPhoneDataset(BaseDataset):
                 ego_camera_intrinsics_file = os.path.join(self.root_path, scene_name, f"seg{seg_id}", "intrinsics.json")
                 with open(ego_camera_intrinsics_file, "r") as f:
                     ego_camera_intrinsics = json.load(f)
-                intrinsics = np.array(ego_camera_intrinsics["intrinsics"])
+                intrinsics = np.array(ego_camera_intrinsics["K"])
                 ego_video_seg_dir = os.path.join(self.root_path, scene_name, f"seg{seg_id}", f"valid_seg{seg_id}_seg_annotation")
                 ego_seg_path_list = glob.glob(os.path.join(ego_video_seg_dir, "*.npy"))
                 ego_seg_path_list.sort()
