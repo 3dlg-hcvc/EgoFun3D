@@ -226,9 +226,10 @@ class iPhoneDataset(BaseDataset):
                 raise ValueError(f"No indices found for role {role} in segment {seg_id}.")
             part_mesh = full_mesh.select_by_index(part_indices)
             part_pcd = part_mesh.sample_points_uniformly(number_of_points=10000)
+            part_pcd_np = np.asarray(part_pcd.points)
             gt_annotations[role] = {
                 "part_name": part_name,
-                "part_pcd": part_pcd
+                "part_pcd": part_pcd_np
             }
         gt_annotations["relation"] = annotations[seg_id]["description"]
         return gt_annotations
