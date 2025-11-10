@@ -141,7 +141,7 @@ class iPhoneDataset(BaseDataset):
             for clip in clip_list:
                 print(f"Loading clip: {clip}")
                 scene_name, seg_id = clip.split("-")
-                ego_video_path = os.path.join(self.root_path, scene_name, f"seg{seg_id}", f"seg{seg_id}.MP4")
+                ego_video_path = os.path.join(self.root_path, scene_name, f"seg{seg_id}", f"seg{seg_id}.mp4")
                 ego_video_frame_dir = os.path.join(self.root_path, scene_name, f"seg{seg_id}", "valid_rgbd_sampled")
                 ego_video_path_list = glob.glob(os.path.join(ego_video_frame_dir, "*.jpg"))
                 ego_video_path_list.sort()
