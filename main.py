@@ -6,7 +6,7 @@ import os
 from dataset.dataset import BaseDataset, build_dataset
 from segmentation.prompt_vlm import VLMPrompter, build_vlm_prompter
 from segmentation.seg_zero import SegZero, build_refseg_model
-from segmentation.fusion import FeatureMatchingFusion
+from fusion.fusion import FeatureMatchingFusion
 from segmentation.evaluate_segmentation import compute_part_iou_video, compute_part_chamfer_distance, save_segmentation_video, save_pcd, save_vlm_output
 
 
