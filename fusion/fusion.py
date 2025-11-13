@@ -101,7 +101,7 @@ class TrackingFusion(BaseFusion):
         self.grid_size = grid_size
         self.device = device
 
-    def tracking_video(self, video_frame_list: List[PILImage.Image], depth_frame_list: List[np.ndarray], cam_pose_list: List[np.ndarray], intrinsics: np.ndarray, depth_mask_list: List[np.ndarray]):
+    def tracking_video(self, video_frame_list: List[PILImage.Image], depth_frame_list: List[np.ndarray], cam_pose_list: List[np.ndarray], intrinsics: np.ndarray, depth_mask_list: List[np.ndarray]) -> np.ndarray:
         video_tensor_list = []
         for video_frame in video_frame_list:
             video_tensor = pil_to_tensor(video_frame).to(torch.float32).to(self.device)
@@ -145,19 +145,18 @@ class TrackingFusion(BaseFusion):
         tracks3d = (torch.einsum("tij,tnj->tni", c2w_traj[:,:3,:3], track3d_pred[:,:,:3].cpu()) + c2w_traj[:,:3,3][:,None,:]).numpy()
         return tracks3d
     
-    def fuse_part_pcds(self, video_frame_list: List[PILImage.Image], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray],
-                       depth_frame_list: List[np.ndarray], cam_pose_list: List[np.ndarray], intrinsics: np.ndarray, depth_mask_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
-        tracks3d = self.tracking_video(video_frame_list, depth_frame_list, cam_pose_list, intrinsics, depth_mask_list)
+    def fuse_part_pcds(self, video_frame_list: List[PILImage.Image], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray], tracks3d_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
+        # tracks3d = self.tracking_video(video_frame_list, depth_frame_list, cam_pose_list, intrinsics, depth_mask_list)
         fused_part_pcd = []
         transformation_list = []
         anchor_track_points = None
         for frame_id in range(len(video_frame_list)):
             part_mask = part_mask_list[frame_id]
             if frame_id == 0:
-                anchor_track_points = tracks3d[frame_id]
+                anchor_track_points = tracks3d_list[frame_id]
                 transformation = np.eye(4)
             else:
-                current_track_points = tracks3d[frame_id]
+                current_track_points = tracks3d_list[frame_id]
                 transformation = estimate_se3_transformation(current_track_points[part_mask], anchor_track_points[part_mask])
             transformation_list.append(transformation)
             points_map = points_map_list[frame_id]

@@ -8,7 +8,8 @@ from segmentation.prompt_vlm import VLMPrompter, build_vlm_prompter
 from segmentation.seg_zero import SegZero, build_refseg_model
 from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion, TrackingFusion
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction
-from segmentation.evaluate_segmentation import compute_part_iou_video, compute_part_chamfer_distance, save_segmentation_video, save_pcd, save_vlm_output
+from segmentation.evaluate_segmentation import compute_part_iou_video, save_segmentation_video, save_vlm_output
+from fusion.evaluate_reconstruction import save_reconstruction_metrics, evaluate_reconstruction, save_pcd, save_reconstruction_results
 
 
 def parse_args():
@@ -30,6 +31,8 @@ def evaluate(input_modality: str, eval_dataset:BaseDataset, vlm_prompter: VLMPro
             if not os.path.exists(save_vlm_dir):
                 os.makedirs(save_vlm_dir)
             save_vlm_output(grouped_results, save_vlm_dir)
+        reconstruction_results = None
+        tracks3d = None
         for role in grouped_results.keys():
             print(f"Role: {role}, Details: {grouped_results[role]}")
             # run segmentation
@@ -40,20 +43,21 @@ def evaluate(input_modality: str, eval_dataset:BaseDataset, vlm_prompter: VLMPro
                 print(f"Warning: No valid frames found for part {role} in video {ego_video_path}. Skipping this part.")
                 continue
             # run reconstruction
-            if isinstance(reconstruction_model, ViPEReconstruction):
-                video_dir = os.path.dirname(data["ego_video_rgb_path_list"][0])
-                reconstruction_results = reconstruction_model.reconstruct(video_dir)
-            else:
-                input_intrinsics = None
-                input_extrinsics = None
-                input_depth = None
-                if input_modality.find("intrinsics") != -1:
-                    input_intrinsics = data["ego_video_camera_list"][0]["intrinsics"]
-                if input_modality.find("extrinsics") != -1:
-                    input_extrinsics = [np.array(data["ego_video_camera_list"][i]["extrinsics"]) for i in range(len(data["ego_video_rgb_list"]))]
-                if input_modality.find("depth") != -1:
-                    input_depth = data["ego_video_depth_list"]
-                reconstruction_results = reconstruction_model.reconstruct(video_frame_list, input_intrinsics, input_extrinsics, input_depth)
+            if reconstruction_results is None:
+                if isinstance(reconstruction_model, ViPEReconstruction):
+                    video_dir = os.path.dirname(data["ego_video_rgb_path_list"][0])
+                    reconstruction_results = reconstruction_model.reconstruct(video_dir)
+                else:
+                    input_intrinsics = None
+                    input_extrinsics = None
+                    input_depth = None
+                    if input_modality.find("intrinsics") != -1:
+                        input_intrinsics = data["ego_video_camera_list"][0]["intrinsics"]
+                    if input_modality.find("extrinsics") != -1:
+                        input_extrinsics = [np.array(data["ego_video_camera_list"][i]["extrinsics"]) for i in range(len(data["ego_video_rgb_list"]))]
+                    if input_modality.find("depth") != -1:
+                        input_depth = data["ego_video_depth_list"]
+                    reconstruction_results = reconstruction_model.reconstruct(video_frame_list, input_intrinsics, input_extrinsics, input_depth)
             # run fusion
             points_mask_list = reconstruction_results["points_mask"]
             valid_mask_list = []
@@ -63,15 +67,15 @@ def evaluate(input_modality: str, eval_dataset:BaseDataset, vlm_prompter: VLMPro
                 combined_mask = np.logical_and(points_mask, pred_mask)
                 valid_mask_list.append(combined_mask)
             valid_image_path_list = [data["ego_video_rgb_path_list"][i] for i in valid_frame_ids]
-            valid_cam_pose_list = [reconstruction_results["extrinsics"][i] for i in valid_frame_ids]
             intrinsics = reconstruction_results["intrinsics"]
             valid_points_map_list = [reconstruction_results["points"][i] for i in valid_frame_ids]
-            valid_depth_list = [reconstruction_results["depth"][i] for i in valid_frame_ids]
-            valid_depth_mask_list = [reconstruction_results["points_mask"][i] for i in valid_frame_ids]
             if isinstance(fusion_model, FeatureMatchingFusion):
                 fused_part_pcd, transformation_list = fusion_model.fuse_part_pcds(valid_image_path_list, valid_mask_list, valid_points_map_list)
             elif isinstance(fusion_model, TrackingFusion):
-                fused_part_pcd, transformation_list = fusion_model.fuse_part_pcds(valid_image_path_list, valid_mask_list, points_mask_list, valid_depth_list, valid_cam_pose_list, intrinsics, valid_depth_mask_list)
+                if tracks3d is None:
+                    tracks3d = fusion_model.tracking_video(video_frame_list, reconstruction_results["depth"], reconstruction_results["extrinsics"], intrinsics, reconstruction_results["points_mask"])
+                valid_tracks3d = [tracks3d[i] for i in valid_frame_ids]
+                fused_part_pcd, transformation_list = fusion_model.fuse_part_pcds(valid_image_path_list, valid_mask_list, valid_points_map_list, valid_tracks3d)
 
             # Evaluate segmentation
             gt_mask_list = data[f"gt_{role}_mask_list"]
@@ -81,16 +85,33 @@ def evaluate(input_modality: str, eval_dataset:BaseDataset, vlm_prompter: VLMPro
                 os.makedirs(save_2d_segmentation_dir)
             save_segmentation_video(video_frame_list, pred_mask_list, answer_dict_list, valid_frame_ids, original_iou_list, vlm_filtered_iou_list, save_2d_segmentation_dir)
 
-            # Evaluate fused point cloud
-            gt_part_pcd = data["gt_pcd_annotation"][role]["part_pcd"]
-            chamfer_dist = compute_part_chamfer_distance(gt_part_pcd, fused_part_pcd, refseg_model.device)
-            print(f"Fused {role} part Chamfer Distance: {chamfer_dist}")
-            save_pcd_dir = f"{save_dir}/{data['scene_name']}/{data['seg_id']}/fused_pcd"
+            # Evaluate reconstruction
+            gt_depth = np.array(data["ego_video_depth_list"])
+            gt_extrinsics = np.array([np.array(data["ego_video_camera_list"][i]["extrinsics"]) for i in range(len(data["ego_video_rgb_list"]))])
+            chamfer_dist, depth_mean_error, depth_max_error, rot_error, trans_error = evaluate_reconstruction(
+                fused_part_pcd,
+                reconstruction_results["depth"],
+                reconstruction_results["extrinsics"],
+                data["gt_pcd_annotation"][role]["part_pcd"],
+                gt_depth,
+                gt_extrinsics,
+                reconstruction_results["points_mask"],
+                refseg_model.device
+            )
+            save_pcd_dir = f"{save_dir}/{data['scene_name']}/{data['seg_id']}/reconstruction_{role}"
             if not os.path.exists(save_pcd_dir):
                 os.makedirs(save_pcd_dir)
             save_pcd(fused_part_pcd, f"{save_pcd_dir}/{role}_fused.ply")
-            with open(f"{save_pcd_dir}/{role}_fused_metrics.txt", "w") as f:
-                f.write(f"Chamfer Distance: {chamfer_dist}\n")
+            save_reconstruction_results(reconstruction_results, save_pcd_dir)
+            reconstruction_metrics = {
+                "chamfer_distance": chamfer_dist,
+                "depth_mean_error": depth_mean_error,
+                "depth_max_error": depth_max_error,
+                "rotation_error_radians": rot_error,
+                "translation_error": trans_error
+            }
+            save_reconstruction_metrics(reconstruction_metrics, save_pcd_dir)
+
 
 
 def main(config: omegaconf.DictConfig):

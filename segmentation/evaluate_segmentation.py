@@ -10,24 +10,6 @@ import os
 from typing import List, Tuple
 
 
-def compute_part_chamfer_distance(gt_pcd: np.ndarray, pred_pcd: np.ndarray, device: str) -> float:
-    """
-    Compute Chamfer Distance between two point clouds.
-
-    Args:
-        gt_pcd (np.ndarray): Ground truth point cloud of shape (N, 3).
-        pred_pcd (np.ndarray): Predicted point cloud of shape (M, 3).
-
-    Returns:
-        float: Chamfer Distance between the two point clouds.
-    """
-    gt_tensor = torch.from_numpy(gt_pcd).unsqueeze(0).to(torch.float32).to(device)  # (1, N, 3)
-    pred_tensor = torch.from_numpy(pred_pcd).unsqueeze(0).to(torch.float32).to(device)  # (1, M, 3)
-
-    chamfer_dist, _ = chamfer_distance(gt_tensor, pred_tensor)
-    return chamfer_dist.item()
-
-
 def compute_part_iou(gt_mask: np.ndarray, pred_mask: np.ndarray) -> float:
     """
     Compute Intersection over Union (IoU) between two binary masks.
@@ -101,19 +83,6 @@ def save_segmentation_video(image_list: List[np.ndarray | PILImage.Image], mask_
         answer_dict["iou"] = original_iou_list[frame_id]
         answer_dict["filtered_iou"] = filtered_iou
         save_segmentation(image_list[frame_id], pred_mask, answer_dict, save_dir, f"{frame_id:04d}")
-
-
-def save_pcd(pcd: np.ndarray, save_path: str):
-    """
-    Save point cloud to a .ply file.
-
-    Args:
-        pcd (np.ndarray): Point cloud of shape (N, 3).
-        save_path (str): Path to save the .ply file.
-    """
-    pcd_o3d = o3d.geometry.PointCloud()
-    pcd_o3d.points = o3d.utility.Vector3dVector(pcd)
-    o3d.io.write_point_cloud(save_path, pcd_o3d)
 
 
 def save_vlm_output(output_dict: dict, save_path: str):
