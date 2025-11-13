@@ -157,7 +157,11 @@ class TrackingFusion(BaseFusion):
                 transformation = np.eye(4)
             else:
                 current_track_points = tracks3d_list[frame_id]
-                transformation = estimate_se3_transformation(current_track_points[part_mask], anchor_track_points[part_mask])
+                if anchor_track_points[part_mask].shape[0] < 10 or current_track_points[part_mask].shape[0] <10:
+                    print("Not enough keypoints for transformation estimation.")
+                    transformation = np.eye(4)
+                else:
+                    transformation = estimate_se3_transformation(current_track_points[part_mask], anchor_track_points[part_mask])
             transformation_list.append(transformation)
             points_map = points_map_list[frame_id]
             part_pcd = points_map[part_mask]
