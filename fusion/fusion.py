@@ -101,7 +101,7 @@ class TrackingFusion(BaseFusion):
         self.grid_size = grid_size
         self.device = device
 
-    def tracking_video(self, video_frame_list: List[PILImage.Image], depth_frame_list: List[np.ndarray], cam_pose_list: List[np.ndarray], intrinsics: np.ndarray, depth_mask_list: List[np.ndarray]) -> np.ndarray:
+    def tracking_video(self, video_frame_list: List[PILImage.Image], depth_frame_list: List[np.ndarray], cam_pose_list: List[np.ndarray], intrinsics: np.ndarray, depth_mask_list: List[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
         video_tensor_list = []
         for video_frame in video_frame_list:
             video_tensor = pil_to_tensor(video_frame).to(torch.float32).to(self.device)
@@ -143,25 +143,33 @@ class TrackingFusion(BaseFusion):
                                    query_no_BA=True, fixed_cam=False, stage=1, unc_metric=unc_metric,
                                    support_frame=len(video_tensor)-1, replace_ratio=0.2) 
         tracks3d = (torch.einsum("tij,tnj->tni", c2w_traj[:,:3,:3], track3d_pred[:,:,:3].cpu()) + c2w_traj[:,:3,3][:,None,:]).numpy()
-        return tracks3d
+        tracks2d = track2d_pred.cpu().numpy()
+        return tracks3d, tracks2d
     
-    def fuse_part_pcds(self, video_frame_list: List[PILImage.Image], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray], tracks3d_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
+    def fuse_part_pcds(self, video_frame_list: List[PILImage.Image], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray], tracks3d_list: List[np.ndarray], tracks2d_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
         # tracks3d = self.tracking_video(video_frame_list, depth_frame_list, cam_pose_list, intrinsics, depth_mask_list)
         fused_part_pcd = []
         transformation_list = []
         anchor_track_points = None
+        anchor_track_index = None
         for frame_id in range(len(video_frame_list)):
             part_mask = part_mask_list[frame_id]
+            tracks2d = tracks2d_list[frame_id]
+            part_track_index = np.nonzero(part_mask[tracks2d[:, 1], tracks2d[:, 0]])[0]
+            tracks3d = tracks3d_list[frame_id]
+            tracks3d = tracks3d[part_track_index]
             if frame_id == 0:
-                anchor_track_points = tracks3d_list[frame_id]
+                anchor_track_points = tracks3d
+                anchor_track_index = part_track_index
                 transformation = np.eye(4)
             else:
-                current_track_points = tracks3d_list[frame_id]
-                if anchor_track_points[part_mask].shape[0] < 10 or current_track_points[part_mask].shape[0] <10:
+                current_track_points = tracks3d
+                both_indices = np.intersect1d(anchor_track_index, part_track_index, return_indices=False)
+                if anchor_track_points[both_indices].shape[0] < 10 or current_track_points[both_indices].shape[0] < 10:
                     print("Not enough keypoints for transformation estimation.")
                     transformation = np.eye(4)
                 else:
-                    transformation = estimate_se3_transformation(current_track_points[part_mask], anchor_track_points[part_mask])
+                    transformation = estimate_se3_transformation(current_track_points[both_indices], anchor_track_points[both_indices])
             transformation_list.append(transformation)
             points_map = points_map_list[frame_id]
             part_pcd = points_map[part_mask]

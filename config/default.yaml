@@ -44,7 +44,7 @@ fusion:
   model_path: "Yuxihenry/SpatialTrackerV2-Offline"
   device: "cuda"
   vo_points: 756
-  grid_size: 10
+  grid_size: 30
 
 reconstruction:
   reconstruction_method: "spatracker"
