@@ -11,7 +11,15 @@ from utils.segment_utils import estimate_se3_transformation
 from typing import Tuple, List
 
 
-class FeatureMatchingFusion:
+class BaseFusion:
+    def __init__(self):
+        pass
+
+    def fuse_part_pcds(self, image_path_list: List[PILImage.Image], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
+        raise NotImplementedError
+
+
+class FeatureMatchingFusion(BaseFusion):
     def __init__(self, device: str):
         self.feature_matching_model = roma_indoor(device=device)
         # self.monocular_model = MoGeModel.from_pretrained(moge_model_path).to(device)
@@ -80,12 +88,9 @@ class FeatureMatchingFusion:
         return fused_part_pcd, transformation_list
         
 
-class TrackingFusion:
-    def __init__(self, track_mode: str = "offline", vo_points: int = 756, grid_size: int = 10, device: str = "cuda"):
-        if track_mode == "offline":
-            self.model = Predictor.from_pretrained("Yuxihenry/SpatialTrackerV2-Offline")
-        else:
-            self.model = Predictor.from_pretrained("Yuxihenry/SpatialTrackerV2-Online")
+class TrackingFusion(BaseFusion):
+    def __init__(self, model_path: str = "Yuxihenry/SpatialTrackerV2-Offline", vo_points: int = 756, grid_size: int = 10, device: str = "cuda"):
+        self.model = Predictor.from_pretrained(model_path)
 
         # config the model; the track_num is the number of points in the grid
         self.model.spatrack.track_num = vo_points
@@ -161,3 +166,13 @@ class TrackingFusion:
             fused_part_pcd.append(part_pcd)
         fused_part_pcd = np.concatenate(fused_part_pcd, axis=0)
         return fused_part_pcd, transformation_list
+    
+
+def build_fusion_model(fusion_method: str, model_path: str, device: str = "cuda", vo_points: int = 756, grid_size: int = 10) -> BaseFusion:
+    if fusion_method == "feature_matching":
+        fusion_model = FeatureMatchingFusion(device=device)
+    elif fusion_method == "tracking":
+        fusion_model = TrackingFusion(model_path=model_path, vo_points=vo_points, grid_size=grid_size, device=device)
+    else:
+        raise NotImplementedError(f"Fusion method {fusion_method} not implemented.")
+    return fusion_model

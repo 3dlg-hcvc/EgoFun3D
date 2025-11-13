@@ -5,6 +5,9 @@ dataset:
   root_path: "./FunGraph3D"
   meta_file: "./FunGraph3D/test_clips.json"
 
+input_modality: "rgb+extrinsics+intrinsics+depth"
+# Options: "rgb+extrinsics+intrinsics", "rgb+extrinsics+intrinsics+depth", "rgb+intrinsics", "rgb"
+
 vlm:
   role: "video_narrator"
   vlm_model: "gemini-2.5-flash"
@@ -35,8 +38,17 @@ segmentation:
                       Substitute \"xxx\" with 'yes' or 'no' and \"yyy\" with the reason of your answer. \
                       DO NOT answer any other information."
     max_query: 3
+
 fusion:
-  moge_model_path: "Ruicheng/moge-2-vitl-normal"
+  fusion_method: "tracking"
+  model_path: "Yuxihenry/SpatialTrackerV2-Offline"
+  device: "cuda"
+  vo_points: 756
+  grid_size: 10
+
+reconstruction:
+  reconstruction_method: "spatracker"
+  model_path: "Yuxihenry/SpatialTrackerV2_Front"
   device: "cuda"
 
 save_root_dir: "./outputs"

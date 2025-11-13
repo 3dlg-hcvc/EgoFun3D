@@ -3,7 +3,7 @@ import PIL.Image as PILImage
 from torchvision.transforms.functional import pil_to_tensor
 import torch
 import os
-import zipfile
+import shutil
 
 from moge.model.v2 import MoGeModel # Let's try MoGe-2
 
@@ -133,6 +133,8 @@ class SpatrackerReconstruction(BaseReconstruction):
 class ViPEReconstruction(BaseReconstruction):
     def reconstruct(self, video_dir: str) -> Dict[str, np.ndarray]:
         tmp_dir = "./tmp_vipe_reconstruction"
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)
         os.system(f"vipe infer --image-dir {video_dir} --output {tmp_dir}")
         
         base_name = os.path.basename(video_dir)
@@ -163,3 +165,18 @@ class ViPEReconstruction(BaseReconstruction):
             cam_pose_list.append(cam_pose)
         return {"intrinsics": intrinsics, "extrinsics": np.stack(cam_pose_list), "depth": np.stack(depth_frame_list), "points": np.stack(point_map_list), "points_mask": np.stack(depth_mask_list)}
 
+
+def build_reconstruction_model(input_modality: str, recon_method: str, model_path: str = None, device: str = "cuda") -> BaseReconstruction:
+    if recon_method == "naive":
+        assert input_modality == "rgb+extrinsics+intrinsics+depth", "Naive reconstruction requires depth input."
+        recon_model = NaiveReconstruction()
+    elif recon_method == "moge":
+        assert input_modality in ["rgb+extrinsics+intrinsics", "rgb+extrinsics+intrinsics+depth"], "MoGe reconstruction requires at least rgb, intrinsics and extrinsics input."
+        recon_model = MoGeReconstruction(model_path=model_path, device=device)
+    elif recon_method == "spatracker":
+        recon_model = SpatrackerReconstruction(model_path=model_path, device=device)
+    elif recon_method == "vipe":
+        recon_model = ViPEReconstruction()
+    else:
+        raise NotImplementedError(f"Reconstruction method {recon_method} not implemented.")
+    return recon_model
