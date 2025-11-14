@@ -3,6 +3,8 @@ import PIL.Image as PILImage
 from torchvision.transforms.functional import pil_to_tensor
 import torch
 from romatch import roma_indoor
+import sys
+sys.path.append("SpaTrackerV2/")
 from SpaTrackerV2.models.SpaTrackV2.models.predictor import Predictor
 from SpaTrackerV2.models.SpaTrackV2.models.utils import get_points_on_a_grid
 
