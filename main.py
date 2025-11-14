@@ -44,9 +44,10 @@ def evaluate(input_modality: str, eval_dataset:BaseDataset, vlm_prompter: VLMPro
                 continue
             # run reconstruction
             if reconstruction_results is None:
+                init_extrinsics = np.array(data["ego_video_camera_list"][0]["extrinsics"])
                 if isinstance(reconstruction_model, ViPEReconstruction):
                     video_dir = os.path.dirname(data["ego_video_rgb_path_list"][0])
-                    reconstruction_results = reconstruction_model.reconstruct(video_dir)
+                    reconstruction_results = reconstruction_model.reconstruct(video_dir, init_extrinsics)
                 else:
                     input_intrinsics = None
                     input_extrinsics = None
@@ -57,7 +58,7 @@ def evaluate(input_modality: str, eval_dataset:BaseDataset, vlm_prompter: VLMPro
                         input_extrinsics = [np.array(data["ego_video_camera_list"][i]["extrinsics"]) for i in range(len(data["ego_video_rgb_list"]))]
                     if input_modality.find("depth") != -1:
                         input_depth = data["ego_video_depth_list"]
-                    reconstruction_results = reconstruction_model.reconstruct(video_frame_list, input_intrinsics, input_extrinsics, input_depth)
+                    reconstruction_results = reconstruction_model.reconstruct(video_frame_list, init_extrinsics, input_intrinsics, input_extrinsics, input_depth)
             # run fusion
             points_mask_list = reconstruction_results["points_mask"]
             valid_mask_list = []

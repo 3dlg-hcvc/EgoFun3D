@@ -22,7 +22,7 @@ class BaseReconstruction:
     def __init__(self):
         pass
 
-    def reconstruct(self, video_frame_list: List[PILImage.Image], intrinsics: np.ndarray = None, cam_pose_list: List[np.ndarray] = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
+    def reconstruct(self, video_frame_list: List[PILImage.Image], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: List[np.ndarray] = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
         raise NotImplementedError
 
 
@@ -30,14 +30,15 @@ class NaiveReconstruction(BaseReconstruction):
     def __init__(self):
         pass
 
-    def reconstruct(self, video_frame_list: List[PILImage.Image], intrinsics: np.ndarray, cam_pose_list: List[np.ndarray], depth_frame_list: List[np.ndarray]) -> Dict[str, np.ndarray]:
+    def reconstruct(self, video_frame_list: List[PILImage.Image], init_extrinsics: np.ndarray, intrinsics: np.ndarray, cam_pose_list: List[np.ndarray], depth_frame_list: List[np.ndarray]) -> Dict[str, np.ndarray]:
         point_map_list = []
         valid_mask_list = []
+        cam2init = init_extrinsics @ np.linalg.inv(cam_pose_list[0])
         for frame_idx in range(len(video_frame_list)):
             gt_depth = depth_frame_list[frame_idx]
             gt_intrinsics = intrinsics[frame_idx]
             points_map = depth2xyz(gt_depth, gt_intrinsics, cam_type="opencv")
-            cam_pose = cam_pose_list[frame_idx]
+            cam_pose = cam2init @ cam_pose_list[frame_idx]
             ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
             points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
             points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
@@ -52,11 +53,12 @@ class MoGeReconstruction(BaseReconstruction):
         self.model = MoGeModel.from_pretrained(model_path).to(device)
         self.device = device
 
-    def reconstruct(self, video_frame_list: List[PILImage.Image], intrinsics: np.ndarray, cam_pose_list: List[np.ndarray], depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
+    def reconstruct(self, video_frame_list: List[PILImage.Image], init_extrinsics: np.ndarray, intrinsics: np.ndarray, cam_pose_list: List[np.ndarray], depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
         w = video_frame_list[0].width
         fov_x = 2 * np.arctan(w / (2 * intrinsics[0, 0]))
         point_map_list = []
         valid_mask_list = []
+        cam2init = init_extrinsics @ np.linalg.inv(cam_pose_list[0])
         for frame_idx, video_frame in enumerate(video_frame_list):
             if depth_frame_list is not None:
                 depth_frame = depth_frame_list[frame_idx]
@@ -67,7 +69,7 @@ class MoGeReconstruction(BaseReconstruction):
                 output = self.model.infer(video_frame_tensor, fov_x=fov_x)
                 points_map = output["points"].cpu().numpy() # H, W, 3
                 valid_mask = output["mask"].cpu().numpy().astype(bool)
-            cam_pose = cam_pose_list[frame_idx]
+            cam_pose = cam2init @ cam_pose_list[frame_idx]
             ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
             points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
             points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
@@ -83,7 +85,7 @@ class SpatrackerReconstruction(BaseReconstruction):
         self.model = self.model.to(device)
         self.device = device
 
-    def reconstruct(self, video_frame_list: List[PILImage.Image], intrinsics: np.ndarray = None, cam_pose_list: List[np.ndarray] = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
+    def reconstruct(self, video_frame_list: List[PILImage.Image], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: List[np.ndarray] = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
         video_tensor_list = []
         for video_frame in video_frame_list:
             video_tensor = pil_to_tensor(video_frame).to(torch.float32).to(self.device)
@@ -117,12 +119,12 @@ class SpatrackerReconstruction(BaseReconstruction):
             else:
                 intrs = intrinsics.copy()
             video_tensor = video_tensor.squeeze()
-
+        cam2init = init_extrinsics @ np.linalg.inv(extrs[0])
         point_map_list = []
         for frame_idx in range(len(depth_tensor)):
             depth = depth_tensor[frame_idx]
             points_map = depth2xyz(depth, intrs, cam_type="opencv")
-            cam_pose = extrs[frame_idx]
+            cam_pose = cam2init @ extrs[frame_idx]
             ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
             points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
             points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
@@ -131,7 +133,7 @@ class SpatrackerReconstruction(BaseReconstruction):
     
 
 class ViPEReconstruction(BaseReconstruction):
-    def reconstruct(self, video_dir: str) -> Dict[str, np.ndarray]:
+    def reconstruct(self, video_dir: str, init_extrinsics: np.ndarray) -> Dict[str, np.ndarray]:
         tmp_dir = "./tmp_vipe_reconstruction"
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir)
@@ -156,9 +158,13 @@ class ViPEReconstruction(BaseReconstruction):
         inds, pose_tensor = read_pose_artifacts(cam_pose_file)
         point_map_list = []
         cam_pose_list = []
+        cam2init = None
         for frame_id, depth in enumerate(depth_frame_list):
             points_map = depth2xyz(depth, intrinsics, cam_type="opencv")
             cam_pose = pose_tensor[frame_id].matrix().numpy()
+            if cam2init is None:
+                cam2init = init_extrinsics @ np.linalg.inv(cam_pose)
+            cam_pose = cam2init @ cam_pose
             points_map_homogeneous = np.concatenate([points_map, np.ones((points_map.shape[0], points_map.shape[1], 1))], axis=-1)
             points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
             point_map_list.append(points_map)
