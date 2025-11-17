@@ -176,7 +176,7 @@ class ViPEReconstruction(BaseReconstruction):
 
 class DA3DReconstruction(BaseReconstruction):
     def __init__(self, model_path: str, device: str = "cuda"):
-        self.model = DepthAnything3.from_pretrained("depth-anything/DA3NESTED-GIANT-LARGE")
+        self.model = DepthAnything3.from_pretrained(model_path)
         self.model = self.model.to(device=device)
         self.device = device
     
