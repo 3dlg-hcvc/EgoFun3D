@@ -43,14 +43,14 @@ def compute_depth_error(gt_depth: np.ndarray, pred_depth: np.ndarray, valid_mask
     pred_error = np.abs(gt_depth[valid_mask] - pred_depth[valid_mask])
     mean_error = np.mean(pred_error)
     max_error = np.max(pred_error)
-    return mean_error, max_error
+    return float(mean_error), float(max_error)
 
 
 def compute_extrinsics_error(gt_extrinsics: np.ndarray, pred_extrinsics: np.ndarray) -> Tuple[float, float]:
     rotation_error_matrix = pred_extrinsics[:, :3, :3] @ gt_extrinsics[:, :3, :3].transpose(0, 2, 1)
     cam_rotation_error = np.mean(np.arccos((np.trace(rotation_error_matrix, axis1=1, axis2=2) - 1) / 2))
     cam_translation_error = np.mean(np.linalg.norm(pred_extrinsics[:, :3, 3] - gt_extrinsics[:, :3, 3], axis=1))
-    return cam_rotation_error, cam_translation_error
+    return float(cam_rotation_error), float(cam_translation_error)
 
 
 def save_pcd(pcd: np.ndarray, save_path: str):
