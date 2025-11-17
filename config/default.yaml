@@ -49,7 +49,7 @@ fusion:
 # tracking model path: "Yuxihenry/SpatialTrackerV2-Offline"
 
 reconstruction:
-  reconstruction_method: "spatracker"
+  recon_method: "spatracker"
   model_path: "Yuxihenry/SpatialTrackerV2_Front"
   device: "cuda"
 # Options: "naive", "moge", "spatracker", "vipe", "da3"
