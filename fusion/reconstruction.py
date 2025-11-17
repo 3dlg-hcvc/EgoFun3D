@@ -13,6 +13,8 @@ from SpaTrackerV2.models.SpaTrackV2.models.vggt4track.models.vggt_moe import VGG
 from vipe.vipe.utils.io import read_depth_artifacts, read_intrinsics_artifacts, read_pose_artifacts
 from vipe.vipe.utils.depth import reliable_depth_mask_range
 
+from depth_anything_3.api import DepthAnything3
+
 from utils.segment_utils import depth2xyz
 
 from typing import List, Tuple, Dict
@@ -170,6 +172,39 @@ class ViPEReconstruction(BaseReconstruction):
             point_map_list.append(points_map)
             cam_pose_list.append(cam_pose)
         return {"intrinsics": intrinsics, "extrinsics": np.stack(cam_pose_list), "depth": np.stack(depth_frame_list), "points": np.stack(point_map_list), "points_mask": np.stack(depth_mask_list)}
+    
+
+class DA3DReconstruction(BaseReconstruction):
+    def __init__(self, model_path: str, device: str = "cuda"):
+        self.model = DepthAnything3.from_pretrained("depth-anything/DA3NESTED-GIANT-LARGE")
+        self.model = self.model.to(device=device)
+        self.device = device
+    
+    def reconstruct(self, video_frame_list: List[PILImage.Image], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: List[np.ndarray] = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
+        if intrinsics is not None and cam_pose_list is not None and depth_frame_list is not None:
+            naive_recon = NaiveReconstruction()
+            return naive_recon.reconstruct(video_frame_list, init_extrinsics, intrinsics, cam_pose_list, depth_frame_list)
+        else:
+            extrinsics = np.stack(cam_pose_list) if cam_pose_list is not None else None
+            intrinsics = np.repeat(intrinsics[None, :, :], len(video_frame_list), axis=0) if intrinsics is not None else None
+            outputs = self.model.inference(video_frame_list, intrinsics=intrinsics, extrinsics=extrinsics)
+            depth = outputs.depth # N, H, W
+            depth_conf = outputs.conf # N, H, W depth confidence map
+            if extrinsics is None:
+                extrinsics = outputs.extrinsics
+            if intrinsics is None:
+                intrinsics = outputs.intrinsics
+            point_map_list = []
+            cam2init = init_extrinsics @ np.linalg.inv(extrinsics[0])
+            for frame_idx in range(len(video_frame_list)):
+                depth_frame = depth[frame_idx]
+                points_map = depth2xyz(depth_frame, intrinsics[frame_idx], cam_type="opencv")
+                cam_pose = cam2init @ extrinsics[frame_idx]
+                ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
+                points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
+                points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
+                point_map_list.append(points_map)
+            return {"rgb": video_frame_list, "intrinsics": intrinsics, "extrinsics": extrinsics, "depth": depth, "points": np.stack(point_map_list), "points_mask": (depth_conf > 0.5)}
 
 
 def build_reconstruction_model(input_modality: str, recon_method: str, model_path: str = None, device: str = "cuda") -> BaseReconstruction:
@@ -183,6 +218,8 @@ def build_reconstruction_model(input_modality: str, recon_method: str, model_pat
         recon_model = SpatrackerReconstruction(model_path=model_path, device=device)
     elif recon_method == "vipe":
         recon_model = ViPEReconstruction()
+    elif recon_method == "da3":
+        recon_model = DA3DReconstruction(model_path=model_path, device=device)
     else:
         raise NotImplementedError(f"Reconstruction method {recon_method} not implemented.")
     return recon_model
