@@ -38,8 +38,7 @@ class NaiveReconstruction(BaseReconstruction):
         cam2init = init_extrinsics @ np.linalg.inv(cam_pose_list[0])
         for frame_idx in range(len(video_frame_list)):
             gt_depth = depth_frame_list[frame_idx]
-            gt_intrinsics = intrinsics[frame_idx]
-            points_map = depth2xyz(gt_depth, gt_intrinsics, cam_type="opencv")
+            points_map = depth2xyz(gt_depth, intrinsics, cam_type="opencv")
             cam_pose = cam2init @ cam_pose_list[frame_idx]
             ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
             points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
@@ -204,7 +203,7 @@ class DA3DReconstruction(BaseReconstruction):
                 points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
                 points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
                 point_map_list.append(points_map)
-            return {"rgb": video_frame_list, "intrinsics": intrinsics, "extrinsics": extrinsics, "depth": depth, "points": np.stack(point_map_list), "points_mask": (depth_conf > 0.5)}
+            return {"rgb": video_frame_list, "intrinsics": intrinsics[0], "extrinsics": extrinsics, "depth": depth, "points": np.stack(point_map_list), "points_mask": (depth_conf > 0.5)}
 
 
 def build_reconstruction_model(input_modality: str, recon_method: str, model_path: str = None, device: str = "cuda") -> BaseReconstruction:
