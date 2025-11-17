@@ -45,10 +45,14 @@ fusion:
   device: "cuda"
   vo_points: 756
   grid_size: 30
+# Options: "tracking", "feature_matching"
+# tracking model path: "Yuxihenry/SpatialTrackerV2-Offline"
 
 reconstruction:
   reconstruction_method: "spatracker"
   model_path: "Yuxihenry/SpatialTrackerV2_Front"
   device: "cuda"
+# Options: "naive", "moge", "spatracker", "vipe", "da3"
+# reconstruction model path: "Ruicheng/moge-2-vitl-normal", "Yuxihenry/SpatialTrackerV2_Front", "depth-anything/DA3NESTED-GIANT-LARGE"
 
 save_root_dir: "./outputs"
