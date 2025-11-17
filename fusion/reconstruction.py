@@ -110,7 +110,6 @@ class SpatrackerReconstruction(BaseReconstruction):
                 
             if cam_pose_list is None:
                 extrinsic = predictions["poses_pred"]
-                extrs = np.eye(4)[None].repeat(len(depth_tensor), axis=0)
                 extrs = extrinsic.squeeze().cpu().numpy()
             else:
                 extrs = np.stack(cam_pose_list)
@@ -119,18 +118,19 @@ class SpatrackerReconstruction(BaseReconstruction):
                 intrs = intrinsic.squeeze().cpu().numpy()
             else:
                 intrs = intrinsics.copy()
+                intrs = np.repeat(intrs[None, :, :], len(video_frame_list), axis=0)
             video_tensor = video_tensor.squeeze()
         cam2init = init_extrinsics @ np.linalg.inv(extrs[0])
         point_map_list = []
         for frame_idx in range(len(depth_tensor)):
             depth = depth_tensor[frame_idx]
-            points_map = depth2xyz(depth, intrs, cam_type="opencv")
+            points_map = depth2xyz(depth, intrs[frame_idx], cam_type="opencv")
             cam_pose = cam2init @ extrs[frame_idx]
             ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
             points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
             points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
             point_map_list.append(points_map)
-        return {"rgb": video_frame_list, "intrinsics": intrs, "extrinsics": extrs, "depth": depth_tensor, "points": np.stack(point_map_list), "points_mask": unc_metric}
+        return {"rgb": video_frame_list, "intrinsics": intrs[0], "extrinsics": extrs, "depth": depth_tensor, "points": np.stack(point_map_list), "points_mask": unc_metric}
     
 
 class ViPEReconstruction(BaseReconstruction):
