@@ -23,8 +23,9 @@ def evaluate(input_modality: str, eval_dataset: BaseDataset, vlm_prompter: VLMPr
     # Run segmentation
     if config.debug:
         print("Debug mode enabled: Limiting evaluation dataset to 1 sample.")
-        eval_dataset = eval_dataset[:1]
-    for data in eval_dataset:
+        max_dataset_size = 1
+    data_count = 0
+    for data in eval_dataset and data_count < max_dataset_size:
         ego_video_path = data["ego_video_path"]
         grouped_results = vlm_prompter.prompt(ego_video_path)
         if len(grouped_results.keys()) != 2:
@@ -127,7 +128,7 @@ def evaluate(input_modality: str, eval_dataset: BaseDataset, vlm_prompter: VLMPr
                 "translation_error": trans_error
             }
             save_reconstruction_metrics(reconstruction_metrics, save_pcd_dir)
-
+        data_count += 1
 
 
 def main(config: omegaconf.DictConfig):
