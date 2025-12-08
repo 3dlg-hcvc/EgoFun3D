@@ -224,6 +224,7 @@ class DA3DReconstruction(BaseReconstruction):
                 print("depth_frame shape:", depth_frame.shape)
                 points_map = depth2xyz(depth_frame, intrinsics, cam_type="opencv")
                 cam_pose = cam2init @ np.linalg.inv(inv_extrinsics[frame_idx])
+                print("cam pose at frame", frame_idx, ":", cam_pose)
                 extrinsics.append(cam_pose)
                 ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
                 points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
