@@ -4,7 +4,7 @@ from torchvision.transforms.functional import pil_to_tensor
 import torch
 import os
 import shutil
-
+import cv2
 from moge.model.v2 import MoGeModel # Let's try MoGe-2
 
 from SpaTrackerV2.models.SpaTrackV2.models.vggt4track.utils.load_fn import preprocess_image
@@ -178,6 +178,22 @@ class DA3DReconstruction(BaseReconstruction):
         self.model = DepthAnything3.from_pretrained(model_path)
         self.model = self.model.to(device=device)
         self.device = device
+
+    def _resize_ixt(
+            self,
+            intrinsic: np.ndarray | None,
+            orig_w: int,
+            orig_h: int,
+            w: int,
+            h: int,
+        ) -> np.ndarray | None:
+        if intrinsic is None:
+            return None
+        K = intrinsic.copy()
+        # scale fx, cx by w ratio; fy, cy by h ratio
+        K[:1] *= w / float(orig_w)
+        K[1:2] *= h / float(orig_h)
+        return K
     
     def reconstruct(self, video_frame_list: List[PILImage.Image], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: List[np.ndarray] = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
         if intrinsics is not None and cam_pose_list is not None and depth_frame_list is not None:
@@ -190,24 +206,26 @@ class DA3DReconstruction(BaseReconstruction):
             outputs = self.model.inference(video_frame_list, intrinsics=intrinsics, extrinsics=inv_extrinsics)
             depth = outputs.depth # N, H, W
             depth_conf = outputs.conf # N, H, W depth confidence map
+            original_height, original_width = video_frame_list[0].height, video_frame_list[0].width
+            new_height, new_width = depth.shape[1], depth.shape[2]
             if inv_extrinsics is None:
                 inv_extrinsics = outputs.extrinsics
             if intrinsics is None:
-                intrinsics = outputs.intrinsics
+                intrinsics = [self._resize_ixt(outputs.intrinsics[i], new_width, new_height, original_width, original_height) for i in range(outputs.intrinsics.shape[0])]
             point_map_list = []
             extrinsics = []
             cam2init = init_extrinsics @ inv_extrinsics[0]
             for frame_idx in range(len(video_frame_list)):
                 depth_frame = depth[frame_idx]
-                new_intrinsics = outputs.intrinsics[frame_idx]
-                points_map = depth2xyz(depth_frame, new_intrinsics, cam_type="opencv")
+                depth_frame = cv2.resize(depth_frame, (original_width, original_height))
+                points_map = depth2xyz(depth_frame, intrinsics, cam_type="opencv")
                 cam_pose = cam2init @ np.linalg.inv(inv_extrinsics[frame_idx])
                 extrinsics.append(cam_pose)
                 ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
                 points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
                 points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
                 point_map_list.append(points_map)
-            return {"rgb": video_frame_list, "intrinsics": intrinsics[0], "new_intrinsics": outputs.intrinsics[0], "extrinsics": np.stack(extrinsics), "depth": depth, "points": np.stack(point_map_list), "points_mask": (depth_conf > 0.5)}
+            return {"rgb": video_frame_list, "intrinsics": intrinsics[0], "extrinsics": np.stack(extrinsics), "depth": depth, "points": np.stack(point_map_list), "points_mask": (depth_conf > 0.5)}
 
 
 def build_reconstruction_model(input_modality: str, recon_method: str, model_path: str = None, device: str = "cuda") -> BaseReconstruction:
