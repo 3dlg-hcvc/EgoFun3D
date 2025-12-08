@@ -15,12 +15,14 @@ from fusion.evaluate_reconstruction import save_reconstruction_metrics, evaluate
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, required=True, help='Path to the config file')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     return parser.parse_args()
 
 
 def evaluate(input_modality: str, eval_dataset: BaseDataset, vlm_prompter: VLMPrompter, refseg_model: SegZero, fusion_model: BaseFusion, reconstruction_model: BaseReconstruction, config: omegaconf.DictConfig, save_dir: str):
     # Run segmentation
-    if __debug__:
+    if config.debug:
+        print("Debug mode enabled: Limiting evaluation dataset to 1 sample.")
         eval_dataset = eval_dataset[:1]
     for data in eval_dataset:
         ego_video_path = data["ego_video_path"]
@@ -62,7 +64,7 @@ def evaluate(input_modality: str, eval_dataset: BaseDataset, vlm_prompter: VLMPr
                         input_depth = data["ego_video_depth_list"]
                     reconstruction_results = reconstruction_model.reconstruct(video_frame_list, init_extrinsics, input_intrinsics, input_extrinsics, input_depth)
             # run fusion
-            if __debug__:
+            if config.debug:
                 full_points = reconstruction_results["points"]
                 full_masks = reconstruction_results["points_mask"]
                 points_list = []
@@ -154,4 +156,5 @@ def main(config: omegaconf.DictConfig):
 if __name__ == "__main__":
     args = parse_args()
     config = omegaconf.OmegaConf.load(args.config)
+    config.update({"debug": args.debug})
     main(config)
