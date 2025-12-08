@@ -184,7 +184,8 @@ class DA3DReconstruction(BaseReconstruction):
             naive_recon = NaiveReconstruction()
             return naive_recon.reconstruct(video_frame_list, init_extrinsics, intrinsics, cam_pose_list, depth_frame_list)
         else:
-            extrinsics = np.stack(cam_pose_list) if cam_pose_list is not None else None
+            inv_cam_pose_list = [np.linalg.inv(cam_pose) for cam_pose in cam_pose_list] if cam_pose_list is not None else None
+            extrinsics = np.stack(inv_cam_pose_list) if inv_cam_pose_list is not None else None
             intrinsics = np.repeat(intrinsics[None, :, :], len(video_frame_list), axis=0) if intrinsics is not None else None
             outputs = self.model.inference(video_frame_list, intrinsics=intrinsics, extrinsics=extrinsics)
             depth = outputs.depth # N, H, W
