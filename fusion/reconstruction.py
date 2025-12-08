@@ -202,8 +202,8 @@ class DA3DReconstruction(BaseReconstruction):
         else:
             inv_cam_pose_list = [np.linalg.inv(cam_pose) for cam_pose in cam_pose_list] if cam_pose_list is not None else None
             inv_extrinsics = np.stack(inv_cam_pose_list) if inv_cam_pose_list is not None else None
-            intrinsics = np.repeat(intrinsics[None, :, :], len(video_frame_list), axis=0) if intrinsics is not None else None
-            outputs = self.model.inference(video_frame_list, intrinsics=intrinsics, extrinsics=inv_extrinsics)
+            intrinsics_list = np.repeat(intrinsics[None, :, :], len(video_frame_list), axis=0) if intrinsics is not None else None
+            outputs = self.model.inference(video_frame_list, intrinsics=intrinsics_list, extrinsics=inv_extrinsics)
             depth = outputs.depth # N, H, W
             depth_conf = outputs.conf # N, H, W depth confidence map
             original_height, original_width = video_frame_list[0].height, video_frame_list[0].width
