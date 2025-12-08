@@ -171,9 +171,9 @@ class iPhoneDataset(BaseDataset):
                     rgb_path_list.append(frame_path)
                     image = image.convert("RGB")
                     rgb_list.append(image)
-                    depth = np.load(ego_depth_path_list[frame_id])
+                    depth = np.load(ego_depth_path_list[frame_idx])
                     depth_list.append(depth)
-                    camera = {"intrinsics": intrinsics, "extrinsics": np.array(ego_camera_data[str(frame_id)])}
+                    camera = {"intrinsics": intrinsics, "extrinsics": np.array(ego_camera_data[str(frame_idx)])}
                     camera_list.append(camera)
                     seg_mask = np.load(ego_seg_path_list[frame_idx])
                     gt_receiver_mask = (seg_mask == 2)
