@@ -4,7 +4,7 @@ from torchvision.transforms.functional import pil_to_tensor
 import torch
 import os
 import shutil
-import cv2
+from scipy.ndimage import zoom
 from moge.model.v2 import MoGeModel # Let's try MoGe-2
 
 from SpaTrackerV2.models.SpaTrackV2.models.vggt4track.utils.load_fn import preprocess_image
@@ -208,16 +208,17 @@ class DA3DReconstruction(BaseReconstruction):
             depth_conf = outputs.conf # N, H, W depth confidence map
             original_height, original_width = video_frame_list[0].height, video_frame_list[0].width
             new_height, new_width = depth.shape[1], depth.shape[2]
+            zoom_factors = (original_height / new_height, original_width / new_width)
             if inv_extrinsics is None:
                 inv_extrinsics = outputs.extrinsics
             if intrinsics is None:
-                intrinsics = [self._resize_ixt(outputs.intrinsics[i], new_width, new_height, original_width, original_height) for i in range(outputs.intrinsics.shape[0])]
+                intrinsics = self._resize_ixt(outputs.intrinsics[0], new_width, new_height, original_width, original_height)
             point_map_list = []
             extrinsics = []
             cam2init = init_extrinsics @ inv_extrinsics[0]
             for frame_idx in range(len(video_frame_list)):
                 depth_frame = depth[frame_idx]
-                depth_frame = cv2.resize(depth_frame, (original_width, original_height))
+                depth_frame = zoom(depth_frame, zoom_factors)
                 points_map = depth2xyz(depth_frame, intrinsics, cam_type="opencv")
                 cam_pose = cam2init @ np.linalg.inv(inv_extrinsics[frame_idx])
                 extrinsics.append(cam_pose)
