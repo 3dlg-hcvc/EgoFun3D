@@ -185,26 +185,28 @@ class DA3DReconstruction(BaseReconstruction):
             return naive_recon.reconstruct(video_frame_list, init_extrinsics, intrinsics, cam_pose_list, depth_frame_list)
         else:
             inv_cam_pose_list = [np.linalg.inv(cam_pose) for cam_pose in cam_pose_list] if cam_pose_list is not None else None
-            extrinsics = np.stack(inv_cam_pose_list) if inv_cam_pose_list is not None else None
+            inv_extrinsics = np.stack(inv_cam_pose_list) if inv_cam_pose_list is not None else None
             intrinsics = np.repeat(intrinsics[None, :, :], len(video_frame_list), axis=0) if intrinsics is not None else None
-            outputs = self.model.inference(video_frame_list, intrinsics=intrinsics, extrinsics=extrinsics)
+            outputs = self.model.inference(video_frame_list, intrinsics=intrinsics, extrinsics=inv_extrinsics)
             depth = outputs.depth # N, H, W
             depth_conf = outputs.conf # N, H, W depth confidence map
-            if extrinsics is None:
-                extrinsics = outputs.extrinsics
+            if inv_extrinsics is None:
+                inv_extrinsics = outputs.extrinsics
             if intrinsics is None:
                 intrinsics = outputs.intrinsics
             point_map_list = []
-            cam2init = init_extrinsics @ np.linalg.inv(extrinsics[0])
+            extrinsics = []
+            cam2init = init_extrinsics @ inv_extrinsics[0]
             for frame_idx in range(len(video_frame_list)):
                 depth_frame = depth[frame_idx]
                 points_map = depth2xyz(depth_frame, intrinsics[frame_idx], cam_type="opencv")
-                cam_pose = cam2init @ extrinsics[frame_idx]
+                cam_pose = cam2init @ np.linalg.inv(inv_extrinsics[frame_idx])
+                extrinsics.append(cam_pose)
                 ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
                 points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
                 points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
                 point_map_list.append(points_map)
-            return {"rgb": video_frame_list, "intrinsics": intrinsics[0], "extrinsics": extrinsics, "depth": depth, "points": np.stack(point_map_list), "points_mask": (depth_conf > 0.5)}
+            return {"rgb": video_frame_list, "intrinsics": intrinsics[0], "extrinsics": np.stack(extrinsics), "depth": depth, "points": np.stack(point_map_list), "points_mask": (depth_conf > 0.5)}
 
 
 def build_reconstruction_model(input_modality: str, recon_method: str, model_path: str = None, device: str = "cuda") -> BaseReconstruction:

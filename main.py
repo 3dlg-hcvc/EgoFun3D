@@ -18,8 +18,10 @@ def parse_args():
     return parser.parse_args()
 
 
-def evaluate(input_modality: str, eval_dataset:BaseDataset, vlm_prompter: VLMPrompter, refseg_model: SegZero, fusion_model: BaseFusion, reconstruction_model: BaseReconstruction, config: omegaconf.DictConfig, save_dir: str):
+def evaluate(input_modality: str, eval_dataset: BaseDataset, vlm_prompter: VLMPrompter, refseg_model: SegZero, fusion_model: BaseFusion, reconstruction_model: BaseReconstruction, config: omegaconf.DictConfig, save_dir: str):
     # Run segmentation
+    if __debug__:
+        eval_dataset = eval_dataset[:1]
     for data in eval_dataset:
         ego_video_path = data["ego_video_path"]
         grouped_results = vlm_prompter.prompt(ego_video_path)
@@ -60,6 +62,17 @@ def evaluate(input_modality: str, eval_dataset:BaseDataset, vlm_prompter: VLMPro
                         input_depth = data["ego_video_depth_list"]
                     reconstruction_results = reconstruction_model.reconstruct(video_frame_list, init_extrinsics, input_intrinsics, input_extrinsics, input_depth)
             # run fusion
+            if __debug__:
+                full_points = reconstruction_results["points"]
+                full_masks = reconstruction_results["points_mask"]
+                points_list = []
+                for i, (points, mask) in enumerate(zip(full_points, full_masks)):
+                    part_points = points[mask]
+                    points_list.append(part_points)
+                save_pcd_dir_debug = f"{save_dir}/{data['scene_name']}/{data['seg_id']}/debug_full_reconstruction"
+                if not os.path.exists(save_pcd_dir_debug):
+                    os.makedirs(save_pcd_dir_debug)
+                save_pcd(np.concatenate(points_list, axis=0), f"{save_pcd_dir_debug}/{role}_full_reconstruction.ply")
             points_mask_list = reconstruction_results["points_mask"]
             valid_mask_list = []
             for i in valid_frame_ids:
