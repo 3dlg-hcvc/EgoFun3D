@@ -216,9 +216,12 @@ class DA3DReconstruction(BaseReconstruction):
             point_map_list = []
             extrinsics = []
             cam2init = init_extrinsics @ inv_extrinsics[0]
+            print("intrinsics:", intrinsics)
+            print("cam init:", cam2init)
             for frame_idx in range(len(video_frame_list)):
-                depth_frame = depth[frame_idx]
-                depth_frame = zoom(depth_frame, zoom_factors)
+                # depth_frame = depth[frame_idx]
+                depth_frame = zoom(depth[frame_idx], zoom_factors)
+                print("depth_frame shape:", depth_frame.shape)
                 points_map = depth2xyz(depth_frame, intrinsics, cam_type="opencv")
                 cam_pose = cam2init @ np.linalg.inv(inv_extrinsics[frame_idx])
                 extrinsics.append(cam_pose)

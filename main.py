@@ -72,8 +72,8 @@ def evaluate(input_modality: str, eval_dataset: BaseDataset, vlm_prompter: VLMPr
                 full_masks = reconstruction_results["points_mask"]
                 points_list = []
                 for i, (points, mask) in enumerate(zip(full_points, full_masks)):
-                    part_points = points[mask]
-                    points_list.append(part_points)
+                    # part_points = points[mask]
+                    points_list.append(points.reshape(-1, 3))
                 save_pcd_dir_debug = f"{save_dir}/{data['scene_name']}/{data['seg_id']}/debug_full_reconstruction"
                 if not os.path.exists(save_pcd_dir_debug):
                     os.makedirs(save_pcd_dir_debug)
