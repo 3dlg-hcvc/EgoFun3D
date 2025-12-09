@@ -201,7 +201,7 @@ class DA3DReconstruction(BaseReconstruction):
         prediction: Prediction,
         sky_mask: np.ndarray,
         conf_thresh: float = 1.05,
-        conf_thresh_percentile: float = 10.0,
+        conf_thresh_percentile: float = 40.0,
         ensure_thresh_percentile: float = 90.0,
     ):
         if sky_mask is not None and (~sky_mask).sum() > 10:
