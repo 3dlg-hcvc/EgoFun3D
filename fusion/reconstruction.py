@@ -14,6 +14,7 @@ from vipe.vipe.utils.io import read_depth_artifacts, read_intrinsics_artifacts, 
 from vipe.vipe.utils.depth import reliable_depth_mask_range
 
 from depth_anything_3.api import DepthAnything3
+from depth_anything_3.specs import Prediction
 
 from utils.segment_utils import depth2xyz
 
@@ -195,6 +196,23 @@ class DA3DReconstruction(BaseReconstruction):
         K[1:2] *= h / float(orig_h)
         return K
     
+    def get_conf_thresh(
+        self,
+        prediction: Prediction,
+        sky_mask: np.ndarray,
+        conf_thresh: float = 1.05,
+        conf_thresh_percentile: float = 10.0,
+        ensure_thresh_percentile: float = 90.0,
+    ):
+        if sky_mask is not None and (~sky_mask).sum() > 10:
+            conf_pixels = prediction.conf[~sky_mask]
+        else:
+            conf_pixels = prediction.conf
+        lower = np.percentile(conf_pixels, conf_thresh_percentile)
+        upper = np.percentile(conf_pixels, ensure_thresh_percentile)
+        conf_thresh = min(max(conf_thresh, lower), upper)
+        return conf_thresh
+    
     def reconstruct(self, video_frame_list: List[PILImage.Image], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: List[np.ndarray] = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
         if intrinsics is not None and cam_pose_list is not None and depth_frame_list is not None:
             naive_recon = NaiveReconstruction()
@@ -217,11 +235,13 @@ class DA3DReconstruction(BaseReconstruction):
             extrinsics = []
             cam2init = init_extrinsics @ inv_extrinsics[0]
             depth_conf_list = []
+            depth_frame_list = []
+            conf_thresh = self.get_conf_thresh(outputs, getattr(outputs, "sky_mask", None),)
             for frame_idx in range(len(video_frame_list)):
-                # depth_frame = depth[frame_idx]
                 depth_frame = zoom(depth[frame_idx], zoom_factors)
                 depth_conf_frame = zoom(depth_conf[frame_idx], zoom_factors)
                 depth_conf_list.append(depth_conf_frame)
+                depth_frame_list.append(depth_frame)
                 points_map = depth2xyz(depth_frame, intrinsics, cam_type="opencv")
                 cam_pose = cam2init @ np.linalg.inv(inv_extrinsics[frame_idx])
                 extrinsics.append(cam_pose)
@@ -229,7 +249,7 @@ class DA3DReconstruction(BaseReconstruction):
                 points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
                 points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
                 point_map_list.append(points_map)
-            return {"rgb": video_frame_list, "intrinsics": intrinsics[0], "extrinsics": np.stack(extrinsics), "depth": depth, "points": np.stack(point_map_list), "points_mask": np.stack(depth_conf_list) > 0.5}
+            return {"rgb": video_frame_list, "intrinsics": intrinsics[0], "extrinsics": np.stack(extrinsics), "depth": np.stack(depth_frame_list), "points": np.stack(point_map_list), "points_mask": np.stack(depth_conf_list) > conf_thresh}
 
 
 def build_reconstruction_model(input_modality: str, recon_method: str, model_path: str = None, device: str = "cuda") -> BaseReconstruction:
