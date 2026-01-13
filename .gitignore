@@ -3,3 +3,9 @@ SingleObj/
 outputs/
 __pycache__/
 */__pycache__/
+egoexo_mesh/
+cooking_simple_keysteps_review_*/
+cooking_scene_geometry/
+cooking_gt_point_clouds/
+cooking_additional_keysteps_review_*/
+cooking_geometry_instance_video_map/
