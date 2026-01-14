@@ -10,7 +10,9 @@ input_modality: "rgb+extrinsics+intrinsics+depth"
 
 vlm:
   role: "video_narrator"
+  vlm_type: "gemini" # can be "gemini", "gpt", or "molmo"
   vlm_model: "gemini-2.5-flash"
+  prompt_type: "text" # can be "text" or "points"
   prompt_template: "This is a video. Analyze this video and answer the following questions: \
                     1. Which part of the object receives human action? \
                     2. Which part of the object reacts to human action? \
@@ -22,7 +24,7 @@ vlm:
   max_query: 10
 
 segmentation:
-  model: "SegZero"
+  model: "SegZero" # can be "SegZero" or "Sa2VA"
   reasoning_model_path: "Seg-Zero/pretrained_models/VisionReasoner-7B"
   segmentation_model_path: "facebook/sam2.1-hiera-large"
   device: "cuda"

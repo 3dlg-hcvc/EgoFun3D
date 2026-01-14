@@ -5,7 +5,7 @@ import numpy as np
 import os
 from dataset.dataset import BaseDataset, build_dataset
 from segmentation.prompt_vlm import VLMPrompter, build_vlm_prompter
-from segmentation.seg_zero import SegZero, build_refseg_model
+from segmentation.ref_seg import SegZero, build_refseg_model
 from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion, TrackingFusion
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction
 from segmentation.evaluate_segmentation import compute_part_iou_video, save_segmentation_video, save_vlm_output

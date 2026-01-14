@@ -1,6 +1,7 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 from transformers import Qwen2VLForConditionalGeneration, Qwen2_5_VLForConditionalGeneration, AutoProcessor
+from transformers import AutoTokenizer, AutoModel
 from qwen_vl_utils import process_vision_info
 import torch
 import json
@@ -142,7 +143,7 @@ class SegZero:
         return mask_all, answer_dict
 
 
-    def segment_video(self, video_frame_list: list[PILImage.Image], part_description: str) -> Tuple[List[np.ndarray], List[dict], List[int]]:
+    def segment_video(self, video_frame_list: List[PILImage.Image], part_description: str) -> Tuple[List[np.ndarray], List[dict], List[int]]:
         mask_list = []
         answer_dict_list = []
         valid_frame_ids = []
@@ -168,6 +169,86 @@ class SegZero:
         return mask_list, answer_dict_list, valid_frame_ids
 
 
+def get_rank_and_world_size():
+    rank = int(os.environ.get('RANK', 0))
+    world_size = int(os.environ.get('WORLD_SIZE', 1))
+    return rank, world_size
+
+def split_model(model_name):
+    import math
+    device_map = {}
+    num_gpus = torch.cuda.device_count()
+    rank, world_size = get_rank_and_world_size()
+    num_gpus = num_gpus // world_size
+
+    num_layers = {'Sa2VA-8B': 32, 'Sa2VA-26B': 48,
+                  'Sa2VA-38B': 64, 'Sa2VA-78B': 80}[model_name]
+    # Since the first GPU will be used for ViT, treat it as 0.8 GPU.
+    num_layers_per_gpu = math.ceil(num_layers / (num_gpus - 0.2))
+    num_layers_per_gpu = [num_layers_per_gpu] * num_gpus
+    num_layers_per_gpu[0] = math.ceil(num_layers_per_gpu[0] * 0.8)
+    layer_cnt = 0
+    for i, num_layer in enumerate(num_layers_per_gpu):
+        for j in range(num_layer):
+            device_map[f'language_model.model.layers.{layer_cnt}'] = rank + world_size * i
+            layer_cnt += 1
+    device_map['vision_model'] = rank
+    device_map['mlp1'] = rank
+    device_map['language_model.model.tok_embeddings'] = rank
+    device_map['language_model.model.embed_tokens'] = rank
+    device_map['language_model.output'] = rank
+    device_map['language_model.model.norm'] = rank
+    device_map['language_model.lm_head'] = rank
+    device_map[f'language_model.model.layers.{num_layers - 1}'] = rank
+    device_map['grounding_encoder'] = rank
+    device_map['text_hidden_fcs'] = rank
+    return device_map
+
+class Sa2VA:
+    def __init__(self, model_name: str, segment_judge_config: dict,):
+        # load the model and tokenizer
+        sa2va_model = model_name.split("/")[-1]
+        device_map = split_model(sa2va_model)
+        self.model = AutoModel.from_pretrained(
+            model_name,
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
+            use_flash_attn=True,
+            trust_remote_code=True,
+            device_map=device_map,
+        ).eval()
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, use_fast=False)
+
+        self.seg_judge = build_vlm_prompter(segment_judge_config)
+    
+    def segment_video(self, video_frame_path_list: List[str], part_description: str) -> Tuple[List[np.ndarray], List[dict], List[int]]:
+        # for video chat with segmentation mask output
+        text_prompts = f"<image>Please segment the part in the following description: {part_description}."
+        input_dict = {
+            'video': video_frame_path_list,
+            'text': text_prompts,
+            'past_text': '',
+            'mask_prompts': None,
+            'tokenizer': self.tokenizer,
+        }
+        return_dict = self.model.predict_forward(**input_dict)
+        answer = return_dict["prediction"] # the text format answer
+        masks = return_dict['prediction_masks']  # segmentation masks, list(np.array(n_frames, h, w), ...)
+        answer_dict_list = []
+        mask_list = []
+        valid_frame_ids = []
+        for frame_idx in range(len(video_frame_path_list)):
+            frame = PILImage.open(video_frame_path_list[frame_idx]).convert("RGB")
+            vlm_judge_response = self.seg_judge.prompt(frame, masks[frame_idx], part_description)
+            answer_dict = {"answer": answer}
+            answer_dict["vlm_judge"] = vlm_judge_response if len(vlm_judge_response.keys()) == 2 else {}
+            if len(vlm_judge_response.keys()) == 2 and vlm_judge_response["answer"] == "yes":
+                valid_frame_ids.append(frame_idx)
+            answer_dict_list.append(answer_dict)
+            mask_list.append(masks[frame_idx])
+        return mask_list, answer_dict_list, valid_frame_ids
+    
+
 def build_refseg_model(segmentation_config: dict) -> SegZero:
     if segmentation_config.model == "SegZero":
         return SegZero(
@@ -176,6 +257,11 @@ def build_refseg_model(segmentation_config: dict) -> SegZero:
             segment_judge_config=segmentation_config["vlm_judge"],
             max_query=segmentation_config["max_query"],
             device=segmentation_config["device"]
+        )
+    elif segmentation_config.model == "Sa2VA":
+        return Sa2VA(
+            model_name=segmentation_config["reasoning_model_path"],
+            segment_judge_config=segmentation_config["vlm_judge"],
         )
     else:
         raise ValueError(f"Unsupported segmentation model: {segmentation_config.model}")

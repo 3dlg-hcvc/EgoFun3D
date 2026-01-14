@@ -133,6 +133,14 @@ class MolmoVideoNarrator(VLMPrompter):
             device_map="auto"
         )
 
+    def prompt(self, video_path: str, prompt_type: str = "text") -> dict:
+        if prompt_type == "text":
+            return self.prompt_text(video_path)
+        elif prompt_type == "points":
+            return self.prompt_points(video_path)
+        else:
+            raise ValueError(f"Unknown prompt type: {prompt_type}")
+
     def prompt_text(self, video_path: str) -> dict:
         # process the video and text
         messages = [
@@ -185,7 +193,7 @@ class MolmoVideoNarrator(VLMPrompter):
             print("Warning: Unexpected number of parts found in VLM output.")
         return grouped
     
-    def prompt_points(self, video_path: str) -> dict:
+    def prompt_points(self, video_path: str) -> list:
         COORD_REGEX = re.compile(rf"<(?:points|tracks).*? coords=\"([0-9\t:;, .]+)\"/?>")
         FRAME_REGEX = re.compile(rf"(?:^|\t|:|,|;)([0-9\.]+) ([0-9\. ]+)")
         POINTS_REGEX = re.compile(r"([0-9]+) ([0-9]{3,4}) ([0-9]{3,4})")
@@ -319,11 +327,26 @@ class VLMSegJudge(VLMPrompter):
 
 def build_vlm_prompter(vlm_config: dict) -> VLMPrompter:
     if vlm_config["role"] == "video_narrator":
-        return VLMVideoNarrator(
-            vlm_model=vlm_config.vlm_model,
-            prompt_template=vlm_config.prompt_template,
-            max_query=vlm_config.max_query
-        )
+        if vlm_config["vlm_type"] == "gemini":
+            return GeminiVideoNarrator(
+                vlm_model=vlm_config.vlm_model,
+                prompt_template=vlm_config.prompt_template,
+                max_query=vlm_config.max_query
+            )
+        elif vlm_config["vlm_type"] == "gpt":
+            return GPTVideoNarrator(
+                vlm_model=vlm_config.vlm_model,
+                prompt_template=vlm_config.prompt_template,
+                max_query=vlm_config.max_query
+            )
+        elif vlm_config["vlm_type"] == "molmo":
+            return MolmoVideoNarrator(
+                vlm_model=vlm_config.vlm_model,
+                prompt_template=vlm_config.prompt_template,
+                max_query=vlm_config.max_query
+            )
+        else:
+            raise ValueError(f"Unknown VLM type: {vlm_config['vlm_type']}")
     elif vlm_config["role"] == "segmentation_judge":
         return VLMSegJudge(
             vlm_model=vlm_config.vlm_model,
