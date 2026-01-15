@@ -5,7 +5,7 @@ import numpy as np
 import os
 from dataset.dataset import BaseDataset, build_dataset
 from segmentation.prompt_vlm import VLMPrompter, build_vlm_prompter
-from segmentation.ref_seg import SegZero, build_refseg_model
+from segmentation.ref_seg import RefSeg, build_refseg_model
 from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion, TrackingFusion
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction
 from segmentation.evaluate_segmentation import compute_part_iou_video, save_segmentation_video, save_vlm_output
@@ -19,7 +19,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def evaluate(input_modality: str, eval_dataset: BaseDataset, vlm_prompter: VLMPrompter, refseg_model: SegZero, fusion_model: BaseFusion, reconstruction_model: BaseReconstruction, config: omegaconf.DictConfig, save_dir: str):
+def evaluate(input_modality: str, eval_dataset: BaseDataset, vlm_prompter: VLMPrompter, refseg_model: RefSeg, fusion_model: BaseFusion, reconstruction_model: BaseReconstruction, config: omegaconf.DictConfig, save_dir: str):
     # Run segmentation
     if config.debug:
         print("Debug mode enabled: Limiting evaluation dataset to 1 sample.")

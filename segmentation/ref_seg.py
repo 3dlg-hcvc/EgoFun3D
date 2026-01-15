@@ -14,7 +14,15 @@ from segmentation.prompt_vlm import build_vlm_prompter
 from typing import List, Tuple
 
 
-class SegZero:
+class RefSeg:
+    def __init__(self):
+        pass
+
+    def segment_video(self, video_frame_list: List[PILImage.Image] | List[str], part_description: str) -> Tuple[List[np.ndarray], List[dict], List[int]]:
+        pass
+
+
+class SegZero(RefSeg):
     def __init__(self, reasoning_model_path: str, segmentation_model_path: str, segment_judge_config: dict, max_query: int = 10, device: str = "cuda"):
         self.device = device
         #We recommend enabling flash_attention_2 for better acceleration and memory saving, especially in multi-image and video scenarios.
@@ -204,7 +212,7 @@ def split_model(model_name):
     device_map['text_hidden_fcs'] = rank
     return device_map
 
-class Sa2VA:
+class Sa2VA(RefSeg):
     def __init__(self, model_name: str, segment_judge_config: dict,):
         # load the model and tokenizer
         sa2va_model = model_name.split("/")[-1]
@@ -249,7 +257,7 @@ class Sa2VA:
         return mask_list, answer_dict_list, valid_frame_ids
     
 
-def build_refseg_model(segmentation_config: dict) -> SegZero:
+def build_refseg_model(segmentation_config: dict) -> RefSeg:
     if segmentation_config.model == "SegZero":
         return SegZero(
             reasoning_model_path=segmentation_config["reasoning_model_path"],
