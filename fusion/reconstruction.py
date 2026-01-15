@@ -16,7 +16,7 @@ from vipe.vipe.utils.depth import reliable_depth_mask_range
 from depth_anything_3.api import DepthAnything3
 from depth_anything_3.specs import Prediction
 
-from utils.segment_utils import depth2xyz
+from utils.reconstruction_utils import depth2xyz
 
 from typing import List, Tuple, Dict
 

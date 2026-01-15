@@ -8,7 +8,7 @@ sys.path.append("SpaTrackerV2/")
 from SpaTrackerV2.models.SpaTrackV2.models.predictor import Predictor
 from SpaTrackerV2.models.SpaTrackV2.models.utils import get_points_on_a_grid
 
-from utils.segment_utils import estimate_se3_transformation
+from utils.reconstruction_utils import estimate_se3_transformation
 
 from typing import Tuple, List
 
