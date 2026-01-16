@@ -139,3 +139,6 @@ After reconstruct point maps of the video, we need to fuse point cloud at differ
 ### output
 * fused_part_pcd (numpy.ndarray): part point cloud
 * transformation_list (List[numpy.ndarray]): list of part rigid transformation matrics
+
+## Third Party Module
+I put all third party module under `third_party/` folder and add them in the `.gitmodules`. Please do so for other third party repos.
