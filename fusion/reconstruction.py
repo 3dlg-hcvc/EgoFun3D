@@ -7,11 +7,11 @@ import shutil
 from scipy.ndimage import zoom
 from moge.model.v2 import MoGeModel # Let's try MoGe-2
 
-from SpaTrackerV2.models.SpaTrackV2.models.vggt4track.utils.load_fn import preprocess_image
-from SpaTrackerV2.models.SpaTrackV2.models.vggt4track.models.vggt_moe import VGGT4Track
+from third_party.SpaTrackerV2.models.SpaTrackV2.models.vggt4track.utils.load_fn import preprocess_image
+from third_party.SpaTrackerV2.models.SpaTrackV2.models.vggt4track.models.vggt_moe import VGGT4Track
 
-from vipe.vipe.utils.io import read_depth_artifacts, read_intrinsics_artifacts, read_pose_artifacts
-from vipe.vipe.utils.depth import reliable_depth_mask_range
+from third_party.vipe.vipe.utils.io import read_depth_artifacts, read_intrinsics_artifacts, read_pose_artifacts
+from third_party.vipe.vipe.utils.depth import reliable_depth_mask_range
 
 from depth_anything_3.api import DepthAnything3
 from depth_anything_3.specs import Prediction

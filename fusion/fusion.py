@@ -4,9 +4,9 @@ from torchvision.transforms.functional import pil_to_tensor
 import torch
 from romatch import roma_indoor
 import sys
-sys.path.append("SpaTrackerV2/")
-from SpaTrackerV2.models.SpaTrackV2.models.predictor import Predictor
-from SpaTrackerV2.models.SpaTrackV2.models.utils import get_points_on_a_grid
+sys.path.append("third_party/SpaTrackerV2/")
+from third_party.SpaTrackerV2.models.SpaTrackV2.models.predictor import Predictor
+from third_party.SpaTrackerV2.models.SpaTrackV2.models.utils import get_points_on_a_grid
 
 from utils.reconstruction_utils import estimate_se3_transformation
 

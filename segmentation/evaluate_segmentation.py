@@ -1,7 +1,4 @@
 import numpy as np
-import torch
-from pytorch3d.loss import chamfer_distance
-import open3d as o3d
 import json
 import matplotlib.pyplot as plt
 from PIL import Image as PILImage
