@@ -4,3 +4,6 @@
 [submodule "third_party/vipe"]
 	path = third_party/vipe
 	url = git@github.com:nv-tlabs/vipe.git
+[submodule "third_party/SpaTrackerV2"]
+	path = third_party/SpaTrackerV2
+	url = git@github.com:willipwk/SpaTrackerV2.git
