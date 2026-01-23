@@ -29,7 +29,7 @@ Currently I have implemented two datasets: OpenFunGraph and iPhone dataset. All 
 
 - [x] OpenFunGraph dataset
 - [x] iPhone dataset (data collected by ourselves)
-- [ ] Ego-Exo4D dataset
+- [x] Ego-Exo4D dataset
 
 ### input:
 * root_path (str): path to the root folder of the dataset
@@ -38,17 +38,20 @@ Currently I have implemented two datasets: OpenFunGraph and iPhone dataset. All 
 ### output data sample format:
 ```python
 {
-    "func_type": func_type, # str, physics function type like geometry, illumination, etc.
-    "scene_name": scene_name, # str, scene name
-    "seg_id": seg_id, # str, video clip id in the scene
-    "ego_video_path": ego_video_path, # str, mp4 file to the video clip
-    "ego_video_rgb_list": rgb_list, # List[PIL.Image], list of video frames in PIL format
-    "ego_video_rgb_path_list": rgb_path_list, # List[str], list of video frame paths
-    "ego_video_depth_list": depth_list, # List[numpy.ndarray], list of depth maps
-    "ego_video_camera_list": camera_list, # List[Dict[str, numpy.ndarray]], list of camera parameters, {"intrinsics": 3x3 intrinsic matrix, "extrinsics": 4x4 extrinsic matrix}
-    "gt_receiver_mask_list": gt_receiver_mask_list, # List[numpy.ndarray] 2D masks for receiver
-    "gt_effector_mask_list": gt_effector_mask_list, # List[numpy.ndarray] 2D masks for effector
-    "gt_pcd_annotation": gt_pcd_annotation # Dict[str, str | Dict[str, str, numpy.ndarray]], point cloud annotation {"receiver": {"part_name": name, "part_pcd": point cloud}, "effector": {"part_name": name, "part_pcd": point cloud}, "relation": language description of relation}
+    "video_name": video_name, # str, name of the video, unique
+    "video_path": video_path, # str, mp4 file path
+    "rgb_list": rgb_list, # List[PIL.Image], list of video frames in PIL format
+    "rgb_path_list": rgb_path_list, # List[str], list of video frame paths
+    "receiver_mask_list": receiver_mask_list, # List[numpy.ndarray] 2D masks for receiver
+    "effector_mask_list": effector_mask_list, # List[numpy.ndarray] 2D masks for effector
+    "object_mask_list": object_mask_list, # List[numpy.ndarray] 2D masks for whole object
+    "receiver_name": receiver_name, # str, name of receiver
+    "effector_name": effector_name, # str, name of effector
+    "object_name": object_name, # str, name of object
+    "geometry_data": geometry_data # Dict[str, str | Dict[str, str, numpy.ndarray]], point cloud annotation {"receiver": {"part_pcd": point cloud, "pid": pid}, "effector": {"part_pcd": point cloud, "pid": pid}, "relation": language description of relation}
+    "receiver_articulation": receiver_articulation, # dict, contains joint type, joint axis, joint origin, range
+    "effector_articulation": effector_articulation, # dict same as above, can be None, meaning no associated articulation structure
+    "function_annotation": function_annotation # dict in format {"physics": geometry / illumination ... , "func": linear / step ...}
 }
 ```
 
