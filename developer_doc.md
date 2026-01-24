@@ -42,6 +42,8 @@ Currently I have implemented two datasets: OpenFunGraph and iPhone dataset. All 
     "video_path": video_path, # str, mp4 file path
     "rgb_list": rgb_list, # List[PIL.Image], list of video frames in PIL format
     "rgb_path_list": rgb_path_list, # List[str], list of video frame paths
+    "camera_extrinsics": camera_extrinsics, # numpy.ndarray, Nx4x4 matrix storing camera to world transformation
+    "camera_intrinsics": camera_intrinsics, # numpy.ndarray, 3x3 matrix storing undistorted camera intrinsics
     "receiver_mask_list": receiver_mask_list, # List[numpy.ndarray] 2D masks for receiver
     "effector_mask_list": effector_mask_list, # List[numpy.ndarray] 2D masks for effector
     "object_mask_list": object_mask_list, # List[numpy.ndarray] 2D masks for whole object

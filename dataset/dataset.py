@@ -256,6 +256,13 @@ class UniformDataset(BaseDataset):
                 image = PILImage.open(frame_path)
                 image = image.convert("RGB")
                 rgb_list.append(image)
+
+            camera_extrinsics_path = os.path.join(root_path, video_dict["camera_extrinsics_path"])
+            camera_extrinsics = np.load(camera_extrinsics_path)  # (N, 4, 4)
+            camera_intrinsics_path = os.path.join(root_path, video_dict["camera_intrinsics_path"])
+            with open(camera_intrinsics_path, "r") as f:
+                camera_intrinsics_data = json.load(f)
+            camera_intrinsics = np.array(camera_intrinsics_data["undistorted_intrinsics"])
             
             # 2d masks
             mask_path = os.path.join(root_path, video_dict["video_mask_path"])
@@ -310,6 +317,8 @@ class UniformDataset(BaseDataset):
                 "video_path": video_path,
                 "rgb_list": rgb_list,
                 "rgb_path_list": rgb_path_list,
+                "camera_extrinsics": camera_extrinsics,
+                "camera_intrinsics": camera_intrinsics,
                 "receiver_mask_list": receiver_mask_list,
                 "effector_mask_list": effector_mask_list,
                 "object_mask_list": object_mask_list,
