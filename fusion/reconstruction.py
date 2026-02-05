@@ -234,6 +234,13 @@ class DA3DReconstruction(BaseReconstruction):
             zoom_factors = (original_height / new_height, original_width / new_width)
             if inv_extrinsics is None:
                 inv_extrinsics = outputs.extrinsics
+                inv_extrinsics_4x4 = []
+                for i in range(len(video_frame_list)):
+                    pose_4x4 = np.eye(4)
+                    pose_4x4[:3, :3] = inv_extrinsics[i][:3, :3]
+                    pose_4x4[:3, 3] = inv_extrinsics[i][:3, 3]
+                    inv_extrinsics_4x4.append(pose_4x4)
+                inv_extrinsics = np.stack(inv_extrinsics_4x4)
             if intrinsics is None:
                 intrinsics = self._resize_ixt(outputs.intrinsics[0], new_width, new_height, original_width, original_height)
             point_map_list = []
