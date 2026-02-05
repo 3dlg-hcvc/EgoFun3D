@@ -1,11 +1,14 @@
-name: "default"
+name: "test-eval-reconstruction"
 
 dataset:
-  name: "OpenFunGraph"
-  root_path: "./FunGraph3D"
-  meta_file: "./FunGraph3D/test_clips.json"
+  name: "Uniform"
+  root_path: "./full_dataset"
+  meta_file: "./full_dataset/dataset_new_metadata5.json"
+  image_type: "cropped"  # can be "undistorted" or "cropped"
+  sample_strategy: "fix_size"  # can be "fix_size" or "all"
+  sample_num: 20  # used when sample_strategy is "fix_size"
 
-input_modality: "rgb+extrinsics+intrinsics+depth"
+input_modality: "rgb+extrinsics+intrinsics"
 # Options: "rgb+extrinsics+intrinsics", "rgb+extrinsics+intrinsics+depth", "rgb+intrinsics", "rgb"
 
 vlm:
@@ -42,7 +45,7 @@ segmentation:
     max_query: 3
 
 fusion:
-  fusion_method: "tracking"
+  fusion_method: "feature_matching"
   model_path: "Yuxihenry/SpatialTrackerV2-Offline"
   device: "cuda"
   vo_points: 756
@@ -51,8 +54,8 @@ fusion:
 # tracking model path: "Yuxihenry/SpatialTrackerV2-Offline"
 
 reconstruction:
-  recon_method: "spatracker"
-  model_path: "Yuxihenry/SpatialTrackerV2_Front"
+  recon_method: "da3"
+  model_path: "depth-anything/DA3NESTED-GIANT-LARGE-1.1"
   device: "cuda"
 # Options: "naive", "moge", "spatracker", "vipe", "da3"
 # reconstruction model path: "Ruicheng/moge-2-vitl-normal", "Yuxihenry/SpatialTrackerV2_Front", "depth-anything/DA3NESTED-GIANT-LARGE"
