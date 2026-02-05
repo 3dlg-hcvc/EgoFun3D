@@ -2,6 +2,8 @@ import argparse
 import omegaconf
 from datetime import datetime
 import numpy as np
+import random
+import torch
 import os
 from torch.utils.data import DataLoader
 from dataset.dataset import Dataset, build_dataset
@@ -15,6 +17,13 @@ def parse_args():
     parser.add_argument('--config', type=str, required=True, help='Path to the config file')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     return parser.parse_args()
+
+
+def set_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 def identity_collate(batch):
@@ -46,7 +55,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 init_extrinsics = data["camera_extrinsics"][0]
                 if isinstance(reconstruction_model, ViPEReconstruction):
                     video_dir = os.path.dirname(data["rgb_path_list"][0])
-                    reconstruction_results = reconstruction_model.reconstruct(video_dir, init_extrinsics)
+                    reconstruction_results = reconstruction_model.reconstruct(video_dir, init_extrinsics, data["sample_indices"])
                 else:
                     input_intrinsics = None
                     input_extrinsics = None
@@ -116,6 +125,8 @@ def main(config: omegaconf.DictConfig):
 
     with open(f"{save_dir}/config.yaml", "w") as f:
         omegaconf.OmegaConf.save(config, f)
+
+    set_seed(config.seed)
 
     eval_dataset = build_dataset(config.dataset)
     eval_dataloader = DataLoader(eval_dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=identity_collate)

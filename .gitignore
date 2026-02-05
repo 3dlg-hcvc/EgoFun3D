@@ -10,3 +10,7 @@ cooking_gt_point_clouds/
 cooking_additional_keysteps_review_*/
 cooking_geometry_instance_video_map/
 full_dataset/
+egoexo_generate_mesh/
+egoexo_pcd/
+recentered_output/
+tmp_rough_pcds/

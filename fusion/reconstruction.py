@@ -136,11 +136,11 @@ class SpatrackerReconstruction(BaseReconstruction):
     
 
 class ViPEReconstruction(BaseReconstruction):
-    def reconstruct(self, video_dir: str, init_extrinsics: np.ndarray) -> Dict[str, np.ndarray]:
+    def reconstruct(self, video_dir: str, init_extrinsics: np.ndarray, sample_indices: List[int]) -> Dict[str, np.ndarray]:
         tmp_dir = "./tmp_vipe_reconstruction"
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir)
-        os.system(f"vipe infer --image-dir {video_dir} --output {tmp_dir}")
+        os.system(f"vipe infer --image-dir {video_dir} --output {tmp_dir} --pipeline dav3")
         
         base_name = os.path.basename(video_dir)
         depth_zip_file = os.path.join(tmp_dir, "depth", f"{base_name}.zip")
@@ -172,7 +172,11 @@ class ViPEReconstruction(BaseReconstruction):
             points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
             point_map_list.append(points_map)
             cam_pose_list.append(cam_pose)
-        return {"intrinsics": intrinsics, "extrinsics": np.stack(cam_pose_list), "depth": np.stack(depth_frame_list), "points": np.stack(point_map_list), "points_mask": np.stack(depth_mask_list)}
+        sample_cam_pose_list = [cam_pose_list[i] for i in sample_indices]
+        sample_depth_frame_list = [depth_frame_list[i] for i in sample_indices]
+        sample_point_map_list = [point_map_list[i] for i in sample_indices]
+        sample_depth_mask_list = [depth_mask_list[i] for i in sample_indices]
+        return {"intrinsics": intrinsics, "extrinsics": np.stack(sample_cam_pose_list), "depth": np.stack(sample_depth_frame_list), "points": np.stack(sample_point_map_list), "points_mask": np.stack(sample_depth_mask_list)}
     
 
 class DA3DReconstruction(BaseReconstruction):

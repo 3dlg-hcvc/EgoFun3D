@@ -1,10 +1,11 @@
-name: "test-eval-reconstruction"
+name: "test-vipe-reconstruction"
+seed: 42
 
 dataset:
   name: "Uniform"
   root_path: "./full_dataset"
   meta_file: "./full_dataset/dataset_new_metadata5.json"
-  image_type: "cropped"  # can be "undistorted" or "cropped"
+  image_type: "undistorted"  # can be "undistorted" or "cropped"
   sample_strategy: "fix_size"  # can be "fix_size" or "all"
   sample_num: 20  # used when sample_strategy is "fix_size"
 
@@ -54,7 +55,7 @@ fusion:
 # tracking model path: "Yuxihenry/SpatialTrackerV2-Offline"
 
 reconstruction:
-  recon_method: "da3"
+  recon_method: "vipe"
   model_path: "depth-anything/DA3NESTED-GIANT-LARGE-1.1"
   device: "cuda"
 # Options: "naive", "moge", "spatracker", "vipe", "da3"
