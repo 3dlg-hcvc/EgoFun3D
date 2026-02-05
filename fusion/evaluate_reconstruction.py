@@ -66,30 +66,26 @@ def save_pcd(pcd: np.ndarray, save_path: str):
     o3d.io.write_point_cloud(save_path, pcd_o3d)
 
 
-def evaluate_reconstruction(pred_pcd: np.ndarray, pred_depth: np.ndarray, pred_extrinsics: np.ndarray,
-                            gt_pcd: np.ndarray, gt_depth: np.ndarray, gt_extrinsics: np.ndarray,
-                            depth_valid_mask: np.ndarray, device: str) -> Tuple[float, float, float, float, float]:
+def evaluate_reconstruction(pred_pcd: np.ndarray, pred_extrinsics: np.ndarray,
+                            gt_pcd: np.ndarray, gt_extrinsics: np.ndarray,
+                            device: str = "cuda") -> Tuple[float, float, float]:
     """
     Evaluate reconstruction results using Chamfer Distance, Depth MAE, and Extrinsics error.
 
     Args:
         pred_pcd (np.ndarray): Predicted point cloud of shape (M, 3).
-        pred_depth (np.ndarray): Predicted depth map.
         pred_extrinsics (np.ndarray): Predicted camera extrinsics of shape (T, 4, 4).
         gt_pcd (np.ndarray): Ground truth point cloud of shape (N, 3).
-        gt_depth (np.ndarray): Ground truth depth map.
         gt_extrinsics (np.ndarray): Ground truth camera extrinsics of shape (T, 4, 4).
-        depth_valid_mask (np.ndarray): Boolean mask indicating valid pixels in depth maps.
         device (str): Device to perform computations on.
 
     Returns:
-        Tuple[float, float, float, float, float]: Chamfer Distance, Depth Mean Error, Depth Max Error,
-                                                 Rotation Error (radians), Translation Error.
+        Tuple[float, float, float]: Chamfer Distance, Rotation Error (radians), Translation Error.
     """
     chamfer_dist = compute_part_chamfer_distance(gt_pcd, pred_pcd, device)
-    depth_mean_error, depth_max_error = compute_depth_error(gt_depth, pred_depth, depth_valid_mask)
+    # depth_mean_error, depth_max_error = compute_depth_error(gt_depth, pred_depth, depth_valid_mask)
     rot_error, trans_error = compute_extrinsics_error(gt_extrinsics, pred_extrinsics)
-    return chamfer_dist, depth_mean_error, depth_max_error, rot_error, trans_error
+    return chamfer_dist, rot_error, trans_error
 
 
 def save_reconstruction_metrics(metrics: dict, save_path: str):
