@@ -58,7 +58,7 @@ reconstruction:
   recon_method: "vipe"
   model_path: "depth-anything/DA3NESTED-GIANT-LARGE-1.1"
   device: "cuda"
-# Options: "naive", "moge", "spatracker", "vipe", "da3"
-# reconstruction model path: "Ruicheng/moge-2-vitl-normal", "Yuxihenry/SpatialTrackerV2_Front", "depth-anything/DA3NESTED-GIANT-LARGE"
+# Options: "naive", "moge", "spatracker", "vipe", "da3", "mapanything"
+# reconstruction model path: "Ruicheng/moge-2-vitl-normal", "Yuxihenry/SpatialTrackerV2_Front", "depth-anything/DA3NESTED-GIANT-LARGE", "facebook/map-anything"
 
 save_root_dir: "./outputs"

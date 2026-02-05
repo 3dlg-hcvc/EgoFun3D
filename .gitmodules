@@ -7,3 +7,6 @@
 [submodule "third_party/SpaTrackerV2"]
 	path = third_party/SpaTrackerV2
 	url = git@github.com:willipwk/SpaTrackerV2.git
+[submodule "third_party/map-anything"]
+	path = third_party/map-anything
+	url = git@github.com:facebookresearch/map-anything.git
