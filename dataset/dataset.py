@@ -350,7 +350,7 @@ class UniformDataset(Dataset):
         camera_intrinsics_path = os.path.join(self.root_path, intrinsics_path)
         with open(camera_intrinsics_path, "r") as f:
             camera_intrinsics_data = json.load(f)
-        if crop:
+        if crop and "cropped_intrinsics" in camera_intrinsics_data.keys():
             camera_intrinsics = np.array(camera_intrinsics_data["cropped_intrinsics"])
             cropped_top_left = camera_intrinsics_data["cropped_top_left"]
             cropped_bottom_right = camera_intrinsics_data["cropped_bottom_right"]
