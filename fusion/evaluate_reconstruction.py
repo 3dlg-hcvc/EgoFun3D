@@ -4,6 +4,7 @@ import torch
 from pytorch3d.loss import chamfer_distance
 import json
 import pickle
+import gzip
 
 from typing import Tuple, Dict
 
@@ -108,5 +109,7 @@ def save_reconstruction_results(reconstruction_results: Dict[str, np.ndarray], s
         reconstruction_results (Dict[str, np.ndarray]): Dictionary containing reconstruction results.
         save_path (str): Path to save the results.
     """
-    with open(f"{save_path}/reconstruction_results.pkl", "wb") as f:
-        pickle.dump(reconstruction_results, f)
+    reconstruction_results.pop("rgb", None)
+    reconstruction_results.pop("points", None)
+    with gzip.open(f"{save_path}/reconstruction_results.pkl", "wb", compresslevel=5) as f:
+        pickle.dump(reconstruction_results, f, protocol=pickle.HIGHEST_PROTOCOL)
