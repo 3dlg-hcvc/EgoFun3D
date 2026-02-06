@@ -111,5 +111,5 @@ def save_reconstruction_results(reconstruction_results: Dict[str, np.ndarray], s
     """
     reconstruction_results.pop("rgb", None)
     reconstruction_results.pop("points", None)
-    with gzip.open(f"{save_path}/reconstruction_results.pkl", "wb", compresslevel=5) as f:
+    with gzip.open(f"{save_path}/reconstruction_results.pkl.gz", "wb", compresslevel=5) as f:
         pickle.dump(reconstruction_results, f, protocol=pickle.HIGHEST_PROTOCOL)
