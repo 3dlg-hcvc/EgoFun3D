@@ -97,7 +97,7 @@ def save_reconstruction_metrics(metrics: dict, save_path: str):
         metrics (dict): Dictionary containing reconstruction metrics.
         save_path (str): Path to save the JSON file.
     """
-    with open(f"{save_path}/reconstruction_results.json", "w") as f:
+    with open(save_path, "w") as f:
         json.dump(metrics, f, indent=4)
 
 
@@ -111,5 +111,5 @@ def save_reconstruction_results(reconstruction_results: Dict[str, np.ndarray], s
     """
     reconstruction_results.pop("rgb", None)
     reconstruction_results.pop("points", None)
-    with gzip.open(f"{save_path}/reconstruction_results.pkl.gz", "wb", compresslevel=5) as f:
+    with gzip.open(save_path, "wb", compresslevel=5) as f:
         pickle.dump(reconstruction_results, f, protocol=pickle.HIGHEST_PROTOCOL)
