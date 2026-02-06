@@ -5,6 +5,7 @@ import torch
 import os
 import shutil
 from scipy.ndimage import zoom
+import skimage.transform as st
 from moge.model.v2 import MoGeModel # Let's try MoGe-2
 import sys
 sys.path.append("third_party/SpaTrackerV2/")
@@ -367,14 +368,11 @@ class MapAnythingReconstruction(BaseReconstruction):
             pts3d = pred["pts3d"].cpu().numpy()                     # 3D points in world coordinates (B, H, W, 3)
             pts3d_h, pts3d_w = pts3d.shape[1], pts3d.shape[2]
             zoom_factors = (original_height / pts3d_h, original_width / pts3d_w)
-            # pts3d_cam = pred["pts3d_cam"]             # 3D points in camera coordinates (B, H, W, 3)
             depth_z = pred["depth_z"]                 # Z-depth in camera frame (B, H, W, 1)
             depth_origin_size = zoom(depth_z[0, :, :, 0].cpu().numpy(), zoom_factors)
             depth_list.append(depth_origin_size)
-            # depth_along_ray = pred["depth_along_ray"] # Depth along ray in camera frame (B, H, W, 1)
 
             # Camera outputs
-            # ray_directions = pred["ray_directions"]   # Ray directions in camera frame (B, H, W, 3)
             pred_intrinsics = pred["intrinsics"]           # Recovered pinhole camera intrinsics (B, 3, 3)
             pred_intrinsics_origin_size = self._resize_ixt(pred_intrinsics[0].cpu().numpy(), pts3d_w, pts3d_h, original_width, original_height)
             pred_intrinsics_list.append(pred_intrinsics_origin_size)
@@ -383,26 +381,16 @@ class MapAnythingReconstruction(BaseReconstruction):
                 cam2init = init_extrinsics @ pred_camera_poses[0].cpu().numpy()
             pred_extrinsics = cam2init @ np.linalg.inv(pred_camera_poses[0].cpu().numpy())
             pred_extrinsics_list.append(pred_extrinsics)
-            # print("pts3d shape:", pts3d.shape)
+            cam_pose = pred_extrinsics if cam_pose_list is None else cam_pose_list[i]
             pts3d_origin_size = depth2xyz(depth_origin_size, pred_intrinsics_origin_size if intrinsics is None else intrinsics, cam_type="opencv")
-            pts3d_homo = (cam2init @ np.concatenate([pts3d_origin_size.reshape(-1, 3), np.ones((original_height * original_width, 1))], axis=-1).T).T
-            print("pts3d_homo shape:", pts3d_homo.shape)
+            pts3d_homo = (cam_pose @ np.concatenate([pts3d_origin_size.reshape(-1, 3), np.ones((original_height * original_width, 1))], axis=-1).T).T
             pts3d = pts3d_homo[:, :3].reshape(original_height, original_width, 3)
             point_map_list.append(pts3d)
-            # cam_trans = pred["cam_trans"]             # OpenCV (+X - Right, +Y - Down, +Z - Forward) cam2world translation in world frame (B, 3)
-            # cam_quats = pred["cam_quats"]             # OpenCV (+X - Right, +Y - Down, +Z - Forward) cam2world quaternion in world frame (B, 4)
 
             # Quality and masking
-            confidence = pred["conf"]                 # Per-pixel confidence scores (B, H, W)
             mask = pred["mask"]                       # Combined validity mask (B, H, W, 1)
-            non_ambiguous_mask = pred["non_ambiguous_mask"]                # Non-ambiguous regions (B, H, W)
-            non_ambiguous_mask_logits = pred["non_ambiguous_mask_logits"]  # Mask logits (B, H, W)
-            point_mask_list.append(mask[0, :, :, 0].cpu().numpy())
-            # Scaling
-            metric_scaling_factor = pred["metric_scaling_factor"]  # Applied metric scaling (B,)
-
-            # Original input
-            img_no_norm = pred["img_no_norm"]         # Denormalized input images for visualization (B, H, W, 3)
+            mask_origin_size = st.resize(mask[0, :, :, 0].cpu().numpy(), (original_height, original_width), order=0, preserve_range=True, anti_aliasing=False)
+            point_mask_list.append(mask_origin_size.astype(bool))
         return {"rgb": video_frame_list, 
                 "intrinsics": pred_intrinsics_list[0] if intrinsics is None else intrinsics, 
                 "extrinsics": np.stack(pred_extrinsics_list) if cam_pose_list is None else cam_pose_list, 
