@@ -45,6 +45,9 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             break
         reconstruction_results = None
         tracks3d = None
+        save_pcd_dir = os.path.join(save_dir, data["video_name"], "reconstruction")
+        if not os.path.exists(save_pcd_dir):
+            os.makedirs(save_pcd_dir)
         for role in ["receiver", "effector"]:
             video_frame_list = data["rgb_list"]
             mask_list = data[f"{role}_mask_list"]
@@ -104,17 +107,15 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 gt_pcd=data["geometry_data"][role]["part_pcd"],
                 gt_extrinsics=data["camera_extrinsics"],
             )
-            save_pcd_dir = os.path.join(save_dir, data["video_name"], f"reconstruction_{role}")
-            if not os.path.exists(save_pcd_dir):
-                os.makedirs(save_pcd_dir)
+            
             save_pcd(fused_part_pcd, f"{save_pcd_dir}/{role}_fused.ply")
-            save_reconstruction_results(reconstruction_results, save_pcd_dir)
             reconstruction_metrics = {
                 "chamfer_distance": chamfer_dist,
                 "rotation_error_radians": rot_error,
                 "translation_error": trans_error
             }
-            save_reconstruction_metrics(reconstruction_metrics, save_pcd_dir)
+            save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}.json")
+        save_reconstruction_results(reconstruction_results, f"{save_pcd_dir}/reconstruction_results.pkl.gz")
         data_count += 1
 
 
