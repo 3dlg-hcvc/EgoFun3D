@@ -160,7 +160,11 @@ class ViPEReconstruction(BaseReconstruction):
         tmp_dir = "./tmp_vipe_reconstruction"
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir)
-        os.system(f"vipe infer --image-dir {video_dir} --output {tmp_dir} --pipeline dav3")
+        try:
+            os.system(f"vipe infer --image-dir {video_dir} --output {tmp_dir} --pipeline dav3")
+        except Exception as e:
+            print(f"Error during vipe inference: {e}")
+            return None
         
         base_name = os.path.basename(video_dir)
         depth_zip_file = os.path.join(tmp_dir, "depth", f"{base_name}.zip")
@@ -299,17 +303,34 @@ class MapAnythingReconstruction(BaseReconstruction):
         self.model = self.model.to(device=device)
         self.device = device
 
+    def _resize_ixt(
+        self,
+        intrinsic: np.ndarray | None,
+        orig_w: int,
+        orig_h: int,
+        w: int,
+        h: int,
+    ) -> np.ndarray | None:
+        if intrinsic is None:
+            return None
+        K = intrinsic.copy()
+        # scale fx, cx by w ratio; fy, cy by h ratio
+        K[:1] *= w / float(orig_w)
+        K[1:2] *= h / float(orig_h)
+        return K
+
     def reconstruct(self, video_frame_list: List[PILImage.Image], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: np.ndarray = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
         input_views = []
         # origin_extrinsics_list = []
+        original_height, original_width = video_frame_list[0].height, video_frame_list[0].width
         for frame_id in range(len(video_frame_list)):
             input_view = {
                 "img": video_frame_list[frame_id],
             }
             if intrinsics is not None:
-                input_view["intrinsics"] = intrinsics
+                input_view["intrinsics"] = intrinsics.astype(np.float32)
             if cam_pose_list is not None:
-                input_view["extrinsics"] = cam_pose_list[frame_id]
+                input_view["camera_poses"] = cam_pose_list[frame_id].astype(np.float32)
                 input_view["is_metric_scale"] = torch.tensor([True], device=self.device)
             input_views.append(input_view)
             # origin_extrinsics_list.append(extrinsic)
@@ -343,23 +364,30 @@ class MapAnythingReconstruction(BaseReconstruction):
         # Access results for each view - Complete list of metric outputs
         for i, pred in enumerate(outputs):
             # Geometry outputs
-            pts3d = pred["pts3d"]                     # 3D points in world coordinates (B, H, W, 3)
+            pts3d = pred["pts3d"].cpu().numpy()                     # 3D points in world coordinates (B, H, W, 3)
+            pts3d_h, pts3d_w = pts3d.shape[1], pts3d.shape[2]
+            zoom_factors = (original_height / pts3d_h, original_width / pts3d_w)
             # pts3d_cam = pred["pts3d_cam"]             # 3D points in camera coordinates (B, H, W, 3)
             depth_z = pred["depth_z"]                 # Z-depth in camera frame (B, H, W, 1)
-            depth_list.append(depth_z[0, :, :, 0].cpu().numpy())
+            depth_origin_size = zoom(depth_z[0, :, :, 0].cpu().numpy(), zoom_factors)
+            depth_list.append(depth_origin_size)
             # depth_along_ray = pred["depth_along_ray"] # Depth along ray in camera frame (B, H, W, 1)
 
             # Camera outputs
             # ray_directions = pred["ray_directions"]   # Ray directions in camera frame (B, H, W, 3)
             pred_intrinsics = pred["intrinsics"]           # Recovered pinhole camera intrinsics (B, 3, 3)
-            pred_intrinsics_list.append(pred_intrinsics[0].cpu().numpy())
+            pred_intrinsics_origin_size = self._resize_ixt(pred_intrinsics[0].cpu().numpy(), pts3d_w, pts3d_h, original_width, original_height)
+            pred_intrinsics_list.append(pred_intrinsics_origin_size)
             pred_camera_poses = pred["camera_poses"]       # OpenCV (+X - Right, +Y - Down, +Z - Forward) cam2world poses in world frame (B, 4, 4)
             if cam2init is None:
                 cam2init = init_extrinsics @ pred_camera_poses[0].cpu().numpy()
             pred_extrinsics = cam2init @ np.linalg.inv(pred_camera_poses[0].cpu().numpy())
             pred_extrinsics_list.append(pred_extrinsics)
-            pts3d = cam2init @ np.concatenate([pts3d.reshape(-1, 3), np.ones((pts3d.shape[0]*pts3d.shape[1], 1))], axis=-1).T
-            pts3d = pts3d.T[:, :3].reshape(pts3d.shape)
+            # print("pts3d shape:", pts3d.shape)
+            pts3d_origin_size = depth2xyz(depth_origin_size, pred_intrinsics_origin_size if intrinsics is None else intrinsics, cam_type="opencv")
+            pts3d_homo = (cam2init @ np.concatenate([pts3d_origin_size.reshape(-1, 3), np.ones((original_height * original_width, 1))], axis=-1).T).T
+            print("pts3d_homo shape:", pts3d_homo.shape)
+            pts3d = pts3d_homo[:, :3].reshape(original_height, original_width, 3)
             point_map_list.append(pts3d)
             # cam_trans = pred["cam_trans"]             # OpenCV (+X - Right, +Y - Down, +Z - Forward) cam2world translation in world frame (B, 3)
             # cam_quats = pred["cam_quats"]             # OpenCV (+X - Right, +Y - Down, +Z - Forward) cam2world quaternion in world frame (B, 4)

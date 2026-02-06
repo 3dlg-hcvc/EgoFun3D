@@ -65,6 +65,9 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                     if input_modality.find("extrinsics") != -1:
                         input_extrinsics = data["camera_extrinsics"]
                     reconstruction_results = reconstruction_model.reconstruct(video_frame_list, init_extrinsics, input_intrinsics, input_extrinsics, input_depth)
+            if reconstruction_results is None:
+                print("Reconstruction failed, skipping this sample.")
+                break
             # run fusion
             if config.debug:
                 full_points = reconstruction_results["points"]
