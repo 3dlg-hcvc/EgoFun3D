@@ -209,10 +209,11 @@ class ViPEReconstruction(BaseReconstruction):
     
 
 class DA3DReconstruction(BaseReconstruction):
-    def __init__(self, model_path: str, device: str = "cuda"):
+    def __init__(self, model_path: str, device: str = "cuda", max_pred_frame: int = 70):
         self.model = DepthAnything3.from_pretrained(model_path)
         self.model = self.model.to(device=device)
         self.device = device
+        self.max_pred_frame = max_pred_frame
 
     def _resize_ixt(
             self,
@@ -255,47 +256,61 @@ class DA3DReconstruction(BaseReconstruction):
             inv_cam_pose_list = [np.linalg.inv(cam_pose) for cam_pose in cam_pose_list] if cam_pose_list is not None else None
             inv_extrinsics = np.stack(inv_cam_pose_list) if inv_cam_pose_list is not None else None
             intrinsics_list = np.repeat(intrinsics[None, :, :], len(video_frame_list), axis=0) if intrinsics is not None else None
-            outputs = self.model.inference(video_frame_list, intrinsics=intrinsics_list, extrinsics=inv_extrinsics)
-            depth = outputs.depth # N, H, W
-            depth_conf = outputs.conf # N, H, W depth confidence map
-            original_height, original_width = video_frame_list[0].height, video_frame_list[0].width
-            new_height, new_width = depth.shape[1], depth.shape[2]
-            zoom_factors = (original_height / new_height, original_width / new_width)
-            if inv_extrinsics is None:
-                inv_extrinsics = outputs.extrinsics
-                inv_extrinsics_4x4 = []
-                for i in range(len(video_frame_list)):
-                    pose_4x4 = np.eye(4)
-                    pose_4x4[:3, :3] = inv_extrinsics[i][:3, :3]
-                    pose_4x4[:3, 3] = inv_extrinsics[i][:3, 3]
-                    inv_extrinsics_4x4.append(pose_4x4)
-                inv_extrinsics = np.stack(inv_extrinsics_4x4)
-            if intrinsics is None:
-                intrinsics = self._resize_ixt(outputs.intrinsics[0], new_width, new_height, original_width, original_height)
-            point_map_list = []
-            extrinsics = []
-            cam2init = init_extrinsics @ inv_extrinsics[0]
-            depth_conf_list = []
-            depth_frame_list = []
-            conf_thresh = self.get_conf_thresh(outputs, getattr(outputs, "sky_mask", None),)
-            for frame_idx in range(len(video_frame_list)):
-                depth_frame = zoom(depth[frame_idx], zoom_factors)
-                depth_conf_frame = zoom(depth_conf[frame_idx], zoom_factors)
-                depth_conf_list.append(depth_conf_frame)
-                depth_frame_list.append(depth_frame)
-                points_map = depth2xyz(depth_frame, intrinsics, cam_type="opencv")
-                cam_pose = cam2init @ np.linalg.inv(inv_extrinsics[frame_idx])
-                extrinsics.append(cam_pose)
-                ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
-                points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
-                points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
-                point_map_list.append(points_map)
+            full_extinsics_list = []
+            full_depth_list = []
+            full_points_list = []
+            full_points_mask_list = []
+            current_init_extrinsics = init_extrinsics
+            for i in range(0, len(video_frame_list), self.max_pred_frame):
+                outputs = self.model.inference(video_frame_list[max(0, i-1):min(len(video_frame_list), i+self.max_pred_frame)], 
+                                               intrinsics=intrinsics_list[max(0, i-1):min(len(video_frame_list), i+self.max_pred_frame)] if intrinsics_list is not None else None, 
+                                               extrinsics=inv_extrinsics[max(0, i-1):min(len(video_frame_list), i+self.max_pred_frame)] if inv_extrinsics is not None else None)
+                depth = outputs.depth # N, H, W
+                depth_conf = outputs.conf
+                original_height, original_width = video_frame_list[0].height, video_frame_list[0].width
+                new_height, new_width = depth.shape[1], depth.shape[2]
+                zoom_factors = (original_height / new_height, original_width / new_width)
+                if inv_extrinsics is None:
+                    inv_extrinsics = outputs.extrinsics
+                    inv_extrinsics_4x4 = []
+                    for i in range(len(video_frame_list)):
+                        pose_4x4 = np.eye(4)
+                        pose_4x4[:3, :3] = inv_extrinsics[i][:3, :3]
+                        pose_4x4[:3, 3] = inv_extrinsics[i][:3, 3]
+                        inv_extrinsics_4x4.append(pose_4x4)
+                    inv_extrinsics = np.stack(inv_extrinsics_4x4)
+                if intrinsics is None:
+                    intrinsics = self._resize_ixt(outputs.intrinsics[0], new_width, new_height, original_width, original_height)
+                point_map_list = []
+                extrinsics = []
+                cam2init = current_init_extrinsics @ inv_extrinsics[0]
+                point_mask_list = []
+                depth_frame_list = []
+                conf_thresh = self.get_conf_thresh(outputs, getattr(outputs, "sky_mask", None),)
+                for frame_idx in range(len(video_frame_list[max(0, i-1):min(len(video_frame_list), i+self.max_pred_frame)])):
+                    depth_frame = zoom(depth[frame_idx], zoom_factors)
+                    depth_conf_frame = zoom(depth_conf[frame_idx], zoom_factors)
+                    point_mask = depth_conf_frame > conf_thresh
+                    point_mask_list.append(point_mask)
+                    depth_frame_list.append(depth_frame)
+                    points_map = depth2xyz(depth_frame, intrinsics, cam_type="opencv")
+                    cam_pose = cam2init @ np.linalg.inv(inv_extrinsics[frame_idx])
+                    extrinsics.append(cam_pose)
+                    ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
+                    points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
+                    points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
+                    point_map_list.append(points_map)
+                full_extinsics_list.extend(extrinsics) if i == 0 else full_extinsics_list.extend(extrinsics[1:])
+                full_depth_list.extend(depth_frame_list) if i == 0 else full_depth_list.extend(depth_frame_list[1:])
+                full_points_list.extend(point_map_list) if i == 0 else full_points_list.extend(point_map_list[1:])
+                full_points_mask_list.extend(point_mask_list) if i == 0 else full_points_mask_list.extend(point_mask_list[1:])
+                current_init_extrinsics = extrinsics[-1]
             return {"rgb": video_frame_list, 
                     "intrinsics": intrinsics[0], 
-                    "extrinsics": np.stack(extrinsics), 
-                    "depth": np.stack(depth_frame_list), 
-                    "points": np.stack(point_map_list), 
-                    "points_mask": np.stack(depth_conf_list) > conf_thresh}
+                    "extrinsics": np.stack(full_extinsics_list), 
+                    "depth": np.stack(full_depth_list), 
+                    "points": np.stack(full_points_list), 
+                    "points_mask": np.stack(full_points_mask_list)}
 
 
 class MapAnythingReconstruction(BaseReconstruction):
@@ -399,7 +414,7 @@ class MapAnythingReconstruction(BaseReconstruction):
                 "points_mask": np.stack(point_mask_list)}
 
 
-def build_reconstruction_model(input_modality: str, recon_method: str, model_path: str = None, device: str = "cuda") -> BaseReconstruction:
+def build_reconstruction_model(input_modality: str, recon_method: str, model_path: str = None, device: str = "cuda", max_pred_frame: int = 20) -> BaseReconstruction:
     if recon_method == "naive":
         assert input_modality == "rgb+extrinsics+intrinsics+depth", "Naive reconstruction requires depth input."
         recon_model = NaiveReconstruction()
@@ -411,7 +426,7 @@ def build_reconstruction_model(input_modality: str, recon_method: str, model_pat
     elif recon_method == "vipe":
         recon_model = ViPEReconstruction()
     elif recon_method == "da3":
-        recon_model = DA3DReconstruction(model_path=model_path, device=device)
+        recon_model = DA3DReconstruction(model_path=model_path, device=device, max_pred_frame=max_pred_frame)
     elif recon_method == "mapanything":
         recon_model = MapAnythingReconstruction(model_path=model_path, device=device)
     else:
