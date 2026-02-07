@@ -381,6 +381,9 @@ class UniformDataset(Dataset):
             elif mask_data[mask_name]["mask_idx"] == 5:
                 object_mask = mask_data[mask_name]["masks"]
                 object_name = mask_name
+        if object_mask is None:
+            object_mask = np.logical_or(receiver_mask, effector_mask)
+            object_name = f"{receiver_name} and {effector_name}"
         return receiver_mask, effector_mask, object_mask, receiver_name, effector_name, object_name
     
     def load_part_point_cloud(self, geometry_type: str, geometry_path: str, part_annotation_path: str, function_instance_id: int) -> dict:
