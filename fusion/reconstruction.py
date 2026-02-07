@@ -162,7 +162,11 @@ class ViPEReconstruction(BaseReconstruction):
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir)
         try:
-            os.system(f"vipe infer --image-dir {video_dir} --output {tmp_dir} --pipeline dav3")
+            if "(" in video_dir or ")" in video_dir:
+                video_dir_escaped = video_dir.replace("(", "\\(").replace(")", "\\)")
+            else:
+                video_dir_escaped = video_dir
+            os.system(f"vipe infer --image-dir {video_dir_escaped} --output {tmp_dir} --pipeline dav3")
         except Exception as e:
             print(f"Error during vipe inference: {e}")
             return None
