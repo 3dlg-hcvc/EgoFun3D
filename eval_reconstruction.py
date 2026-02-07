@@ -126,7 +126,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
 
 def main(config: omegaconf.DictConfig):
     print("Start experiment:", config.name)
-    if config.save_dir is not None:
+    if "save_dir" in config and config.save_dir is not None:
         print("Resuming from:", config.save_dir)
         save_dir = config.save_dir
     else:
