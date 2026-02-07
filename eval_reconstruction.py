@@ -15,6 +15,7 @@ from fusion.evaluate_reconstruction import save_reconstruction_metrics, evaluate
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, required=True, help='Path to the config file')
+    parser.add_argument('--resume', type=str, help='Path to the experiment directory to resume from')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     return parser.parse_args()
 
@@ -46,6 +47,9 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         reconstruction_results = None
         tracks3d = None
         save_pcd_dir = os.path.join(save_dir, data["video_name"], "reconstruction")
+        if os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz"):
+            print("Reconstruction results already exist, skipping reconstruction and evaluation for this sample.")
+            continue
         if not os.path.exists(save_pcd_dir):
             os.makedirs(save_pcd_dir)
         for role in ["receiver", "effector"]:
@@ -122,8 +126,13 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
 
 def main(config: omegaconf.DictConfig):
     print("Start experiment:", config.name)
-    exp_time = datetime.now().strftime("%Y%m%d-%H%M%S")
-    save_dir = f"{config.save_root_dir}/{config.name}/{exp_time}"
+    if config.save_dir is not None:
+        print("Resuming from:", config.save_dir)
+        save_dir = config.save_dir
+    else:
+        exp_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+        save_dir = f"{config.save_root_dir}/{config.name}/{exp_time}"
+        config.update({"save_dir": save_dir})
     print("Results will be saved to:", save_dir)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
@@ -146,6 +155,14 @@ def main(config: omegaconf.DictConfig):
 
 if __name__ == "__main__":
     args = parse_args()
-    config = omegaconf.OmegaConf.load(args.config)
+    if args.resume is not None:
+        config_path = os.path.join(args.resume, "config.yaml")
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Config file not found in resume directory: {config_path}")
+        print("Loading config from resume directory:", config_path)
+        config = omegaconf.OmegaConf.load(config_path)
+        config.update({"save_dir": args.resume})
+    else:
+        config = omegaconf.OmegaConf.load(args.config)
     config.update({"debug": args.debug})
     main(config)
