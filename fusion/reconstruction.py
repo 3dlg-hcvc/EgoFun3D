@@ -254,7 +254,7 @@ class DA3DReconstruction(BaseReconstruction):
             return naive_recon.reconstruct(video_frame_list, init_extrinsics, intrinsics, cam_pose_list, depth_frame_list)
         else:
             inv_cam_pose_list = [np.linalg.inv(cam_pose) for cam_pose in cam_pose_list] if cam_pose_list is not None else None
-            inv_extrinsics = np.stack(inv_cam_pose_list) if inv_cam_pose_list is not None else None
+            full_inv_extrinsics = np.stack(inv_cam_pose_list) if inv_cam_pose_list is not None else None
             intrinsics_list = np.repeat(intrinsics[None, :, :], len(video_frame_list), axis=0) if intrinsics is not None else None
             full_extinsics_list = []
             full_depth_list = []
@@ -262,39 +262,47 @@ class DA3DReconstruction(BaseReconstruction):
             full_points_mask_list = []
             current_init_extrinsics = init_extrinsics
             for i in range(0, len(video_frame_list), self.max_pred_frame):
-                outputs = self.model.inference(video_frame_list[max(0, i-1):min(len(video_frame_list), i+self.max_pred_frame)], 
-                                               intrinsics=intrinsics_list[max(0, i-1):min(len(video_frame_list), i+self.max_pred_frame)] if intrinsics_list is not None else None, 
-                                               extrinsics=inv_extrinsics[max(0, i-1):min(len(video_frame_list), i+self.max_pred_frame)] if inv_extrinsics is not None else None)
+                start_index = max(0, i-1)
+                end_index = min(len(video_frame_list), i+self.max_pred_frame)
+                # print("frame index range:", (start_index, end_index))
+                outputs = self.model.inference(video_frame_list[start_index:end_index], 
+                                               intrinsics=intrinsics_list[start_index:end_index] if intrinsics_list is not None else None, 
+                                               extrinsics=full_inv_extrinsics[start_index:end_index] if full_inv_extrinsics is not None else None)
                 depth = outputs.depth # N, H, W
                 depth_conf = outputs.conf
                 original_height, original_width = video_frame_list[0].height, video_frame_list[0].width
                 new_height, new_width = depth.shape[1], depth.shape[2]
                 zoom_factors = (original_height / new_height, original_width / new_width)
-                if inv_extrinsics is None:
+                if full_inv_extrinsics is None:
                     inv_extrinsics = outputs.extrinsics
                     inv_extrinsics_4x4 = []
-                    for i in range(len(video_frame_list)):
+                    for j in range(len(video_frame_list[start_index:end_index])):
                         pose_4x4 = np.eye(4)
-                        pose_4x4[:3, :3] = inv_extrinsics[i][:3, :3]
-                        pose_4x4[:3, 3] = inv_extrinsics[i][:3, 3]
+                        pose_4x4[:3, :3] = inv_extrinsics[j][:3, :3]
+                        pose_4x4[:3, 3] = inv_extrinsics[j][:3, 3]
                         inv_extrinsics_4x4.append(pose_4x4)
                     inv_extrinsics = np.stack(inv_extrinsics_4x4)
+                    cam2init = current_init_extrinsics @ inv_extrinsics[0]
+                else:
+                    cam2init = current_init_extrinsics @ full_inv_extrinsics[start_index]
                 if intrinsics is None:
                     intrinsics = self._resize_ixt(outputs.intrinsics[0], new_width, new_height, original_width, original_height)
                 point_map_list = []
                 extrinsics = []
-                cam2init = current_init_extrinsics @ inv_extrinsics[0]
                 point_mask_list = []
                 depth_frame_list = []
                 conf_thresh = self.get_conf_thresh(outputs, getattr(outputs, "sky_mask", None),)
-                for frame_idx in range(len(video_frame_list[max(0, i-1):min(len(video_frame_list), i+self.max_pred_frame)])):
+                for frame_idx in range(len(video_frame_list[start_index:end_index])):
                     depth_frame = zoom(depth[frame_idx], zoom_factors)
                     depth_conf_frame = zoom(depth_conf[frame_idx], zoom_factors)
                     point_mask = depth_conf_frame > conf_thresh
                     point_mask_list.append(point_mask)
                     depth_frame_list.append(depth_frame)
                     points_map = depth2xyz(depth_frame, intrinsics, cam_type="opencv")
-                    cam_pose = cam2init @ np.linalg.inv(inv_extrinsics[frame_idx])
+                    if full_inv_extrinsics is None:
+                        cam_pose = cam2init @ np.linalg.inv(inv_extrinsics[frame_idx])
+                    else:
+                        cam_pose = cam2init @ np.linalg.inv(full_inv_extrinsics[start_index + frame_idx])
                     extrinsics.append(cam_pose)
                     ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
                     points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
@@ -314,10 +322,11 @@ class DA3DReconstruction(BaseReconstruction):
 
 
 class MapAnythingReconstruction(BaseReconstruction):
-    def __init__(self, model_path: str, device: str = "cuda"):
+    def __init__(self, model_path: str, device: str = "cuda", max_pred_frame: int = 10):
         self.model = MapAnything.from_pretrained(model_path)
         self.model = self.model.to(device=device)
         self.device = device
+        self.max_pred_frame = max_pred_frame
 
     def _resize_ixt(
         self,
@@ -350,68 +359,83 @@ class MapAnythingReconstruction(BaseReconstruction):
                 input_view["is_metric_scale"] = torch.tensor([True], device=self.device)
             input_views.append(input_view)
             # origin_extrinsics_list.append(extrinsic)
-        processed_views = preprocess_inputs(input_views, resize_mode="square", size=700)
-        # Run inference with any combination of inputs
-        outputs = self.model.infer(
-            processed_views,                  # Any combination of input views
-            memory_efficient_inference=False, # Trades off speed for more views (up to 2000 views on 140 GB)
-            use_amp=True,                     # Use mixed precision inference (recommended)
-            amp_dtype="bf16",                 # bf16 inference (recommended; falls back to fp16 if bf16 not supported)
-            apply_mask=True,                  # Apply masking to dense geometry outputs
-            mask_edges=True,                  # Remove edge artifacts by using normals and depth
-            apply_confidence_mask=False,      # Filter low-confidence regions
-            confidence_percentile=5,         # Remove bottom 5 percentile confidence pixels
-            # Control which inputs to use/ignore
-            # By default, all inputs are used when provided
-            # If is_metric_scale flag is not provided, all inputs are assumed to be in metric scale
-            ignore_calibration_inputs=False,
-            ignore_depth_inputs=False,
-            ignore_pose_inputs=False,
-            ignore_depth_scale_inputs=False,
-            ignore_pose_scale_inputs=False,
-        )
+        full_extrinsics_list = []
+        full_depth_list = []
+        full_points_list = []
+        full_points_mask_list = []
+        current_init_extrinsics = init_extrinsics
+        for i in range(0, len(input_views), self.max_pred_frame):
+            # print("frame index range:", (max(0, i-1), min(len(input_views), i+self.max_pred_frame)))
+            start_frame_idx = max(0, i-1)
+            end_frame_idx = min(len(input_views), i+self.max_pred_frame)
+            processed_views = preprocess_inputs(input_views[start_frame_idx:end_frame_idx], resize_mode="square", size=700)
+            # Run inference with any combination of inputs
+            outputs = self.model.infer(
+                processed_views,                  # Any combination of input views
+                memory_efficient_inference=False, # Trades off speed for more views (up to 2000 views on 140 GB)
+                use_amp=True,                     # Use mixed precision inference (recommended)
+                amp_dtype="bf16",                 # bf16 inference (recommended; falls back to fp16 if bf16 not supported)
+                apply_mask=True,                  # Apply masking to dense geometry outputs
+                mask_edges=True,                  # Remove edge artifacts by using normals and depth
+                apply_confidence_mask=False,      # Filter low-confidence regions
+                confidence_percentile=5,         # Remove bottom 5 percentile confidence pixels
+                # Control which inputs to use/ignore
+                # By default, all inputs are used when provided
+                # If is_metric_scale flag is not provided, all inputs are assumed to be in metric scale
+                ignore_calibration_inputs=False,
+                ignore_depth_inputs=False,
+                ignore_pose_inputs=False,
+                ignore_depth_scale_inputs=False,
+                ignore_pose_scale_inputs=False,
+            )
 
-        pred_intrinsics_list = []
-        pred_extrinsics_list = []
-        depth_list = []
-        point_map_list = []
-        point_mask_list = []
-        cam2init = None
-        # Access results for each view - Complete list of metric outputs
-        for i, pred in enumerate(outputs):
-            # Geometry outputs
-            pts3d = pred["pts3d"].cpu().numpy()                     # 3D points in world coordinates (B, H, W, 3)
-            pts3d_h, pts3d_w = pts3d.shape[1], pts3d.shape[2]
-            zoom_factors = (original_height / pts3d_h, original_width / pts3d_w)
-            depth_z = pred["depth_z"]                 # Z-depth in camera frame (B, H, W, 1)
-            depth_origin_size = zoom(depth_z[0, :, :, 0].cpu().numpy(), zoom_factors)
-            depth_list.append(depth_origin_size)
+            pred_intrinsics_list = []
+            pred_extrinsics_list = []
+            depth_list = []
+            point_map_list = []
+            point_mask_list = []
+            cam2init = None
+            # Access results for each view - Complete list of metric outputs
+            for j, pred in enumerate(outputs):
+                # Geometry outputs
+                pts3d = pred["pts3d"].cpu().numpy()                     # 3D points in world coordinates (B, H, W, 3)
+                pts3d_h, pts3d_w = pts3d.shape[1], pts3d.shape[2]
+                zoom_factors = (original_height / pts3d_h, original_width / pts3d_w)
+                depth_z = pred["depth_z"]                 # Z-depth in camera frame (B, H, W, 1)
+                depth_origin_size = zoom(depth_z[0, :, :, 0].cpu().numpy(), zoom_factors)
+                depth_list.append(depth_origin_size)
 
-            # Camera outputs
-            pred_intrinsics = pred["intrinsics"]           # Recovered pinhole camera intrinsics (B, 3, 3)
-            pred_intrinsics_origin_size = self._resize_ixt(pred_intrinsics[0].cpu().numpy(), pts3d_w, pts3d_h, original_width, original_height)
-            pred_intrinsics_list.append(pred_intrinsics_origin_size)
-            pred_camera_poses = pred["camera_poses"]       # OpenCV (+X - Right, +Y - Down, +Z - Forward) cam2world poses in world frame (B, 4, 4)
-            if cam2init is None:
-                cam2init = init_extrinsics @ pred_camera_poses[0].cpu().numpy()
-            pred_extrinsics = cam2init @ np.linalg.inv(pred_camera_poses[0].cpu().numpy())
-            pred_extrinsics_list.append(pred_extrinsics)
-            cam_pose = pred_extrinsics if cam_pose_list is None else cam_pose_list[i]
-            pts3d_origin_size = depth2xyz(depth_origin_size, pred_intrinsics_origin_size if intrinsics is None else intrinsics, cam_type="opencv")
-            pts3d_homo = (cam_pose @ np.concatenate([pts3d_origin_size.reshape(-1, 3), np.ones((original_height * original_width, 1))], axis=-1).T).T
-            pts3d = pts3d_homo[:, :3].reshape(original_height, original_width, 3)
-            point_map_list.append(pts3d)
+                # Camera outputs
+                pred_intrinsics = pred["intrinsics"]           # Recovered pinhole camera intrinsics (B, 3, 3)
+                pred_intrinsics_origin_size = self._resize_ixt(pred_intrinsics[0].cpu().numpy(), pts3d_w, pts3d_h, original_width, original_height)
+                pred_intrinsics_list.append(pred_intrinsics_origin_size)
+                pred_camera_poses = pred["camera_poses"]       # OpenCV (+X - Right, +Y - Down, +Z - Forward) cam2world poses in world frame (B, 4, 4)
+                if cam2init is None:
+                    cam2init = current_init_extrinsics @ pred_camera_poses[0].cpu().numpy()
+                pred_extrinsics = cam2init @ np.linalg.inv(pred_camera_poses[0].cpu().numpy())
+                pred_extrinsics_list.append(pred_extrinsics)
+                # print(f"Predicted camera pose for {start_frame_idx} chunk, {j} frame, total frame {start_frame_idx+j}")
+                cam_pose = pred_extrinsics if cam_pose_list is None else cam_pose_list[start_frame_idx+j]
+                pts3d_origin_size = depth2xyz(depth_origin_size, pred_intrinsics_origin_size if intrinsics is None else intrinsics, cam_type="opencv")
+                pts3d_homo = (cam_pose @ np.concatenate([pts3d_origin_size.reshape(-1, 3), np.ones((original_height * original_width, 1))], axis=-1).T).T
+                pts3d = pts3d_homo[:, :3].reshape(original_height, original_width, 3)
+                point_map_list.append(pts3d)
 
-            # Quality and masking
-            mask = pred["mask"]                       # Combined validity mask (B, H, W, 1)
-            mask_origin_size = st.resize(mask[0, :, :, 0].cpu().numpy(), (original_height, original_width), order=0, preserve_range=True, anti_aliasing=False)
-            point_mask_list.append(mask_origin_size.astype(bool))
+                # Quality and masking
+                mask = pred["mask"]                       # Combined validity mask (B, H, W, 1)
+                mask_origin_size = st.resize(mask[0, :, :, 0].cpu().numpy(), (original_height, original_width), order=0, preserve_range=True, anti_aliasing=False)
+                point_mask_list.append(mask_origin_size.astype(bool))
+            full_extrinsics_list.extend(pred_extrinsics_list if i == 0 else pred_extrinsics_list[1:])
+            full_depth_list.extend(depth_list if i == 0 else depth_list[1:])
+            full_points_list.extend(point_map_list if i == 0 else point_map_list[1:])
+            full_points_mask_list.extend(point_mask_list if i == 0 else point_mask_list[1:])
+            current_init_extrinsics = pred_extrinsics_list[-1] if cam_pose_list is None else cam_pose_list[end_frame_idx-1]
         return {"rgb": video_frame_list, 
                 "intrinsics": pred_intrinsics_list[0] if intrinsics is None else intrinsics, 
-                "extrinsics": np.stack(pred_extrinsics_list) if cam_pose_list is None else cam_pose_list, 
-                "depth": np.stack(depth_list), 
-                "points": np.stack(point_map_list), 
-                "points_mask": np.stack(point_mask_list)}
+                "extrinsics": np.stack(full_extrinsics_list) if cam_pose_list is None else cam_pose_list, 
+                "depth": np.stack(full_depth_list), 
+                "points": np.stack(full_points_list), 
+                "points_mask": np.stack(full_points_mask_list)}
 
 
 def build_reconstruction_model(input_modality: str, recon_method: str, model_path: str = None, device: str = "cuda", max_pred_frame: int = 20) -> BaseReconstruction:
@@ -428,7 +452,7 @@ def build_reconstruction_model(input_modality: str, recon_method: str, model_pat
     elif recon_method == "da3":
         recon_model = DA3DReconstruction(model_path=model_path, device=device, max_pred_frame=max_pred_frame)
     elif recon_method == "mapanything":
-        recon_model = MapAnythingReconstruction(model_path=model_path, device=device)
+        recon_model = MapAnythingReconstruction(model_path=model_path, device=device, max_pred_frame=max_pred_frame)
     else:
         raise NotImplementedError(f"Reconstruction method {recon_method} not implemented.")
     return recon_model

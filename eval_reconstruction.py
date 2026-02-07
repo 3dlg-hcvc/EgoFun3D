@@ -78,6 +78,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 points_list = []
                 for i, (points, mask) in enumerate(zip(full_points, full_masks)):
                     # part_points = points[mask]
+                    # save_pcd(points.reshape(-1, 3), f"{save_pcd_dir}/frame_{i}_full_points.ply")
                     points_list.append(points.reshape(-1, 3))
                 save_pcd_dir_debug = os.path.join(save_dir, data["video_name"], "debug_full_reconstruction")
                 if not os.path.exists(save_pcd_dir_debug):

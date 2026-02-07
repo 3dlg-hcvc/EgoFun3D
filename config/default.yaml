@@ -7,9 +7,9 @@ dataset:
   meta_file: "./full_dataset/dataset_new_metadata5.json"
   image_type: "undistorted"  # can be "undistorted" or "cropped"
   sample_strategy: "fix_size"  # can be "fix_size" or "all"
-  sample_num: 60  # used when sample_strategy is "fix_size"
+  sample_num: 20  # used when sample_strategy is "fix_size"
 
-input_modality: "rgb+extrinsics+intrinsics"
+input_modality: "rgb"
 # Options: "rgb+extrinsics+intrinsics", "rgb+extrinsics+intrinsics+depth", "rgb+intrinsics", "rgb"
 
 vlm:
@@ -60,6 +60,6 @@ reconstruction:
   device: "cuda"
   max_pred_frame: 20
 # Options: "naive", "moge", "spatracker", "vipe", "da3", "mapanything"
-# reconstruction model path: "Ruicheng/moge-2-vitl-normal", "Yuxihenry/SpatialTrackerV2_Front", "depth-anything/DA3NESTED-GIANT-LARGE", "facebook/map-anything"
+# reconstruction model path: "Ruicheng/moge-2-vitl-normal", "Yuxihenry/SpatialTrackerV2_Front", "depth-anything/DA3NESTED-GIANT-LARGE-1.1", "facebook/map-anything"
 
 save_root_dir: "./outputs"
