@@ -54,3 +54,13 @@ def depth2xyz(depth_image: np.ndarray, intrinsics: np.ndarray, cam_type: str) ->
     point_cloud = point_cloud.reshape(H, W, 3)
 
     return point_cloud
+
+
+def depth2xyz_world(depth_image: np.ndarray, intrinsics: np.ndarray, extrinsics: np.ndarray, cam_type: str) -> np.ndarray:
+    point_cloud = depth2xyz(depth_image, intrinsics, cam_type)
+    H, W, _ = point_cloud.shape
+    point_cloud_flat = point_cloud.reshape(-1, 3)
+    point_cloud_homogeneous = np.hstack([point_cloud_flat, np.ones((point_cloud_flat.shape[0], 1))])
+    point_cloud_world_homogeneous = (extrinsics @ point_cloud_homogeneous.T).T
+    point_cloud_world = point_cloud_world_homogeneous[:, :3] / point_cloud_world_homogeneous[:, 3:]
+    return point_cloud_world.reshape(H, W, 3)

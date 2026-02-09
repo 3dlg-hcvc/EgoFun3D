@@ -13,6 +13,7 @@ import gtsam
 from ripl_articulation import solve_articulation_from_poses
 from third_party.artipoint.artipoint.factor_graph.pose_est import PoseEstFactorGraph
 from third_party.artipoint.artipoint.track.arti_estimator import ArtiEstimator
+from third_party.artipoint.artipoint.segmentor.articulated_object_segmentor import ArticulatedObjectSegmentor
 from third_party.artipoint.artipoint.track.arti_estimator import smooth_trajectory_optimization
 from third_party.artipoint.artipoint.utils.articulation_helper import estimate_motion_point_bisectors
 from typing import List, Tuple, Dict
@@ -22,12 +23,12 @@ class Artipoint:
     def __init__(self, config: omegaconf.DictConfig):
         self.cfg = config
         self.arti_estimator = ArtiEstimator(config.motion_cfg)
-        pass
+        self.arti_segmentor = ArticulatedObjectSegmentor(config.segmentor_cfg)
 
-    def extract_hand_segments(self) -> List[Tuple[int, int]]:
+    def extract_hand_segments(self, rgb_frame_list: List[PILImage.Image]) -> List[Tuple[int, int]]:
         """Extract hand action segments from RGB frames."""
         segments = self.arti_segmentor.extract_hand_action_segments_smoothed(
-            self.rgb_frames,
+            rgb_frame_list,
             smoothing_window_size=self.cfg.segmentation.smoothing_window_size,
             min_window_size=self.cfg.segmentation.min_window_size,
             max_window_size=self.cfg.segmentation.max_window_size,
@@ -36,14 +37,14 @@ class Artipoint:
         return segments
 
     def compute_human_masks(
-        self, segments: List[Tuple[int, int]]
+        self, rgb_frame_list: List[PILImage.Image], segments: List[Tuple[int, int]]
     ) -> List[List[np.ndarray]]:
         """Compute human masks for each segment."""
         masks_per_segment = []
         for seg_start, seg_end in segments:
             segment_masks = []
             for i in range(seg_end - seg_start):
-                img = self.rgb_frames[i + seg_start]
+                img = np.array(rgb_frame_list[i + seg_start])
                 human_masks = self.arti_estimator._segment_human(img)
                 if human_masks:
                     # Use first detected human mask and process it
@@ -72,14 +73,14 @@ class Artipoint:
         return masks_per_segment
 
     def extract_queries_per_segment(
-        self, segments: List[Tuple[int, int]]
+        self, rgb_frame_list: List[PILImage.Image], part_masks: np.ndarray, segments: List[Tuple[int, int]]
     ) -> Tuple[List[Tuple[int, int]], List[torch.Tensor]]:
         """Extract query points for each segment using articulated segmentation."""
         queries_segments = []
         valid_segments = []
         for seg_idx, (seg_start, seg_end) in enumerate(segments):
             if self.cfg.queries.manual_queries:
-                points = self.arti_estimator._select_points(self.rgb_frames[seg_start])
+                points = self.arti_estimator._select_points(np.array(rgb_frame_list[seg_start]))
                 queries = self.arti_estimator._create_queries_points(
                     points, frames=[0], device="cpu"
                 )
@@ -88,43 +89,49 @@ class Artipoint:
                 continue
             queries = None
             for j in range(0, seg_end - seg_start, self.cfg.queries.frame_step):
-                rgb = self.rgb_frames[j + seg_start]
-                depth = self.depth_frames[j + seg_start]
-                camera_pose = self.camera_poses[j + seg_start]
-                arti_results = self.arti_segmentor.segment_articulated_object(
-                    rgb,
-                    depth,
-                    camera_pose=camera_pose,
-                    num_points=self.cfg.queries.num_points,
-                    dist_thresh=self.cfg.queries.dist_thresh,
-                    max_feat_points=self.cfg.queries.max_feat_points,
-                    eps_pixels=self.cfg.queries.eps_pixels,
-                    feat_type=self.cfg.queries.feat_type,
-                )
-                if not arti_results.get("orb_points"):
+                part_mask = part_masks[j + seg_start]
+                if part_mask.sum() == 0:
                     continue
+                orb_points = self.arti_segmentor.sample_fetures(
+                    np.array(rgb_frame_list[j + seg_start]), [part_mask], self.cfg.queries.max_feat_points, feat_type=self.cfg.queries.feat_type
+                )
+                # rgb = rgb_frame_list[j + seg_start]
+                # depth = depths[j + seg_start]
+                # camera_pose = camera_poses[j + seg_start]
+                # arti_results = self.arti_segmentor.segment_articulated_object(
+                #     rgb,
+                #     depth,
+                #     camera_pose=camera_pose,
+                #     num_points=self.cfg.queries.num_points,
+                #     dist_thresh=self.cfg.queries.dist_thresh,
+                #     max_feat_points=self.cfg.queries.max_feat_points,
+                #     eps_pixels=self.cfg.queries.eps_pixels,
+                #     feat_type=self.cfg.queries.feat_type,
+                # )
+                # if not arti_results.get("orb_points"):
+                #     continue
                 query = self.arti_estimator._create_queries_points(
-                    arti_results["orb_points"], frames=[j], device="cpu"
+                    orb_points, frames=[j], device="cpu"
                 )
                 queries = (
                     query if queries is None else torch.cat((queries, query), dim=0)
                 )
                 queries = queries[: self.cfg.queries.max_queries]
-                # Visualize results
-                if self.cfg.visualization.show_segmented_image:
-                    masks = arti_results.get("filtered_masks")
-                    rgb_vis = self.arti_segmentor.sam_segmenter.visualize_segmentation(
-                        rgb, masks
-                    )
-                    all_points = arti_results.get("orb_points", [])
-                    if all_points:
-                        rgb_vis = self.arti_segmentor.sam_segmenter.draw_points(
-                            rgb_vis, all_points, [1] * len(all_points)
-                        )
-                    cv2.imshow(
-                        "Segmented Image", cv2.cvtColor(rgb_vis, cv2.COLOR_RGB2BGR)
-                    )
-                    cv2.waitKey(1)
+                # # Visualize results
+                # if self.cfg.visualization.show_segmented_image:
+                #     masks = arti_results.get("filtered_masks")
+                #     rgb_vis = self.arti_segmentor.sam_segmenter.visualize_segmentation(
+                #         rgb, masks
+                #     )
+                #     all_points = arti_results.get("orb_points", [])
+                #     if all_points:
+                #         rgb_vis = self.arti_segmentor.sam_segmenter.draw_points(
+                #             rgb_vis, all_points, [1] * len(all_points)
+                #         )
+                #     cv2.imshow(
+                #         "Segmented Image", cv2.cvtColor(rgb_vis, cv2.COLOR_RGB2BGR)
+                #     )
+                #     cv2.waitKey(1)
 
             cv2.destroyAllWindows()
             if queries is not None:
@@ -138,6 +145,8 @@ class Artipoint:
 
     def track_and_project_queries(
         self,
+        rgb_frame_list: List[PILImage.Image],
+        depths: np.ndarray,
         segments: List[Tuple[int, int]],
         queries_segments: List[torch.Tensor],
         human_masks_per_segment: List[List[np.ndarray]],
@@ -152,13 +161,14 @@ class Artipoint:
         # save_dir = "2d_tracks"
         # os.makedirs(save_dir, exist_ok=True)
         # vis = Visualizer(save_dir=save_dir, pad_value=120, linewidth=3)
+        rgb_frame_list_np = [np.array(frame) for frame in rgb_frame_list]
 
         pred_3d_tracks_segments = []
         pred_visibility_segments = []
         for idx, (seg_start, seg_end) in enumerate(segments):
             st = time.time()
             pred_2d_tracks, pred_visibility = self.arti_estimator._cotracker_process(
-                self.rgb_frames[seg_start:seg_end],
+                rgb_frame_list_np[seg_start:seg_end],
                 queries_segments[idx].to("cuda"),
                 backward_tracking=self.cfg.tracking.backward_tracking,
             )
@@ -183,7 +193,7 @@ class Artipoint:
             torch.cuda.empty_cache()
             pred_3d_tracks, valid_depth_masks = (
                 self.arti_estimator._project_2d_tracks_to_3d(
-                    self.depth_frames[seg_start:seg_end], pred_2d_tracks
+                    depths[seg_start:seg_end], pred_2d_tracks
                 )
             )
             # Filter out trackers falling on human regions
@@ -208,6 +218,7 @@ class Artipoint:
 
     def compensate_cam_motion(
         self,
+        camera_poses: np.ndarray,
         segments: List[Tuple[int, int]],
         pred_3d_tracks_segments: List[np.ndarray],
     ) -> List[np.ndarray]:
@@ -217,9 +228,9 @@ class Artipoint:
         for i, (start_idx, end_idx) in enumerate(segments):
             for j in range(len(pred_3d_tracks_segments[i])):
                 pred_3d_tracks_segments[i][j] = (
-                    self.camera_poses[start_idx + j][:3, :3]
+                    camera_poses[start_idx + j][:3, :3]
                     @ pred_3d_tracks_segments[i][j].T
-                    + self.camera_poses[start_idx + j][:3, 3][:, None]
+                    + camera_poses[start_idx + j][:3, 3][:, None]
                 ).T
         return pred_3d_tracks_segments
 
@@ -456,27 +467,22 @@ class Artipoint:
             return None, None, None
 
     def articulation_estimation(self, rgb_frame_list: List[PILImage.Image], reconstruction_results: Dict, part_masks: np.ndarray):
-        # Visualize hand action segments
-        if (
-            self.cfg.visualization.show_hand_segments
-            and not self.cfg.debugging.load_intermediate_results
-        ):
-            self.arti_segmentor.play_hand_action_segments(self.rgb_frames, segments)
+        segments = self.extract_hand_segments(rgb_frame_list)
 
         # Extract query points per segment
-        segments, queries_segments = self.extract_queries_per_segment(segments)
+        segments, queries_segments = self.extract_queries_per_segment(rgb_frame_list, part_masks, segments)
         # Compute human masks per segment
-        human_masks_per_segment = self.compute_human_masks(segments)
+        human_masks_per_segment = self.compute_human_masks(rgb_frame_list, segments)
 
         pred_3d_tracks_segments, pred_visibility_segments = (
             self.track_and_project_queries(
-                segments, queries_segments, human_masks_per_segment
+                rgb_frame_list, reconstruction_results["depth"], segments, queries_segments, human_masks_per_segment
             )
         )
 
         # Compensate for camera motion
         pred_3d_tracks_segments = self.compensate_cam_motion(
-            segments, pred_3d_tracks_segments
+            reconstruction_results["extrinsics"], segments, pred_3d_tracks_segments
         )
 
         # Filter out static and jerky points
@@ -522,23 +528,7 @@ class Artipoint:
             pred_3d_tracks_segments, pred_visibility_segments, segments
         )
 
-        # save successful segments
-        with open(
-            os.path.join(intermediate_dir, "final_successful_segments.json"), "w"
-        ) as f:
-            json.dump(successful_segments, f, indent=4)
-        loguru.logger.info(f"Segments saved to {intermediate_dir}")
+        results_list = [{"axis": results["axis"], "pos": results["center"], "state": results["thetas"], "type": results["joint_type"]} for results in segments_results]
 
-        # write the results to as json file
-        if self.cfg.debugging.write_results:
-            self.write_results(
-                os.path.join(
-                    self.cfg.debugging.output_dir,
-                    scene_type,
-                    scene_name,
-                    "results",
-                ),
-                segments,
-                segments_results,
-                free_traj_segments,
-            )
+        return results_list
+        
