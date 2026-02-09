@@ -6,8 +6,11 @@ import random
 import torch
 import os
 from torch.utils.data import DataLoader
+import pickle
+import gzip
 import hydra
 from omegaconf import DictConfig, OmegaConf
+import loguru
 
 from dataset.dataset import Dataset, build_dataset
 from articulation.base import build_articulation_estimation_model, ArticulationEstimation
@@ -38,25 +41,26 @@ def identity_collate(batch):
 def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: ArticulationEstimation, config: omegaconf.DictConfig, save_dir: str):
     # Run segmentation
     if config.debug:
-        print("Debug mode enabled: Limiting evaluation dataset to 1 sample.")
+        loguru.logger.debug("Debug mode enabled: Limiting evaluation dataset to 1 sample.")
         max_dataset_size = 1
     data_count = 0
     for data in eval_dataloader:
         # data = batch[0]  # batch size is 1
-        print("Evaluating data:", data["video_name"])
+        loguru.logger.info(f"Evaluating data: {data['video_name']}")
         if config.debug and data_count >= max_dataset_size:
             break
         articulation_results = {}
         reconstruction_results = None
         save_articulation_dir = os.path.join(save_dir, data["video_name"], "articulation")
         if os.path.exists(f"{save_articulation_dir}/articulation_results.json"):
-            print("Articulation results already exist, skipping articulation and evaluation for this sample.")
+            loguru.logger.info("Articulation results already exist, skipping articulation and evaluation for this sample.")
             continue
         if not os.path.exists(save_articulation_dir):
             os.makedirs(save_articulation_dir)
         for role in ["receiver", "effector"]:
             gt_articulation = data[f"{role}_articulation"]
             if gt_articulation is None:
+                loguru.logger.debug(f"No GT articulation for role {role}, skipping evaluation for this role.")
                 articulation_results[role] = "No GT articulation, skipping evaluation for this role."
                 continue
             video_frame_list = data["rgb_list"]
@@ -67,25 +71,15 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
             if reconstruction_results is None:
                 reconstruction_results_path = os.path.join(config.reconstruction_results_dir, data["video_name"], "reconstruction/reconstruction_results.pkl.gz")
                 if os.path.exists(reconstruction_results_path):
-                    print("Loading existing reconstruction results from:", reconstruction_results_path)
-                    with open(reconstruction_results_path, "rb") as f:
-                        reconstruction_results = torch.load(f)
+                    loguru.logger.info(f"Loading existing reconstruction results from: {reconstruction_results_path}")
+                    with gzip.open(reconstruction_results_path, "rb") as f:
+                        reconstruction_results = pickle.load(f)
             if reconstruction_results is None:
-                print("Reconstruction failed, skipping this sample.")
+                loguru.logger.info("Reconstruction failed, skipping this sample.")
+                articulation_results["receiver"] = "Reconstruction failed, skipping this sample."
+                articulation_results["effector"] = "Reconstruction failed, skipping this sample."
                 break
             # run articulation estimation
-            # if config.debug:
-            #     full_points = reconstruction_results["points"]
-            #     full_masks = reconstruction_results["points_mask"]
-            #     points_list = []
-            #     for i, (points, mask) in enumerate(zip(full_points, full_masks)):
-            #         # part_points = points[mask]
-            #         # save_pcd(points.reshape(-1, 3), f"{save_pcd_dir}/frame_{i}_full_points.ply")
-            #         points_list.append(points.reshape(-1, 3))
-            #     save_pcd_dir_debug = os.path.join(save_dir, data["video_name"], "debug_full_reconstruction")
-            #     if not os.path.exists(save_pcd_dir_debug):
-            #         os.makedirs(save_pcd_dir_debug)
-            #     save_pcd(np.concatenate(points_list, axis=0), f"{save_pcd_dir_debug}/{role}_full_reconstruction.ply")
             articulation_results[role] = articulation_estimation_model.articulation_estimation(video_frame_list, reconstruction_results, mask_list)
 
             # Evaluate reconstruction
@@ -102,20 +96,20 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
             }
             save_articulation_metrics(articulation_metrics, f"{save_articulation_dir}/articulation_metrics_{role}.json")
         save_articulation_results(articulation_results, f"{save_articulation_dir}/articulation_results.json")
-        data_count += 1
 
 
-@hydra.main(config_path="config", config_name="default")
+@hydra.main(version_base="1.3", config_path="config", config_name="default")
 def main(config: omegaconf.DictConfig):
-    print("Start experiment:", config.name)
+    loguru.logger.info(f"Start experiment: {config.name}")
     if "save_dir" in config and config.save_dir is not None:
-        print("Resuming from:", config.save_dir)
+        loguru.logger.info(f"Resuming from: {config.save_dir}")
         save_dir = config.save_dir
     else:
         exp_time = datetime.now().strftime("%Y%m%d-%H%M%S")
         save_dir = f"{config.save_root_dir}/{config.name}/{exp_time}"
-        config.update({"save_dir": save_dir})
-    print("Results will be saved to:", save_dir)
+        # config.update({"save_dir": save_dir})
+        config.save_dir = save_dir
+    loguru.logger.info(f"Results will be saved to: {save_dir}")
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 

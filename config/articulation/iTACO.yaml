@@ -1,4 +1,4 @@
-articulation_method:: "iTACO" # can be "iTACO", "Artipoint"
+articulation_method: "iTACO" # can be "iTACO", "Artipoint"
 device: "cuda"
 coarse:
   matcher: "LoFTr"

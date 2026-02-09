@@ -319,7 +319,7 @@ class DA3DReconstruction(BaseReconstruction):
                 full_points_mask_list.extend(point_mask_list) if i == 0 else full_points_mask_list.extend(point_mask_list[1:])
                 current_init_extrinsics = extrinsics[-1]
             return {"rgb": video_frame_list, 
-                    "intrinsics": intrinsics[0], 
+                    "intrinsics": intrinsics, 
                     "extrinsics": np.stack(full_extinsics_list), 
                     "depth": np.stack(full_depth_list), 
                     "points": np.stack(full_points_list), 

@@ -1,4 +1,4 @@
-articulation_method:: "Artipoint"
+articulation_method: "Artipoint"
 device: "cuda"
 reconstruction_path
 

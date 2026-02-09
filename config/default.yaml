@@ -2,7 +2,9 @@ name: "test-itaco-articulation"
 seed: 42
 save_root_dir: "./outputs"
 input_modality: "rgb"
+save_dir: ???
 reconstruction_results_dir: ???
+debug: False
 
 defaults:
   - dataset: dataset

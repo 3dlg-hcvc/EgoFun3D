@@ -8,7 +8,7 @@ from kornia.feature import LoFTR
 from pytorch3d.loss import chamfer_distance
 from pytorch3d.transforms import axis_angle_to_matrix, quaternion_to_matrix
 import omegaconf
-import tqdm
+from tqdm import tqdm
 import yaml
 
 from articulation.base import ArticulationEstimation
@@ -252,13 +252,13 @@ class iTACOCoarse:
 
                 if "points" in reconstruction_results.keys():
                     base_pc_origin = reconstruction_results["points"][i]
-                    next_pc_origin = reconstruction_results["points"][i + interval]
+                    next_pc_origin = reconstruction_results["points"][min(i + interval, len(reconstruction_results["points"]) - 1)]
                 else:
                     depth_i = reconstruction_results["depth"][i]
-                    depth_next = reconstruction_results["depth"][i + interval]
+                    depth_next = reconstruction_results["depth"][min(i + interval, len(reconstruction_results["depth"]) - 1)]
                     intrinsics = reconstruction_results["intrinsics"]
                     extrinsics_i = reconstruction_results["extrinsics"][i]
-                    extrinsics_next = reconstruction_results["extrinsics"][i + interval]
+                    extrinsics_next = reconstruction_results["extrinsics"][min(i + interval, len(reconstruction_results["extrinsics"]) - 1)]
                     base_pc_origin = depth2xyz_world(depth_i, intrinsics, extrinsics_i, cam_type="opencv")
                     next_pc_origin = depth2xyz_world(depth_next, intrinsics, extrinsics_next, cam_type="opencv")
 
@@ -266,7 +266,7 @@ class iTACOCoarse:
                 dynamic_kp1 = next_pc_origin[dynamic_pts1[:, 1], dynamic_pts1[:, 0]]
                 dynamic_kp0, dynamic_kp1 = self.filter_match(dynamic_kp0, dynamic_kp1)
 
-                if dynamic_kp0.shape[0] > 80:
+                if dynamic_kp0.shape[0] > 10:
                     result_i = self.estimate_joint_single(dynamic_kp0, dynamic_kp1, RANSAC=True)
                     result_list.append(result_i)
                     pair_list.append((i, i + interval))
@@ -296,11 +296,11 @@ class iTACOCoarse:
 class iTACORefine:
     def __init__(self, lr: float, opt_steps: int, device: torch.device):
         self.device = device
-        self.steps = opt_steps
+        self.opt_steps = opt_steps
         self.current_step = 0
         self.lr = lr
 
-    def distances_to_line(self, points, line_point, line_dir, return_min=False):
+    def distances_to_line(self, points: np.ndarray, line_point: np.ndarray, line_dir: np.ndarray, return_min: bool = False) -> float:
         """
         Compute perpendicular distances from a set of 3‑D points to a 3‑D line.
 
@@ -348,9 +348,9 @@ class iTACORefine:
         if joint_type == "revolute":
             rot_vec = joint_axis_norm.repeat(N, 1) * joint_state.reshape(N, 1) # N, 3
             rotations = axis_angle_to_matrix(rot_vec) # N, 3, 3
-            translations = torch.matmul((torch.eye(3).repeat(N, 1, 1).to(self.device) - rotations), joint_pos) # N, 3
+            translations = torch.matmul((torch.eye(3, dtype=torch.float32).repeat(N, 1, 1).to(self.device) - rotations), joint_pos) # N, 3
         elif joint_type == "prismatic":
-            rotations = torch.eye(3, dtype=torch.float64, device=self.device).repeat(N, 1, 1) # N, 3, 3
+            rotations = torch.eye(3, dtype=torch.float32, device=self.device).repeat(N, 1, 1) # N, 3, 3
             translations = joint_axis_norm.repeat(N, 1) * joint_state.reshape(N, 1) # N, 3
 
         joint_transformed_xyz = torch.matmul(xyz.reshape(N, H*W, C), rotations.permute(0, 2, 1)) + translations.reshape(N, 1, 3) # N, H*W, 3
@@ -412,9 +412,9 @@ class iTACORefine:
             if torch.any(torch.isnan(joint_state)):
                 del joint_state
                 if joint_type == "revolute":
-                    joint_state = torch.nn.Parameter(torch.linspace(0, torch.pi / 2, N, device=self.device), requires_grad=True) # N,
+                    joint_state = torch.nn.Parameter(torch.linspace(0, torch.pi / 2, N, device=self.device, dtype=torch.float32), requires_grad=True) # N,
                 elif joint_type == "prismatic":
-                    joint_state = torch.nn.Parameter(torch.linspace(0, 0.1, N, device=self.device), requires_grad=True) # N,
+                    joint_state = torch.nn.Parameter(torch.linspace(0, 0.1, N, device=self.device, dtype=torch.float32), requires_grad=True) # N,
             
             ## optimizer
             optimize_params = [{"params": (joint_axis, joint_pos, joint_state)}]
@@ -430,7 +430,7 @@ class iTACORefine:
             estimation_results[joint_type]["pos"] = best_joint_pos
             estimation_results[joint_type]["state"] = best_joint_state
 
-            tbar = tqdm(range(self.steps))
+            tbar = tqdm(range(self.opt_steps))
             for i, _ in enumerate(tbar):
                 self.current_step = i
 
@@ -464,7 +464,7 @@ class iTACORefine:
             del joint_state
             torch.cuda.empty_cache()
             
-        min_dist = self.distances_to_line(surface_xyz, estimation_results["revolute"]["pos"], estimation_results["revolute"]["axis"])
+        min_dist = self.distances_to_line(surface_xyz.cpu().numpy(), estimation_results["revolute"]["pos"], estimation_results["revolute"]["axis"])
         if min_dist < 0.15:
             pred_joint_type = "revolute" if estimation_results["revolute"]["best_loss"] < estimation_results["prismatic"]["best_loss"] else "prismatic"
         else:

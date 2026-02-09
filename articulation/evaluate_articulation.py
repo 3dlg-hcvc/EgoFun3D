@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Tuple
 def compute_joint_error(gt_joint_parameter: Dict[str, np.ndarray | str], pred_joint_parameter: Dict[str, np.ndarray | str]) -> Tuple[float, float, bool]:
     gt_joint_type = gt_joint_parameter["type"]
     gt_joint_axis = gt_joint_parameter["axis"]
-    gt_joint_pos = gt_joint_parameter["origin"]
+    gt_joint_pos = gt_joint_parameter["origin"] if "origin" in gt_joint_parameter else np.array([0, 0, 0])
     # joint estimation
     pred_joint_type = pred_joint_parameter["type"]
     pred_joint_axis = pred_joint_parameter["axis"]
@@ -32,12 +32,7 @@ def save_articulation_results(pred_joint_parameter: Dict[str, Dict[str, np.ndarr
                 if isinstance(pred_joint_parameter[role][parameter_key], np.ndarray):
                     pred_joint_parameter[role][parameter_key] = pred_joint_parameter[role][parameter_key].tolist()
     with open(save_path, "w") as f:
-        json.dump({
-            "type": pred_joint_parameter["type"],
-            "axis": pred_joint_parameter["axis"].tolist(),
-            "origin": pred_joint_parameter["origin"].tolist(),
-            "state": pred_joint_parameter["state"].tolist()
-        }, f, indent=4)
+        json.dump(pred_joint_parameter, f, indent=4)
 
 
 def save_articulation_metrics(metrics: dict, save_path: str):
