@@ -11,6 +11,7 @@ import omegaconf
 import tqdm
 import yaml
 
+from articulation.base import ArticulationEstimation
 from utils.reconstruction_utils import estimate_se3_transformation, depth2xyz_world
 from typing import List, Dict, Tuple
 
@@ -469,10 +470,10 @@ class iTACORefine:
         else:
             pred_joint_type = "prismatic"
         
-        return {"axis": best_joint_axis, "pos": best_joint_pos, "state": best_joint_state, "type": pred_joint_type, "loss": best_loss}
+        return {"axis": best_joint_axis, "origin": best_joint_pos, "state": best_joint_state, "type": pred_joint_type, "loss": best_loss}
 
 
-class iTACO:
+class iTACO(ArticulationEstimation):
     def __init__(self, config: omegaconf.DictConfig):
         self.corase_prediction = iTACOCoarse(config.coarse.matcher, config.device)
         self.refinement = iTACORefine(config.refine.lr, config.refine.opt_steps, config.device)

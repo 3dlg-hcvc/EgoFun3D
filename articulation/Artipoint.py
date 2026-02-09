@@ -16,10 +16,12 @@ from third_party.artipoint.artipoint.track.arti_estimator import ArtiEstimator
 from third_party.artipoint.artipoint.segmentor.articulated_object_segmentor import ArticulatedObjectSegmentor
 from third_party.artipoint.artipoint.track.arti_estimator import smooth_trajectory_optimization
 from third_party.artipoint.artipoint.utils.articulation_helper import estimate_motion_point_bisectors
+
+from articulation.base import ArticulationEstimation
 from typing import List, Tuple, Dict
 
 
-class Artipoint:
+class Artipoint(ArticulationEstimation):
     def __init__(self, config: omegaconf.DictConfig):
         self.cfg = config
         self.arti_estimator = ArtiEstimator(config.motion_cfg)
@@ -466,7 +468,7 @@ class Artipoint:
             loguru.logger.error("Factor graph optimization failed.")
             return None, None, None
 
-    def articulation_estimation(self, rgb_frame_list: List[PILImage.Image], reconstruction_results: Dict, part_masks: np.ndarray):
+    def articulation_estimation(self, rgb_frame_list: List[PILImage.Image], reconstruction_results: Dict, part_masks: np.ndarray) -> Dict[str, np.ndarray | str]:
         segments = self.extract_hand_segments(rgb_frame_list)
 
         # Extract query points per segment
@@ -528,7 +530,7 @@ class Artipoint:
             pred_3d_tracks_segments, pred_visibility_segments, segments
         )
 
-        results_list = [{"axis": results["axis"], "pos": results["center"], "state": results["thetas"], "type": results["joint_type"]} for results in segments_results]
+        results_list = [{"axis": np.array(results["axis"]), "origin": np.array(results["center"]), "state": np.array(results["thetas"]), "type": results["joint_type"]} for results in segments_results]
 
-        return results_list
+        return results_list[0]
         
