@@ -1,75 +1,22 @@
 name: "test-itaco-articulation"
 seed: 42
-
-dataset:
-  name: "Uniform"
-  root_path: "./full_dataset"
-  meta_file: "./full_dataset/dataset_new_metadata5.json"
-  image_type: "undistorted"  # can be "undistorted" or "cropped"
-  sample_strategy: "fix_size"  # can be "fix_size" or "all"
-  sample_num: 20  # used when sample_strategy is "fix_size"
-
+save_root_dir: "./outputs"
 input_modality: "rgb"
-# Options: "rgb+extrinsics+intrinsics", "rgb+extrinsics+intrinsics+depth", "rgb+intrinsics", "rgb"
-
-vlm:
-  role: "video_narrator"
-  vlm_type: "gemini" # can be "gemini", "gpt", or "molmo"
-  vlm_model: "gemini-2.5-flash"
-  prompt_type: "text" # can be "text" or "points"
-  prompt_template: "This is a video. Analyze this video and answer the following questions: \
-                    1. Which part of the object receives human action? \
-                    2. Which part of the object reacts to human action? \
-                    Please describe the name and features of the part as well as the spatial relationship with surrounding objects. \
-                    Please only answer in this template: \
-                    {1: {name: xxx, description: aaa}, 2: {name: yyy, description: bbb}} \
-                    Substitue \"xxx\" and \"yyy\" with the name of the part of the object, \"aaa\" and \"bbb\" with the description of the part. \
-                    DO NOT answer any other information."
-  max_query: 10
-
-segmentation:
-  model: "SegZero" # can be "SegZero" or "Sa2VA"
-  reasoning_model_path: "Seg-Zero/pretrained_models/VisionReasoner-7B"
-  segmentation_model_path: "facebook/sam2.1-hiera-large"
-  device: "cuda"
-  use_gt_depth: false
-  save_results: true
-  max_query: 10
-  vlm_judge:
-    role: "segmentation_judge"
-    vlm_model: "gemini-2.5-flash"
-    prompt_template: "Here are two images. The first image is the original image. I do segmentation on the first image, based on this text description: {PartDescription}. \
-                      The result is shown in the second image, marked in green. Do you think the segmentation result in the second image is accurate or not. Please answer in this template: \
-                      <answer>xxx</answer> <reason>yyy</reason> \
-                      Substitute \"xxx\" with 'yes' or 'no' and \"yyy\" with the reason of your answer. \
-                      DO NOT answer any other information."
-    max_query: 3
-
-fusion:
-  fusion_method: "feature_matching"
-  model_path: "Yuxihenry/SpatialTrackerV2-Offline"
-  device: "cuda"
-  vo_points: 756
-  grid_size: 30
-# Options: "tracking", "feature_matching"
-# tracking model path: "Yuxihenry/SpatialTrackerV2-Offline"
-
-reconstruction:
-  recon_method: "da3"
-  model_path: "depth-anything/DA3NESTED-GIANT-LARGE-1.1"
-  device: "cuda"
-  max_pred_frame: 20
-# Options: "naive", "moge", "spatracker", "vipe", "da3", "mapanything"
-# reconstruction model path: "Ruicheng/moge-2-vitl-normal", "Yuxihenry/SpatialTrackerV2_Front", "depth-anything/DA3NESTED-GIANT-LARGE-1.1", "facebook/map-anything"
 reconstruction_results_dir: ???
 
-articulation:
-  articulation_method:: "iTACO" # can be "iTACO", "Artipoint"
-  device: "cuda"
-  coarse:
-    matcher: "LoFTr"
-  refine:
-    lr: 5e-3
-    opt_steps: 400 
+defaults:
+  - dataset: dataset
 
-save_root_dir: "./outputs"
+# Options: "rgb+extrinsics+intrinsics", "rgb"
+
+  - vlm: gemini
+
+  - segmentation: VisionReasoner
+
+  - fusion: feature_matching
+
+  - reconstruction: da3
+
+
+  - articulation: iTACO
+

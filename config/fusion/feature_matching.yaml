@@ -1,0 +1,2 @@
+fusion_method: "feature_matching"
+device: "cuda"

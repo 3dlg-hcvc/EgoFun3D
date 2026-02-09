@@ -1,0 +1,4 @@
+recon_method: "mapanything"
+model_path: "facebook/map-anything"
+device: "cuda"
+max_pred_frame: 20

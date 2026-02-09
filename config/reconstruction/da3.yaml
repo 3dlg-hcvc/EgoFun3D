@@ -1,0 +1,4 @@
+recon_method: "da3"
+model_path: "depth-anything/DA3NESTED-GIANT-LARGE-1.1"
+device: "cuda"
+max_pred_frame: 20

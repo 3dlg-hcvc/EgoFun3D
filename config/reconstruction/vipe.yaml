@@ -1,0 +1,2 @@
+recon_method: "vipe"
+device: "cuda"

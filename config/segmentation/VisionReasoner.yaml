@@ -1,0 +1,16 @@
+model: "SegZero" # can be "SegZero" or "Sa2VA"
+reasoning_model_path: "Seg-Zero/pretrained_models/VisionReasoner-7B"
+segmentation_model_path: "facebook/sam2.1-hiera-large"
+device: "cuda"
+use_gt_depth: false
+save_results: true
+max_query: 10
+vlm_judge:
+  role: "segmentation_judge"
+  vlm_model: "gemini-2.5-flash"
+  prompt_template: "Here are two images. The first image is the original image. I do segmentation on the first image, based on this text description: {PartDescription}. \
+                    The result is shown in the second image, marked in green. Do you think the segmentation result in the second image is accurate or not. Please answer in this template: \
+                    <answer>xxx</answer> <reason>yyy</reason> \
+                    Substitute \"xxx\" with 'yes' or 'no' and \"yyy\" with the reason of your answer. \
+                    DO NOT answer any other information."
+  max_query: 3
