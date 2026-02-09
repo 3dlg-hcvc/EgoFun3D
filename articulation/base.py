@@ -17,9 +17,9 @@ class ArticulationEstimation:
     
 
 def build_articulation_estimation_model(config: omegaconf.DictConfig) -> ArticulationEstimation:
-    if config.name == "iTACO":
+    if config.articulation_method == "iTACO":
         return iTACO(config)
-    elif config.name == "Artipoint":
+    elif config.articulation_method == "Artipoint":
         return Artipoint(config)
     else:
-        raise ValueError(f"Unsupported articulation estimation model: {config.name}")
+        raise ValueError(f"Unsupported articulation estimation model: {config.articulation_method}")

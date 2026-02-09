@@ -1,4 +1,4 @@
-name: "test-da3-reconstruction"
+name: "test-itaco-articulation"
 seed: 42
 
 dataset:
@@ -61,5 +61,15 @@ reconstruction:
   max_pred_frame: 20
 # Options: "naive", "moge", "spatracker", "vipe", "da3", "mapanything"
 # reconstruction model path: "Ruicheng/moge-2-vitl-normal", "Yuxihenry/SpatialTrackerV2_Front", "depth-anything/DA3NESTED-GIANT-LARGE-1.1", "facebook/map-anything"
+reconstruction_results_dir: ???
+
+articulation:
+  articulation_method:: "iTACO" # can be "iTACO", "Artipoint"
+  device: "cuda"
+  coarse:
+    matcher: "LoFTr"
+  refine:
+    lr: 5e-3
+    opt_steps: 400 
 
 save_root_dir: "./outputs"

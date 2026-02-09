@@ -46,7 +46,7 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
         articulation_results = {}
         reconstruction_results = None
         save_articulation_dir = os.path.join(save_dir, data["video_name"], "articulation")
-        if os.path.exists(f"{save_articulation_dir}/articulation_results.pkl.gz"):
+        if os.path.exists(f"{save_articulation_dir}/articulation_results.json"):
             print("Articulation results already exist, skipping articulation and evaluation for this sample.")
             continue
         if not os.path.exists(save_articulation_dir):

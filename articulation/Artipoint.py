@@ -24,8 +24,24 @@ from typing import List, Tuple, Dict
 class Artipoint(ArticulationEstimation):
     def __init__(self, config: omegaconf.DictConfig):
         self.cfg = config
-        self.arti_estimator = ArtiEstimator(config.motion_cfg)
-        self.arti_segmentor = ArticulatedObjectSegmentor(config.segmentor_cfg)
+        config_segmentor = {
+            "hand_model_repo": self.cfg.segmentation.hand_model_repo,
+            "hand_model_name": self.cfg.segmentation.hand_model_name,
+            "hand_model_checkpoint_path": self.cfg.segmentation.hand_model_checkpoint_path,
+            "sam_checkpoint": self.cfg.segmentation.sam_checkpoint,
+            "use_cuda": True if self.cfg.device == "cuda" else False,
+            "hand_resize": tuple(self.cfg.segmentation.hand_resize),
+            "arti4d_dataset": None,
+        }
+        self.arti_segmentor = ArticulatedObjectSegmentor(config_segmentor)
+        motion_cfg = {
+            "model_path": self.cfg.tracking.model_path,
+            "cotracker2": self.cfg.tracking.cotracker2,
+            "yolo_path": self.cfg.tracking.yolo_path,
+            "arti4d_dataset": None,
+            "device": "cuda" if self.cfg.device else "cpu",
+        }
+        self.arti_estimator = ArtiEstimator(motion_cfg)
 
     def extract_hand_segments(self, rgb_frame_list: List[PILImage.Image]) -> List[Tuple[int, int]]:
         """Extract hand action segments from RGB frames."""
@@ -149,6 +165,7 @@ class Artipoint(ArticulationEstimation):
         self,
         rgb_frame_list: List[PILImage.Image],
         depths: np.ndarray,
+        intrinsics: np.ndarray,
         segments: List[Tuple[int, int]],
         queries_segments: List[torch.Tensor],
         human_masks_per_segment: List[List[np.ndarray]],
@@ -195,7 +212,7 @@ class Artipoint(ArticulationEstimation):
             torch.cuda.empty_cache()
             pred_3d_tracks, valid_depth_masks = (
                 self.arti_estimator._project_2d_tracks_to_3d(
-                    depths[seg_start:seg_end], pred_2d_tracks
+                    depths[seg_start:seg_end], intrinsics, pred_2d_tracks
                 )
             )
             # Filter out trackers falling on human regions
@@ -478,7 +495,7 @@ class Artipoint(ArticulationEstimation):
 
         pred_3d_tracks_segments, pred_visibility_segments = (
             self.track_and_project_queries(
-                rgb_frame_list, reconstruction_results["depth"], segments, queries_segments, human_masks_per_segment
+                rgb_frame_list, reconstruction_results["depth"], reconstruction_results["intrinsics"], segments, queries_segments, human_masks_per_segment
             )
         )
 
