@@ -186,11 +186,11 @@ class TrackingFusion(BaseFusion):
         return fused_part_pcd, transformation_list
     
 
-def build_fusion_model(fusion_method: str, model_path: str, device: str = "cuda", vo_points: int = 756, grid_size: int = 10) -> BaseFusion:
-    if fusion_method == "feature_matching":
-        fusion_model = FeatureMatchingFusion(device=device)
-    elif fusion_method == "tracking":
-        fusion_model = TrackingFusion(model_path=model_path, vo_points=vo_points, grid_size=grid_size, device=device)
+def build_fusion_model(config) -> BaseFusion:
+    if config.fusion_method == "feature_matching":
+        fusion_model = FeatureMatchingFusion(device=config.device)
+    elif config.fusion_method == "tracking":
+        fusion_model = TrackingFusion(model_path=config.model_path, vo_points=config.vo_points, grid_size=config.grid_size, device=config.device)
     else:
-        raise NotImplementedError(f"Fusion method {fusion_method} not implemented.")
+        raise NotImplementedError(f"Fusion method {config.fusion_method} not implemented.")
     return fusion_model

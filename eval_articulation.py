@@ -17,14 +17,6 @@ from articulation.base import build_articulation_estimation_model, ArticulationE
 from articulation.evaluate_articulation import compute_joint_error, save_articulation_metrics, save_articulation_results
 
 
-# def parse_args():
-#     parser = argparse.ArgumentParser()
-#     parser.add_argument('--config', type=str, required=True, help='Path to the config file')
-#     parser.add_argument('--resume', type=str, help='Path to the experiment directory to resume from')
-#     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
-#     return parser.parse_args()
-
-
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -99,7 +91,7 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
 
 
 @hydra.main(version_base="1.3", config_path="config", config_name="default")
-def main(config: omegaconf.DictConfig):
+def main(config: DictConfig):
     loguru.logger.info(f"Start experiment: {config.name}")
     if "save_dir" in config and config.save_dir is not None:
         loguru.logger.info(f"Resuming from: {config.save_dir}")
@@ -129,15 +121,4 @@ def main(config: omegaconf.DictConfig):
 
 
 if __name__ == "__main__":
-    # args = parse_args()
-    # if args.resume is not None:
-    #     config_path = os.path.join(args.resume, "config.yaml")
-    #     if not os.path.exists(config_path):
-    #         raise FileNotFoundError(f"Config file not found in resume directory: {config_path}")
-    #     print("Loading config from resume directory:", config_path)
-    #     config = omegaconf.OmegaConf.load(config_path)
-    #     config.update({"save_dir": args.resume})
-    # else:
-    #     config = omegaconf.OmegaConf.load(args.config)
-    # config.update({"debug": args.debug})
     main()

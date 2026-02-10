@@ -6,18 +6,13 @@ import random
 import torch
 import os
 from torch.utils.data import DataLoader
+import hydra
+from omegaconf import DictConfig, OmegaConf
+
 from dataset.dataset import Dataset, build_dataset
 from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion, TrackingFusion
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction
 from fusion.evaluate_reconstruction import save_reconstruction_metrics, evaluate_reconstruction, save_pcd, save_reconstruction_results
-
-
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, required=True, help='Path to the config file')
-    parser.add_argument('--resume', type=str, help='Path to the experiment directory to resume from')
-    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
-    return parser.parse_args()
 
 
 def set_seed(seed: int):
@@ -33,7 +28,7 @@ def identity_collate(batch):
     return batch[0]
 
 
-def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: BaseFusion, reconstruction_model: BaseReconstruction, config: omegaconf.DictConfig, save_dir: str):
+def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: BaseFusion, reconstruction_model: BaseReconstruction, config: DictConfig, save_dir: str):
     # Run segmentation
     if config.debug:
         print("Debug mode enabled: Limiting evaluation dataset to 1 sample.")
@@ -124,7 +119,8 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         data_count += 1
 
 
-def main(config: omegaconf.DictConfig):
+@hydra.main(version_base="1.3", config_path="config", config_name="default")
+def main(config: DictConfig):
     print("Start experiment:", config.name)
     if "save_dir" in config and config.save_dir is not None:
         print("Resuming from:", config.save_dir)
@@ -132,7 +128,8 @@ def main(config: omegaconf.DictConfig):
     else:
         exp_time = datetime.now().strftime("%Y%m%d-%H%M%S")
         save_dir = f"{config.save_root_dir}/{config.name}/{exp_time}"
-        config.update({"save_dir": save_dir})
+        # config.update({"save_dir": save_dir})
+        config.save_dir = save_dir
     print("Results will be saved to:", save_dir)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
@@ -146,7 +143,7 @@ def main(config: omegaconf.DictConfig):
     eval_dataloader = DataLoader(eval_dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=identity_collate)
 
     # Initialize segmentation models
-    fusion_model = build_fusion_model(**config.fusion)
+    fusion_model = build_fusion_model(config.fusion)
     input_modality = config["input_modality"]
     reconstruction_model = build_reconstruction_model(input_modality=input_modality, **config.reconstruction)
 
@@ -154,15 +151,4 @@ def main(config: omegaconf.DictConfig):
 
 
 if __name__ == "__main__":
-    args = parse_args()
-    if args.resume is not None:
-        config_path = os.path.join(args.resume, "config.yaml")
-        if not os.path.exists(config_path):
-            raise FileNotFoundError(f"Config file not found in resume directory: {config_path}")
-        print("Loading config from resume directory:", config_path)
-        config = omegaconf.OmegaConf.load(config_path)
-        config.update({"save_dir": args.resume})
-    else:
-        config = omegaconf.OmegaConf.load(args.config)
-    config.update({"debug": args.debug})
-    main(config)
+    main()
