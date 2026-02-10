@@ -8,6 +8,9 @@ import gzip
 
 from typing import Tuple, Dict
 
+MAX_CHAMFER_DISTANCE = 100
+MAX_CAMERA_ROTATION_ERROR = np.pi
+MAX_CAMERA_TRANSLATION_ERROR = 10.0
 
 def compute_part_chamfer_distance(gt_pcd: np.ndarray, pred_pcd: np.ndarray, device: str) -> float:
     """
@@ -49,7 +52,9 @@ def compute_depth_error(gt_depth: np.ndarray, pred_depth: np.ndarray, valid_mask
 
 def compute_extrinsics_error(gt_extrinsics: np.ndarray, pred_extrinsics: np.ndarray) -> Tuple[float, float]:
     rotation_error_matrix = pred_extrinsics[:, :3, :3] @ gt_extrinsics[:, :3, :3].transpose(0, 2, 1)
-    cam_rotation_error = np.mean(np.arccos((np.trace(rotation_error_matrix, axis1=1, axis2=2) - 1) / 2))
+    cos_value = (np.trace(rotation_error_matrix, axis1=1, axis2=2) - 1) / 2
+    cos_value = np.clip(cos_value, -1.0 + 1e-8, 1.0 - 1e-8)
+    cam_rotation_error = np.mean(np.arccos(cos_value))
     cam_translation_error = np.mean(np.linalg.norm(pred_extrinsics[:, :3, 3] - gt_extrinsics[:, :3, 3], axis=1))
     return float(cam_rotation_error), float(cam_translation_error)
 
@@ -83,9 +88,16 @@ def evaluate_reconstruction(pred_pcd: np.ndarray, pred_extrinsics: np.ndarray,
     Returns:
         Tuple[float, float, float]: Chamfer Distance, Rotation Error (radians), Translation Error.
     """
-    chamfer_dist = compute_part_chamfer_distance(gt_pcd, pred_pcd, device)
+    if pred_pcd.shape[0] == 0:
+        chamfer_dist = MAX_CHAMFER_DISTANCE
+    else:
+        chamfer_dist = compute_part_chamfer_distance(gt_pcd, pred_pcd, device)
     # depth_mean_error, depth_max_error = compute_depth_error(gt_depth, pred_depth, depth_valid_mask)
     rot_error, trans_error = compute_extrinsics_error(gt_extrinsics, pred_extrinsics)
+    if np.isnan(rot_error):
+        rot_error = MAX_CAMERA_ROTATION_ERROR
+    if np.isnan(trans_error):
+        trans_error = MAX_CAMERA_TRANSLATION_ERROR
     return chamfer_dist, rot_error, trans_error
 
 
