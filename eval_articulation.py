@@ -16,6 +16,9 @@ from dataset.dataset import Dataset, build_dataset
 from articulation.base import build_articulation_estimation_model, ArticulationEstimation
 from articulation.evaluate_articulation import compute_joint_error, save_articulation_metrics, save_articulation_results
 
+MAX_JOINT_ORI_ERROR = np.pi / 2
+MAX_JOINT_POS_ERROR = 1.0
+
 
 def set_seed(seed: int):
     random.seed(seed)
@@ -75,10 +78,17 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
             articulation_results[role] = articulation_estimation_model.articulation_estimation(video_frame_list, reconstruction_results, mask_list)
 
             # Evaluate reconstruction
-            joint_ori_error, joint_pos_error, joint_type_correct = compute_joint_error(
-                gt_articulation,
-                articulation_results[role]
-            )
+            if articulation_results[role] is None:
+                loguru.logger.info("Articulation estimation failed, skipping evaluation for this role.")
+                articulation_results[role] = "Articulation estimation failed, skipping evaluation for this role."
+                joint_ori_error = MAX_JOINT_ORI_ERROR
+                joint_pos_error = MAX_JOINT_POS_ERROR
+                joint_type_correct = False
+            else:
+                joint_ori_error, joint_pos_error, joint_type_correct = compute_joint_error(
+                    gt_articulation,
+                    articulation_results[role]
+                )
             
             # save_pcd(fused_part_pcd, f"{save_pcd_dir}/{role}_fused.ply")
             articulation_metrics = {

@@ -11,6 +11,8 @@ import omegaconf
 import gtsam
 
 from ripl_articulation import solve_articulation_from_poses
+import sys
+sys.path.append("third_party/artipoint")
 from third_party.artipoint.artipoint.factor_graph.pose_est import PoseEstFactorGraph
 from third_party.artipoint.artipoint.track.arti_estimator import ArtiEstimator
 from third_party.artipoint.artipoint.segmentor.articulated_object_segmentor import ArticulatedObjectSegmentor
@@ -39,7 +41,7 @@ class Artipoint(ArticulationEstimation):
             "cotracker2": self.cfg.tracking.cotracker2,
             "yolo_path": self.cfg.tracking.yolo_path,
             "arti4d_dataset": None,
-            "device": "cuda" if self.cfg.device else "cpu",
+            "device": self.cfg.device,
         }
         self.arti_estimator = ArtiEstimator(motion_cfg)
 
@@ -548,6 +550,8 @@ class Artipoint(ArticulationEstimation):
         )
 
         results_list = [{"axis": np.array(results["axis"]), "origin": np.array(results["center"]), "state": np.array(results["thetas"]), "type": results["joint_type"]} for results in segments_results]
+        if len(results_list) == 0:
+            return None
 
         return results_list[0]
         

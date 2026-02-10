@@ -1,13 +1,12 @@
 articulation_method: "Artipoint"
 device: "cuda"
-reconstruction_path
 
 segmentation:
   use_gt_cues: false # Use ground truth cues for hand segments
-  hand_model_repo: "artipoint/hands_segmentation"  # Path to the hand segmentation model
+  hand_model_repo: "third_party/artipoint/artipoint/hands_segmentation"  # Path to the hand segmentation model
   hand_model_name: "hand_segmentor"
-  hand_model_checkpoint_path: "checkpoints/hands_checkpoint.ckpt" # Path to the hand segmentation model checkpoint
-  sam_checkpoint: "checkpoints/weight/mobile_sam.pt" # Path to the Mobile-SAM model
+  hand_model_checkpoint_path: "third_party/artipoint/checkpoints/hands_checkpoint.ckpt" # Path to the hand segmentation model checkpoint
+  sam_checkpoint: "third_party/artipoint/checkpoints/weight/mobile_sam.pt" # Path to the Mobile-SAM model
   hand_resize: [256, 256] # Resize dimensions for the image input to the hand segmentation model
   smoothing_window_size: 6  # Window size for smoothing the hand segmentation mask
   min_window_size: 30 # Minimum window size for hand action detection
@@ -17,9 +16,9 @@ segmentation:
 
 
 tracking:
-  model_path: "checkpoints/scaled_offline.pth"  # Path to CoTracker3 model (offline)
+  model_path: "third_party/artipoint/checkpoints/scaled_offline.pth"  # Path to CoTracker3 model (offline)
   cotracker2: false # Use CoTracker2 model (offline) weights automatically downloaded
-  yolo_path: "checkpoints/yolo11x-seg.pt"  # Path to YOLO model used to find person bounding boxes
+  yolo_path: "third_party/artipoint/checkpoints/yolo11x-seg.pt"  # Path to YOLO model used to find person bounding boxes
   backward_tracking: true  # Enable backward tracking in CoTracker
 
 queries:
