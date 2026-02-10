@@ -88,10 +88,12 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             for i in valid_frame_ids:
                 points_mask = points_mask_list[i]
                 combined_mask = np.logical_and(points_mask, mask_list[i])
+                print(f"Frame {i}: points_mask sum={points_mask.sum()}, mask_list sum={mask_list[i].sum()}, combined_mask sum={combined_mask.sum()}")
                 valid_mask_list.append(combined_mask)
             valid_image_path_list = [data["rgb_path_list"][i] for i in valid_frame_ids]
             intrinsics = reconstruction_results["intrinsics"]
             valid_points_map_list = [reconstruction_results["points"][i] for i in valid_frame_ids]
+            print("valid frame ids:", valid_frame_ids)
             if isinstance(fusion_model, FeatureMatchingFusion):
                 fused_part_pcd, transformation_list = fusion_model.fuse_part_pcds(valid_image_path_list, valid_mask_list, valid_points_map_list)
             elif isinstance(fusion_model, TrackingFusion):

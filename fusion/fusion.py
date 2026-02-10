@@ -62,7 +62,7 @@ class FeatureMatchingFusion(BaseFusion):
         current2anchor = estimate_se3_transformation(current_part_3dkpts, anchor_part_3dkpts)
         return current2anchor
 
-    def fuse_part_pcds(self, image_path_list: List[PILImage.Image], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
+    def fuse_part_pcds(self, image_path_list: List[str], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
         part_pcd_list = []
         transformation_list = []
         anchor_image_path = None
