@@ -212,7 +212,7 @@ class Artipoint(ArticulationEstimation):
             #     filename=f"segment_{idx}.mp4",
             # )
             pred_2d_tracks = pred_2d_tracks.cpu().numpy()[0]
-            pred_visibility = pred_visibility.cpu().numpy().squeeze()[0]
+            pred_visibility = pred_visibility.cpu().numpy()[0]
             torch.cuda.empty_cache()
             pred_3d_tracks, valid_depth_masks = (
                 self.arti_estimator._project_2d_tracks_to_3d(
