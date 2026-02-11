@@ -353,8 +353,6 @@ class iTACORefine:
             rotations = torch.eye(3, dtype=torch.float32, device=self.device).repeat(N, 1, 1) # N, 3, 3
             translations = joint_axis_norm.repeat(N, 1) * joint_state.reshape(N, 1) # N, 3
 
-        print("xyz shape:", xyz.shape)
-        print("moving map shape:", moving_map.shape)
         joint_transformed_xyz = torch.matmul(xyz.reshape(N, H*W, C), rotations.permute(0, 2, 1)) + translations.reshape(N, 1, 3) # N, H*W, 3
         dynamic_chamfer_loss = torch.zeros(N, device=self.device)
         for b in range(joint_transformed_xyz.shape[0]):

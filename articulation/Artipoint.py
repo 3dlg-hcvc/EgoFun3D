@@ -153,7 +153,7 @@ class Artipoint(ArticulationEstimation):
                 #     )
                 #     cv2.waitKey(1)
 
-            cv2.destroyAllWindows()
+            # cv2.destroyAllWindows()
             if queries is not None:
                 queries_segments.append(queries)
                 valid_segments.append((seg_start, seg_end))
