@@ -241,7 +241,11 @@ class iTACOCoarse:
         pair_list = []
         for interval in [1, 2, 3]:
             for i in range(0, len(rgb_frame_list) - interval, 1):
-                mkpts0, mkpts1, conf = self.compute_match(np.array(rgb_frame_list[i]), np.array(rgb_frame_list[i + interval]))
+                try:
+                    mkpts0, mkpts1, conf = self.compute_match(np.array(rgb_frame_list[i]), np.array(rgb_frame_list[i + interval]))
+                except Exception as e:
+                    print("Matcher fail between frame {} and frame {}! Error message: {}".format(i, i + interval, e))
+                    continue
                 match_mask = conf > 0.9
                 mkpts0 = mkpts0[match_mask].astype(np.uint32)
                 mkpts1 = mkpts1[match_mask].astype(np.uint32)
@@ -480,12 +484,7 @@ class iTACO(ArticulationEstimation):
         self.refinement = iTACORefine(config.refine.lr, config.refine.opt_steps, config.device)
 
     def articulation_estimation(self, rgb_frame_list: List[PILImage.Image], reconstruction_results: Dict, part_masks: np.ndarray) -> Dict[str, np.ndarray]:
-        try:
-            coarse_prediction_results, coarse_predicted_joint_type = self.coarse_prediction.estimate_joint(rgb_frame_list, reconstruction_results, part_masks)
-        except Exception as e:
-            print("Coarse prediction fail! Error message: {}".format(e))
-            coarse_prediction_results = None
-            coarse_predicted_joint_type = None
+        coarse_prediction_results, coarse_predicted_joint_type = self.coarse_prediction.estimate_joint(rgb_frame_list, reconstruction_results, part_masks)
         if coarse_prediction_results is not None:
             refine_prediction_results = self.refinement.optimize_joint(rgb_frame_list, reconstruction_results, part_masks, coarse_prediction_results, coarse_predicted_joint_type)
             return refine_prediction_results
