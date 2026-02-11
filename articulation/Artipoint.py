@@ -511,7 +511,7 @@ class Artipoint(ArticulationEstimation):
         if len(pred_3d_tracks_segments) == 0:
             loguru.logger.warning("No valid segments after camera motion compensation, skipping articulation estimation.")
             return None
-
+        loguru.logger.info("Compensated for camera motion, remaining segments: {}".format(len(pred_3d_tracks_segments)))
         # Filter out static and jerky points
         pred_3d_tracks_segments, pred_visibility_segments = self.filter(
             pred_3d_tracks_segments, pred_visibility_segments
@@ -519,7 +519,7 @@ class Artipoint(ArticulationEstimation):
         if len(pred_3d_tracks_segments) == 0:
             loguru.logger.warning("No valid segments after filtering, skipping articulation estimation.")
             return None
-
+        loguru.logger.info("Filtered out static and jerky points, remaining segments: {}".format(len(pred_3d_tracks_segments)))
         # Filter out unreliable tracks
         pred_3d_tracks_segments, pred_visibility_segments = (
             self.filter_unreliable_tracks(
@@ -529,7 +529,7 @@ class Artipoint(ArticulationEstimation):
         if len(pred_3d_tracks_segments) == 0:
             loguru.logger.warning("No valid segments after filtering unreliable tracks, skipping articulation estimation.")
             return None
-
+        loguru.logger.info("Filtered out unreliable tracks, remaining segments: {}".format(len(pred_3d_tracks_segments)))
         # Filter out outlier tracks
         pred_3d_tracks_segments, pred_visibility_segments = (
             self.filter_outlier_tracks(
@@ -539,7 +539,7 @@ class Artipoint(ArticulationEstimation):
         if len(pred_3d_tracks_segments) == 0:
             loguru.logger.warning("No valid segments after filtering outlier tracks, skipping articulation estimation.")
             return None
-
+        loguru.logger.info("Filtered out outlier tracks, remaining segments: {}".format(len(pred_3d_tracks_segments)))
         # Smooth out the tracks
         pred_3d_tracks_segments_smooth = []
         for i in range(len(pred_3d_tracks_segments)):
@@ -554,6 +554,7 @@ class Artipoint(ArticulationEstimation):
         if len(pred_3d_tracks_segments) == 0:
             loguru.logger.warning("No valid segments after smoothing tracks, skipping articulation estimation.")
             return None
+        loguru.logger.info("Smoothed tracks, remaining segments: {}".format(len(pred_3d_tracks_segments)))
 
         # Estimate motion for each segment
         (
