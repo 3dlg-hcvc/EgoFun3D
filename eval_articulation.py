@@ -94,7 +94,7 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
             articulation_metrics = {
                 "joint axis error": joint_ori_error,
                 "joint position error": joint_pos_error,
-                "joint type error": joint_type_correct
+                "joint type correct": joint_type_correct
             }
             save_articulation_metrics(articulation_metrics, f"{save_articulation_dir}/articulation_metrics_{role}.json")
         save_articulation_results(articulation_results, f"{save_articulation_dir}/articulation_results.json")
