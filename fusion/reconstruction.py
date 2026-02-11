@@ -270,9 +270,13 @@ class DA3DReconstruction(BaseReconstruction):
                 start_index = max(0, i-1)
                 end_index = min(len(video_frame_list), i+self.max_pred_frame)
                 # print("frame index range:", (start_index, end_index))
-                outputs = self.model.inference(video_frame_list[start_index:end_index], 
-                                               intrinsics=intrinsics_list[start_index:end_index] if intrinsics_list is not None else None, 
-                                               extrinsics=full_inv_extrinsics[start_index:end_index] if full_inv_extrinsics is not None else None)
+                try:
+                    outputs = self.model.inference(video_frame_list[start_index:end_index], 
+                                                intrinsics=intrinsics_list[start_index:end_index] if intrinsics_list is not None else None, 
+                                                extrinsics=full_inv_extrinsics[start_index:end_index] if full_inv_extrinsics is not None else None)
+                except Exception as e:
+                    print(f"Error during DA3D inference for frames {start_index} to {end_index}: {e}")
+                    return None
                 depth = outputs.depth # N, H, W
                 depth_conf = outputs.conf
                 original_height, original_width = video_frame_list[0].height, video_frame_list[0].width

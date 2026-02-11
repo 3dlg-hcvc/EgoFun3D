@@ -116,7 +116,8 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 "translation_error": trans_error
             }
             save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}.json")
-        save_reconstruction_results(reconstruction_results, f"{save_pcd_dir}/reconstruction_results.pkl.gz")
+        if reconstruction_results is not None:
+            save_reconstruction_results(reconstruction_results, f"{save_pcd_dir}/reconstruction_results.pkl.gz")
         data_count += 1
 
 
