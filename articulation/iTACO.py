@@ -42,6 +42,7 @@ class iTACOCoarse:
         mkpts0 = correspondences_dict['keypoints0'].cpu().numpy()
         mkpts1 = correspondences_dict['keypoints1'].cpu().numpy()
         mconf = correspondences_dict['confidence'].cpu().numpy()
+        torch.cuda.empty_cache()
         return mkpts0, mkpts1, mconf
 
     def estimate_joint_transformation(self, base_kp: np.ndarray, curr_kp: np.ndarray, type: str, RANSAC: bool) -> Tuple[np.ndarray, np.ndarray]:
