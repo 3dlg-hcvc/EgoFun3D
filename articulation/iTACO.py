@@ -476,11 +476,16 @@ class iTACORefine:
 
 class iTACO(ArticulationEstimation):
     def __init__(self, config: omegaconf.DictConfig):
-        self.corase_prediction = iTACOCoarse(config.coarse.matcher, config.device)
+        self.coarse_prediction = iTACOCoarse(config.coarse.matcher, config.device)
         self.refinement = iTACORefine(config.refine.lr, config.refine.opt_steps, config.device)
 
     def articulation_estimation(self, rgb_frame_list: List[PILImage.Image], reconstruction_results: Dict, part_masks: np.ndarray) -> Dict[str, np.ndarray]:
-        coarse_prediction_results, coarse_predicted_joint_type = self.corase_prediction.estimate_joint(rgb_frame_list, reconstruction_results, part_masks)
+        try:
+            coarse_prediction_results, coarse_predicted_joint_type = self.coarse_prediction.estimate_joint(rgb_frame_list, reconstruction_results, part_masks)
+        except Exception as e:
+            print("Coarse prediction fail! Error message: {}".format(e))
+            coarse_prediction_results = None
+            coarse_predicted_joint_type = None
         if coarse_prediction_results is not None:
             refine_prediction_results = self.refinement.optimize_joint(rgb_frame_list, reconstruction_results, part_masks, coarse_prediction_results, coarse_predicted_joint_type)
             return refine_prediction_results
