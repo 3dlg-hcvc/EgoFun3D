@@ -115,6 +115,8 @@ class Artipoint(ArticulationEstimation):
                 orb_points = self.arti_segmentor.sample_fetures(
                     np.array(rgb_frame_list[j + seg_start]), [part_mask], self.cfg.queries.max_feat_points, feat_type=self.cfg.queries.feat_type
                 )
+                if len(orb_points) == 0:
+                    continue
                 # rgb = rgb_frame_list[j + seg_start]
                 # depth = depths[j + seg_start]
                 # camera_pose = camera_poses[j + seg_start]
