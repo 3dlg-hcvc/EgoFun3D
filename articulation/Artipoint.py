@@ -500,16 +500,25 @@ class Artipoint(ArticulationEstimation):
                 rgb_frame_list, reconstruction_results["depth"], reconstruction_results["intrinsics"], segments, queries_segments, human_masks_per_segment
             )
         )
+        if len(pred_3d_tracks_segments) == 0:
+            loguru.logger.warning("No valid segments with query tracks found, skipping articulation estimation.")
+            return None
 
         # Compensate for camera motion
         pred_3d_tracks_segments = self.compensate_cam_motion(
             reconstruction_results["extrinsics"], segments, pred_3d_tracks_segments
         )
+        if len(pred_3d_tracks_segments) == 0:
+            loguru.logger.warning("No valid segments after camera motion compensation, skipping articulation estimation.")
+            return None
 
         # Filter out static and jerky points
         pred_3d_tracks_segments, pred_visibility_segments = self.filter(
             pred_3d_tracks_segments, pred_visibility_segments
         )
+        if len(pred_3d_tracks_segments) == 0:
+            loguru.logger.warning("No valid segments after filtering, skipping articulation estimation.")
+            return None
 
         # Filter out unreliable tracks
         pred_3d_tracks_segments, pred_visibility_segments = (
@@ -517,6 +526,9 @@ class Artipoint(ArticulationEstimation):
                 pred_3d_tracks_segments, pred_visibility_segments
             )
         )
+        if len(pred_3d_tracks_segments) == 0:
+            loguru.logger.warning("No valid segments after filtering unreliable tracks, skipping articulation estimation.")
+            return None
 
         # Filter out outlier tracks
         pred_3d_tracks_segments, pred_visibility_segments = (
@@ -524,6 +536,9 @@ class Artipoint(ArticulationEstimation):
                 pred_3d_tracks_segments, pred_visibility_segments
             )
         )
+        if len(pred_3d_tracks_segments) == 0:
+            loguru.logger.warning("No valid segments after filtering outlier tracks, skipping articulation estimation.")
+            return None
 
         # Smooth out the tracks
         pred_3d_tracks_segments_smooth = []
@@ -536,6 +551,9 @@ class Artipoint(ArticulationEstimation):
             )
             pred_3d_tracks_segments_smooth.append(track)
         pred_3d_tracks_segments = pred_3d_tracks_segments_smooth
+        if len(pred_3d_tracks_segments) == 0:
+            loguru.logger.warning("No valid segments after smoothing tracks, skipping articulation estimation.")
+            return None
 
         # Estimate motion for each segment
         (
@@ -551,6 +569,7 @@ class Artipoint(ArticulationEstimation):
 
         results_list = [{"axis": np.array(results["axis"]), "origin": np.array(results["center"]), "state": np.array(results["thetas"]), "type": results["joint_type"]} for results in segments_results]
         if len(results_list) == 0:
+            loguru.logger.warning("No valid segments after motion estimation, skipping articulation estimation.")
             return None
 
         return results_list[0]
