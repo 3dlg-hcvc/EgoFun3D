@@ -125,3 +125,23 @@ def save_reconstruction_results(reconstruction_results: Dict[str, np.ndarray], s
     reconstruction_results.pop("points", None)
     with gzip.open(save_path, "wb", compresslevel=5) as f:
         pickle.dump(reconstruction_results, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    flat_dict = {}
+    def flatten(prefix, obj):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                flatten(f"{prefix}/{k}" if prefix else str(k), v)
+        elif isinstance(obj, (list, tuple)):
+            for i, v in enumerate(obj):
+                flatten(f"{prefix}/{i}", v)
+        elif isinstance(obj, np.ndarray):
+            flat_dict[prefix] = obj
+        else:
+            # Save non-array objects as numpy object arrays
+            flat_dict[prefix] = np.array(obj, dtype=object)
+
+    flatten("", reconstruction_results)
+
+    output_path = save_path.replace(".pkl.gz", ".npz")
+    # 3️⃣ Save as npz
+    np.savez_compressed(output_path, **flat_dict)
