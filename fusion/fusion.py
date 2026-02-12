@@ -41,16 +41,16 @@ class FeatureMatchingFusion(BaseFusion):
         kptsA = kptsA.cpu().numpy().astype(np.int32)
         kptsB = kptsB.cpu().numpy().astype(np.int32)
         # Filter keypoints with part masks
-        kptsA_index = current_part_mask[kptsA[:,1], kptsA[:,0]]
-        kptsB_index = anchor_part_mask[kptsB[:,1], kptsB[:,0]]
-        valid_index = np.logical_and(kptsA_index, kptsB_index)
-        kptsA = kptsA[valid_index]
-        kptsB = kptsB[valid_index]
         kptsA_boundary_mask = (kptsA[:,0] >= 0) & (kptsA[:,0] < anchor_part_mask.shape[1]) & (kptsA[:,1] >= 0) & (kptsA[:,1] < anchor_part_mask.shape[0])
         kptsB_boundary_mask = (kptsB[:,0] >= 0) & (kptsB[:,0] < current_part_mask.shape[1]) & (kptsB[:,1] >= 0) & (kptsB[:,1] < current_part_mask.shape[0])
         boundary_mask = np.logical_and(kptsA_boundary_mask, kptsB_boundary_mask)
         kptsA = kptsA[boundary_mask]
         kptsB = kptsB[boundary_mask]
+        kptsA_index = current_part_mask[kptsA[:,1], kptsA[:,0]]
+        kptsB_index = anchor_part_mask[kptsB[:,1], kptsB[:,0]]
+        valid_index = np.logical_and(kptsA_index, kptsB_index)
+        kptsA = kptsA[valid_index]
+        kptsB = kptsB[valid_index]
         # current_part_kpts = kptsA[current_part_mask[kptsA[:,1], kptsA[:,0]]]
         # anchor_part_kpts = kptsB[anchor_part_mask[kptsB[:, 1], kptsB[:,0]]]
         anchor_part_3dkpts = anchor_point_map[kptsA[:,1], kptsA[:,0]]
