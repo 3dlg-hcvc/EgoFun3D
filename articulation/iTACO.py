@@ -475,7 +475,11 @@ class iTACORefine:
         else:
             pred_joint_type = "prismatic"
         
-        return {"axis": best_joint_axis, "origin": best_joint_pos, "state": best_joint_state, "type": pred_joint_type, "loss": best_loss}
+        return {"axis": estimation_results[pred_joint_type]["axis"], 
+                "origin": estimation_results[pred_joint_type]["pos"], 
+                "state": estimation_results[pred_joint_type]["state"], 
+                "type": pred_joint_type, 
+                "loss": estimation_results[pred_joint_type]["best_loss"]}
 
 
 class iTACO(ArticulationEstimation):
