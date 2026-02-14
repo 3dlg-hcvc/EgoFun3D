@@ -1,3 +1,4 @@
+from copy import deepcopy
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from PIL import Image as PILImage
@@ -490,24 +491,29 @@ class iTACO(ArticulationEstimation):
         self.sample_num = config.sample_num
 
     def articulation_estimation(self, rgb_frame_list: List[PILImage.Image], reconstruction_results: Dict, part_masks: np.ndarray) -> Dict[str, np.ndarray]:
+        sample_rgb_frame_list = deepcopy(rgb_frame_list)
+        sample_reconstruction_results = deepcopy(reconstruction_results)
+        sample_part_masks = deepcopy(part_masks)
         if self.sample_strategy == "fix_num":
             total_frames = len(rgb_frame_list)
             if total_frames > self.sample_num:
                 sample_interval = total_frames // self.sample_num
-                rgb_frame_list = rgb_frame_list[::sample_interval]
-                reconstruction_results["depth"] = reconstruction_results["depth"][::sample_interval]
-                reconstruction_results["extrinsics"] = reconstruction_results["extrinsics"][::sample_interval]
-                part_masks = part_masks[::sample_interval]
+                sample_rgb_frame_list = sample_rgb_frame_list[::sample_interval]
+                sample_reconstruction_results["depth"] = sample_reconstruction_results["depth"][::sample_interval]
+                sample_reconstruction_results["extrinsics"] = sample_reconstruction_results["extrinsics"][::sample_interval]
+                if "points" in sample_reconstruction_results.keys():
+                    sample_reconstruction_results["points"] = sample_reconstruction_results["points"][::sample_interval]
+                sample_part_masks = sample_part_masks[::sample_interval]
         elif self.sample_strategy == "fix_step":
-            rgb_frame_list = rgb_frame_list[::self.sample_num]
-            reconstruction_results["depth"] = reconstruction_results["depth"][::self.sample_num]
-            reconstruction_results["extrinsics"] = reconstruction_results["extrinsics"][::self.sample_num]
-            if "points" in reconstruction_results.keys():
-                reconstruction_results["points"] = reconstruction_results["points"][::self.sample_num]
-            part_masks = part_masks[::self.sample_num]
-        coarse_prediction_results, coarse_predicted_joint_type = self.coarse_prediction.estimate_joint(rgb_frame_list, reconstruction_results, part_masks)
+            sample_rgb_frame_list = sample_rgb_frame_list[::self.sample_num]
+            sample_reconstruction_results["depth"] = sample_reconstruction_results["depth"][::self.sample_num]
+            sample_reconstruction_results["extrinsics"] = sample_reconstruction_results["extrinsics"][::self.sample_num]
+            if "points" in sample_reconstruction_results.keys():
+                sample_reconstruction_results["points"] = sample_reconstruction_results["points"][::self.sample_num]
+            sample_part_masks = sample_part_masks[::self.sample_num]
+        coarse_prediction_results, coarse_predicted_joint_type = self.coarse_prediction.estimate_joint(sample_rgb_frame_list, sample_reconstruction_results, sample_part_masks)
         if coarse_prediction_results is not None:
-            refine_prediction_results = self.refinement.optimize_joint(rgb_frame_list, reconstruction_results, part_masks, coarse_prediction_results, coarse_predicted_joint_type)
+            refine_prediction_results = self.refinement.optimize_joint(sample_rgb_frame_list, sample_reconstruction_results, sample_part_masks, coarse_prediction_results, coarse_predicted_joint_type)
             return refine_prediction_results
         else:
             return None
