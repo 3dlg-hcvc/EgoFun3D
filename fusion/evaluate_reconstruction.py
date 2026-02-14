@@ -67,6 +67,9 @@ def save_pcd(pcd: np.ndarray, save_path: str):
         pcd (np.ndarray): Point cloud of shape (N, 3).
         save_path (str): Path to save the .ply file.
     """
+    if pcd.shape[0] > 20000:
+        indices = np.random.choice(pcd.shape[0], 20000, replace=False)
+        pcd = pcd[indices]
     pcd_o3d = o3d.geometry.PointCloud()
     pcd_o3d.points = o3d.utility.Vector3dVector(pcd)
     o3d.io.write_point_cloud(save_path, pcd_o3d)
