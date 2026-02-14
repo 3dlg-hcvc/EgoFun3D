@@ -1,5 +1,7 @@
 articulation_method: "iTACO" # can be "iTACO", "Artipoint"
 device: "cuda"
+sample_strategy: "fix_step"
+sample_num: 10
 coarse:
   matcher: "LoFTr"
 refine:

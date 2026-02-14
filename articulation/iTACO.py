@@ -486,8 +486,25 @@ class iTACO(ArticulationEstimation):
     def __init__(self, config: omegaconf.DictConfig):
         self.coarse_prediction = iTACOCoarse(config.coarse.matcher, config.device)
         self.refinement = iTACORefine(config.refine.lr, config.refine.opt_steps, config.device)
+        self.sample_strategy = config.sample_strategy
+        self.sample_num = config.sample_num
 
     def articulation_estimation(self, rgb_frame_list: List[PILImage.Image], reconstruction_results: Dict, part_masks: np.ndarray) -> Dict[str, np.ndarray]:
+        if self.sample_strategy == "fix_num":
+            total_frames = len(rgb_frame_list)
+            if total_frames > self.sample_num:
+                sample_interval = total_frames // self.sample_num
+                rgb_frame_list = rgb_frame_list[::sample_interval]
+                reconstruction_results["depth"] = reconstruction_results["depth"][::sample_interval]
+                reconstruction_results["extrinsics"] = reconstruction_results["extrinsics"][::sample_interval]
+                part_masks = part_masks[::sample_interval]
+        elif self.sample_strategy == "fix_step":
+            rgb_frame_list = rgb_frame_list[::self.sample_num]
+            reconstruction_results["depth"] = reconstruction_results["depth"][::self.sample_num]
+            reconstruction_results["extrinsics"] = reconstruction_results["extrinsics"][::self.sample_num]
+            if "points" in reconstruction_results.keys():
+                reconstruction_results["points"] = reconstruction_results["points"][::self.sample_num]
+            part_masks = part_masks[::self.sample_num]
         coarse_prediction_results, coarse_predicted_joint_type = self.coarse_prediction.estimate_joint(rgb_frame_list, reconstruction_results, part_masks)
         if coarse_prediction_results is not None:
             refine_prediction_results = self.refinement.optimize_joint(rgb_frame_list, reconstruction_results, part_masks, coarse_prediction_results, coarse_predicted_joint_type)
