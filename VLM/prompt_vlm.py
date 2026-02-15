@@ -447,6 +447,77 @@ class MolmoVideoNarrator(VLMPrompter):
                         all_points.append((frame_id, x, y))
         return all_points
 
+    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receiver_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
+        rendered_frames = []
+        for i in range(len(rgb_frame_list)):
+            rgb_frame = np.array(rgb_frame_list[i])
+            receiver_mask = receiver_part_masks[i]
+            effector_mask = effector_part_masks[i]
+
+            # Create color masks
+            receiver_color_mask = np.zeros_like(rgb_frame)
+            receiver_color_mask[:, :, 1] = receiver_mask * 255  # Green for receiver
+
+            effector_color_mask = np.zeros_like(rgb_frame)
+            effector_color_mask[:, :, 0] = effector_mask * 255  # Red for effector
+
+            # Blend the original frame with the masks
+            alpha = 0.5
+            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receiver_color_mask, alpha, 0)
+            blended_frame = cv2.addWeighted(blended_frame, 1 - alpha, effector_color_mask, alpha, 0)
+
+            rendered_frames.append(blended_frame)
+        tmp_dir = "tmp_masked_video_molmo"
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)
+        compose_video_from_numpy_frames(
+            frames=rendered_frames,
+            output_path=f"{tmp_dir}/rendered_video.mp4",
+            fps=15,
+            codec="libx264",
+        )
+
+        grouped_results = {}
+        query_count = 0
+        # process the video and text
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    dict(type="text", text=self.prompt_template),
+                    dict(type="video", video=f"{tmp_dir}/rendered_video.mp4"),
+                ],
+            }
+        ]
+
+        inputs = self.processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+        )
+
+        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+        while len(grouped_results.keys()) != 2 and query_count < self.max_query:
+            with torch.inference_mode():
+                generated_ids = self.model.generate(**inputs, max_new_tokens=2048)
+            # only get generated tokens; decode them to text
+            generated_tokens = generated_ids[0, inputs['input_ids'].size(1):]
+            generated_text = self.processor.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+            query_count += 1
+            grouped_results = self.post_process_function_output(generated_text)
+
+        return grouped_results
+    
+    def post_process_function_output(self, output_text: str) -> dict:
+        try:
+            grouped_results = eval(output_text)
+        except (SyntaxError, NameError):
+            print(f"Failed to evaluate output text: {output_text}")
+            grouped_results = {}
+        return grouped_results
+
 
 class VLMSegJudge(VLMPrompter):
     def __init__(self, vlm_model: str = "gemini-2.5-flash", prompt_template: str = "", max_query: int = 10):
