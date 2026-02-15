@@ -598,7 +598,7 @@ class QwenVideoNarrator(VLMPrompter):
                 "role": "user",
                 "content": [
                     {"type": "text", "text": self.prompt_template},
-                    {"type": "video", "video": rendered_video},  # used for templating
+                    {"type": "video", "video": "in memory"},  # used for templating
                 ],
             },
         ]
