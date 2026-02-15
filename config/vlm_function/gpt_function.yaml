@@ -21,7 +21,7 @@ prompt_template: "This is a video. The receptor part marked in green and the eff
                   (c) linear function \
                   (d) cumulative function \
                   Please only answer in this template: \
-                  {\"1\": xxx , \"2\": yyy} \
+                  {\"1\": \"xxx\", \"2\": \"yyy\"} \
                   Substitue \"xxx\" and \"yyy\" with the option letter a / b / c / d for each question. \
                   DO NOT answer any other information."
 max_query: 10
