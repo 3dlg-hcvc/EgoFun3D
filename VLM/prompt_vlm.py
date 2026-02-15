@@ -552,6 +552,8 @@ class MolmovllmVideoNarrator(VLMPrompter):
             enforce_eager=True,
             limit_mm_per_prompt={"video": 1},
             tensor_parallel_size=2,
+            trust_remote_code=True,
+            max_num_batched_tokens=31872
         )
 
         self.sampling_params = SamplingParams(max_tokens=1024)
@@ -593,7 +595,6 @@ class MolmovllmVideoNarrator(VLMPrompter):
         # process the video and text
         # 1) Build chat messages ONLY for the prompt template (keep your current structure)
         messages = [
-            {"role": "system", "content": "You are a helpful assistant."},
             {
                 "role": "user",
                 "content": [
