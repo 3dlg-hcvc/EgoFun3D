@@ -646,6 +646,7 @@ class QwenVideoNarrator(VLMPrompter):
         )
 
         inputs = inputs.to(self.model.device)
+        print("model device:", self.model.device)
         while len(grouped_results.keys()) != 2 and query_count < self.max_query:
             with torch.inference_mode():
                 generated_ids = self.model.generate(**inputs, max_new_tokens=2048)
@@ -657,7 +658,7 @@ class QwenVideoNarrator(VLMPrompter):
                 generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
             )
             query_count += 1
-            grouped_results = self.post_process_function_output(output_text)
+            grouped_results = self.post_process_function_output(output_text[0])
 
         return grouped_results
     
