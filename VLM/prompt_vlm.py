@@ -538,7 +538,8 @@ class QwenVideoNarrator(VLMPrompter):
             vlm_model,
             trust_remote_code=True,
             dtype="auto",
-            device_map="auto"
+            device_map="auto",
+            attn_implementation="flash_attention_2",
         )
 
     def prompt_description(self, video_path: str) -> dict:
@@ -646,7 +647,6 @@ class QwenVideoNarrator(VLMPrompter):
         )
 
         inputs = inputs.to(self.model.device)
-        print("model device:", self.model.device)
         while len(grouped_results.keys()) != 2 and query_count < self.max_query:
             with torch.inference_mode():
                 generated_ids = self.model.generate(**inputs, max_new_tokens=2048)
