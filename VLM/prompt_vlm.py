@@ -3,6 +3,8 @@ from openai import OpenAI
 from transformers import AutoProcessor, AutoModelForImageTextToText
 import torch
 from molmo_utils import process_vision_info
+from vllm import LLM, SamplingParams
+# from qwen_vl_utils import process_vision_info
 import re
 import cv2
 import numpy as np
@@ -60,6 +62,16 @@ def compose_video_from_numpy_frames(
     clip = ImageSequenceClip(normalized_frames, fps=fps)
     clip.write_videofile(output_path, codec=codec)
     clip.close()
+
+def build_video_metadata(num_frames: int, fps: float):
+    # Qwen3-VL uses fps + total_num_frames to compute timestamps
+    # duration is in seconds
+    return {
+        "fps": float(fps),
+        "total_num_frames": int(num_frames),
+        "duration": float(num_frames) / float(fps),
+        "video_backend": "numpy",  # optional, but nice for debugging
+    }
 
 
 class VLMPrompter:
@@ -534,65 +546,15 @@ class QwenVideoNarrator(VLMPrompter):
         )
 
         # load the model
-        self.model = AutoModelForImageTextToText.from_pretrained(
-            vlm_model,
-            trust_remote_code=True,
-            dtype="auto",
-            device_map="auto",
-            attn_implementation="flash_attention_2",
+        self.model = LLM(
+            model=vlm_model,
+            gpu_memory_utilization=0.8,
+            enforce_eager=True,
+            limit_mm_per_prompt={"video": 1},
+            tensor_parallel_size=2,
         )
 
-    def prompt_description(self, video_path: str) -> dict:
-        # process the video and text
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    dict(type="text", text=self.prompt_template),
-                    dict(type="video", video=video_path),
-                ],
-            }
-        ]
-
-        inputs = self.processor.apply_chat_template(
-            messages,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_tensors="pt",
-            return_dict=True,
-        )
-
-        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
-
-        grouped_results = {}
-        query_count = 0
-        while len(grouped_results.keys()) != 2 and query_count < self.max_query:
-            # generate output
-            with torch.inference_mode():
-                generated_ids = self.model.generate(**inputs, max_new_tokens=2048)
-            # only get generated tokens; decode them to text
-            generated_tokens = generated_ids[0, inputs['input_ids'].size(1):]
-            generated_text = self.processor.tokenizer.decode(generated_tokens, skip_special_tokens=True)
-            query_count += 1
-            grouped_results = self.post_process_description_output(generated_text)
-        return grouped_results
-    
-    def post_process_description_output(self, output_text: str) -> dict:
-        pairs = re.findall(r'\{\s*name:\s*(.*?)\s*,\s*description:\s*(.*?)\s*\}', output_text, flags=re.S)
-
-        def clean(t: str) -> str:
-            return re.sub(r'\s+', ' ', t).strip()
-
-        grouped = {}
-        if len(pairs) == 2:
-            for i, (name, desc) in enumerate(pairs):
-                name_c = clean(name)
-                desc_c = clean(desc)
-                role = "receiver" if i == 0 else "effector"
-                grouped[role] = {"name": name_c, "description": desc_c}
-        else:
-            print("Warning: Unexpected number of parts found in VLM output.")
-        return grouped
+        self.sampling_params = SamplingParams(max_tokens=1024)
     
 
     def prompt_function(self, rgb_frame_list: List[PILImage.Image], receiver_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
@@ -615,50 +577,50 @@ class QwenVideoNarrator(VLMPrompter):
             blended_frame = cv2.addWeighted(blended_frame, 1 - alpha, effector_color_mask, alpha, 0)
 
             rendered_frames.append(blended_frame)
-        tmp_dir = "tmp_masked_video_qwen"
-        if os.path.exists(tmp_dir):
-            shutil.rmtree(tmp_dir)
-        compose_video_from_numpy_frames(
-            frames=rendered_frames,
-            output_path=f"{tmp_dir}/rendered_video.mp4",
-            fps=15,
-            codec="libx264",
-        )
+        # tmp_dir = "tmp_masked_video_qwen"
+        # if os.path.exists(tmp_dir):
+        #     shutil.rmtree(tmp_dir)
+        # compose_video_from_numpy_frames(
+        #     frames=rendered_frames,
+        #     output_path=f"{tmp_dir}/rendered_video.mp4",
+        #     fps=15,
+        #     codec="libx264",
+        # )
+        rendered_video = np.stack(rendered_frames)  # shape: (num_frames, H, W, 3)
 
         grouped_results = {}
         query_count = 0
         # process the video and text
+        # 1) Build chat messages ONLY for the prompt template (keep your current structure)
         messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
             {
                 "role": "user",
                 "content": [
-                    dict(type="text", text=self.prompt_template),
-                    dict(type="video", video=f"{tmp_dir}/rendered_video.mp4"),
+                    {"type": "text", "text": self.prompt_template},
+                    {"type": "video", "video": rendered_video},  # used for templating
                 ],
-            }
+            },
         ]
 
         inputs = self.processor.apply_chat_template(
             messages,
-            tokenize=True,
+            tokenize=False,
             add_generation_prompt=True,
-            return_tensors="pt",
-            return_dict=True,
         )
 
-        inputs = inputs.to(self.model.device)
+        metadata = build_video_metadata(num_frames=rendered_video.shape[0], fps=15)
+
+        llm_inputs = {
+            "prompt": inputs,
+            "multi_modal_data": {
+                "video": (rendered_video, metadata),  # <-- key: include metadata
+            },
+        }
         while len(grouped_results.keys()) != 2 and query_count < self.max_query:
-            with torch.inference_mode():
-                generated_ids = self.model.generate(**inputs, max_new_tokens=2048)
-            # only get generated tokens; decode them to text
-            generated_ids_trimmed = [
-                out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-            ]
-            output_text = self.processor.batch_decode(
-                generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-            )
+            outputs = self.model.generate([llm_inputs], sampling_params=self.sampling_params)
             query_count += 1
-            grouped_results = self.post_process_function_output(output_text[0])
+            grouped_results = self.post_process_function_output(outputs[0].outputs[0].text)
 
         return grouped_results
     
