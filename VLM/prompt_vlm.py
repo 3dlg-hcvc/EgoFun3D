@@ -175,7 +175,7 @@ class GPTVideoNarrator(VLMPrompter):
         super().__init__(vlm_model, prompt_template, max_query)
         self.client = OpenAI()
     
-    def prompt(self, video_path: str) -> dict:
+    def prompt_description(self, video_path: str) -> dict:
         file = self.client.files.create(
             file=open(video_path, "rb"),
             purpose="raw video"
@@ -184,7 +184,7 @@ class GPTVideoNarrator(VLMPrompter):
         query_count = 0
         while len(grouped_results.keys()) != 2 and query_count < self.max_query:
             response = self.client.responses.create(
-                model="gpt-5",
+                model=self.vlm_model,
                 input=[
                     {
                         "role": "user",
@@ -202,10 +202,10 @@ class GPTVideoNarrator(VLMPrompter):
                 ]
             )
             query_count += 1
-            grouped_results = self.post_process_output(response.output_text)
+            grouped_results = self.post_process_description_output(response.output_text)
         return grouped_results
 
-    def post_process_output(self, output_text: str) -> dict:
+    def post_process_description_output(self, output_text: str) -> dict:
         pairs = re.findall(r'\{\s*name:\s*(.*?)\s*,\s*description:\s*(.*?)\s*\}', output_text, flags=re.S)
 
         def clean(t: str) -> str:
@@ -221,6 +221,80 @@ class GPTVideoNarrator(VLMPrompter):
         else:
             print("Warning: Unexpected number of parts found in VLM output.")
         return grouped
+    
+    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receiver_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
+        rendered_base64_frames = []
+        for i in range(len(rgb_frame_list)):
+            rgb_frame = np.array(rgb_frame_list[i])
+            receiver_mask = receiver_part_masks[i]
+            effector_mask = effector_part_masks[i]
+
+            # Create color masks
+            receiver_color_mask = np.zeros_like(rgb_frame)
+            receiver_color_mask[:, :, 1] = receiver_mask * 255  # Green for receiver
+
+            effector_color_mask = np.zeros_like(rgb_frame)
+            effector_color_mask[:, :, 0] = effector_mask * 255  # Red for effector
+
+            # Blend the original frame with the masks
+            alpha = 0.5
+            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receiver_color_mask, alpha, 0)
+            blended_frame = cv2.addWeighted(blended_frame, 1 - alpha, effector_color_mask, alpha, 0)
+
+            blended_frame = cv2.cvtColor(blended_frame, cv2.COLOR_RGB2BGR)  # Convert to RGB for PIL compatibility
+            _, buffer = cv2.imencode(".jpg", blended_frame)
+
+            rendered_base64_frames.append(base64.b64encode(buffer).decode("utf-8"))
+        # tmp_dir = "tmp_masked_video_gpt"
+        # if os.path.exists(tmp_dir):
+        #     shutil.rmtree(tmp_dir)
+        # compose_video_from_numpy_frames(
+        #     frames=rendered_frames,
+        #     output_path=f"{tmp_dir}/rendered_video.mp4",
+        #     fps=15,
+        #     codec="libx264",
+        # )
+
+        grouped_results = {}
+        query_count = 0
+        # file = self.client.files.create(
+        #     file=open(f"{tmp_dir}/rendered_video.mp4", "rb"),
+        #     purpose="user_data"
+        # )
+        while len(grouped_results.keys()) != 2 and query_count < self.max_query:
+            response = self.client.responses.create(
+                model=self.vlm_model,
+                input=[
+                    {
+                        "role": "user",
+                        "content": [
+                            *[
+                                {
+                                    "type": "input_image",
+                                    "image_url": f"data:image/jpeg;base64,{frame}"
+                                }
+                                for frame in rendered_base64_frames
+                            ],
+                            {
+                                "type": "input_text",
+                                "text": self.prompt_template,
+                            },
+                        ]
+                    }
+                ]
+            )
+            query_count += 1
+            grouped_results = self.post_process_function_output(response.output_text)
+
+        return grouped_results
+    
+    def post_process_function_output(self, output_text: str) -> dict:
+        try:
+            grouped_results = eval(output_text)
+        except (SyntaxError, NameError):
+            print(f"Failed to evaluate output text: {output_text}")
+            grouped_results = {}
+        return grouped_results
     
 
 class MolmoVideoNarrator(VLMPrompter):
