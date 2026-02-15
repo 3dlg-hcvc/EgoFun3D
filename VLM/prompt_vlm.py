@@ -254,6 +254,9 @@ class GPTVideoNarrator(VLMPrompter):
         #     fps=15,
         #     codec="libx264",
         # )
+        if len(rendered_base64_frames) > 300:
+            sample_interval = len(rendered_base64_frames) // 300 + 1
+            rendered_base64_frames = rendered_base64_frames[::sample_interval]
 
         grouped_results = {}
         query_count = 0
