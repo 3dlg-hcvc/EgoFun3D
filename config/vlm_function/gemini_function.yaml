@@ -1,6 +1,6 @@
 role: "video_narrator"
 vlm_type: "gemini" # can be "gemini", "gpt", or "molmo"
-vlm_model: "gemini-2.5-flash"
+vlm_model: "gemini-3-flash-preview"
 prompt_type: "text" # can be "text" or "points"
 prompt_template: "This is a video. The receptor part marked in green and the effector part marked in red have functional relationship. Function has two attributes: physical effect and numerical relationship. \
                   Physical effect refers to the physical phenomenon of state change of the effector. \
