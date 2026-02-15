@@ -645,7 +645,7 @@ class QwenVideoNarrator(VLMPrompter):
             return_dict=True,
         )
 
-        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+        inputs = inputs.to(self.model.device)
         while len(grouped_results.keys()) != 2 and query_count < self.max_query:
             with torch.inference_mode():
                 generated_ids = self.model.generate(**inputs, max_new_tokens=2048)
