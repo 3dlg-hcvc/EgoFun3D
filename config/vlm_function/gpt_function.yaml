@@ -1,0 +1,27 @@
+role: "video_narrator"
+vlm_type: "gpt" # can be "gemini", "gpt", or "molmo"
+vlm_model: "gpt-5-mini"
+prompt_type: "text" # can be "text" or "points"
+prompt_template: "This is a video. The receptor part marked in green and the effector part marked in red have functional relationship. Function has two attributes: physical effect and numerical relationship. \
+                  Physical effect refers to the physical phenomenon of state change of the effector. \
+                  Numerical relationship refers to the mathematical relationship between the state of the receiver and the state of the effector. \
+                  If both the states of the receptor and effector have only two possible values, and they are mapped one-to-one, the numerical relationship is binary function. \
+                  If the effector state changes only when the receiver state continuously changes until a certain threshold is reached, the numerical relationship is step function. \
+                  If both states change continuously in a linear manner, the numerical relationship is linear function. \
+                  If the effector state accumulates over time as the receiver state changes, the numerical relationship is cumulative function. \
+                  Analyze this video and answer the following questions: \
+                  1. Which physical effect best describes the functional relationship between the red part and green part? Please choose one from the following: \
+                  (a) geometry change \ 
+                  (b) illumination change \
+                  (c) temperature change \
+                  (d) fluid change \
+                  2. Which function best describes the numerical relationship between the state of the red part and the green part? Please choose one from the following: \
+                  (a) binary function \
+                  (b) step function \
+                  (c) linear function \
+                  (d) cumulative function \
+                  Please only answer in this template: \
+                  {\"1\": xxx , \"2\": yyy} \
+                  Substitue \"xxx\" and \"yyy\" with the option letter a / b / c / d for each question. \
+                  DO NOT answer any other information."
+max_query: 10
