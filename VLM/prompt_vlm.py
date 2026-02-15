@@ -64,13 +64,13 @@ def compose_video_from_numpy_frames(
     clip.close()
 
 def build_video_metadata(num_frames: int, fps: float):
-    # Qwen3-VL uses fps + total_num_frames to compute timestamps
-    # duration is in seconds
     return {
         "fps": float(fps),
         "total_num_frames": int(num_frames),
         "duration": float(num_frames) / float(fps),
-        "video_backend": "numpy",  # optional, but nice for debugging
+        # This key is commonly used by vLLM's video loader outputs;
+        # providing it makes timestamp logic consistent.
+        "frames_indices": list(range(int(num_frames))),
     }
 
 
@@ -576,7 +576,7 @@ class QwenVideoNarrator(VLMPrompter):
             blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receiver_color_mask, alpha, 0)
             blended_frame = cv2.addWeighted(blended_frame, 1 - alpha, effector_color_mask, alpha, 0)
 
-            rendered_frames.append(blended_frame)
+            rendered_frames.append(blended_frame.astype(np.uint8))
         # tmp_dir = "tmp_masked_video_qwen"
         # if os.path.exists(tmp_dir):
         #     shutil.rmtree(tmp_dir)
@@ -586,7 +586,7 @@ class QwenVideoNarrator(VLMPrompter):
         #     fps=15,
         #     codec="libx264",
         # )
-        rendered_video = np.stack(rendered_frames)  # shape: (num_frames, H, W, 3)
+        # rendered_video = np.stack(rendered_frames)  # shape: (num_frames, H, W, 3)
 
         grouped_results = {}
         query_count = 0
@@ -609,12 +609,12 @@ class QwenVideoNarrator(VLMPrompter):
             add_generation_prompt=True,
         )
 
-        metadata = build_video_metadata(num_frames=rendered_video.shape[0], fps=15)
+        metadata = build_video_metadata(num_frames=len(rendered_frames), fps=15)
 
         llm_inputs = {
             "prompt": inputs,
             "multi_modal_data": {
-                "video": (rendered_video, metadata),  # <-- key: include metadata
+                "video": (rendered_frames, metadata),  # <-- key: include metadata
             },
         }
         while len(grouped_results.keys()) != 2 and query_count < self.max_query:
