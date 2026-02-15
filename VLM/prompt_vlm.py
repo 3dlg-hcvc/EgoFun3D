@@ -532,6 +532,105 @@ class MolmoVideoNarrator(VLMPrompter):
             print(f"Failed to evaluate output text: {output_text}")
             grouped_results = {}
         return grouped_results
+    
+
+class MolmovllmVideoNarrator(VLMPrompter):
+    def __init__(self, vlm_model = "allenai/Molmo2-8B", prompt_template = "", max_query = 10):
+        super().__init__(vlm_model, prompt_template, max_query)
+        # load the processor
+        self.processor = AutoProcessor.from_pretrained(
+            vlm_model,
+            trust_remote_code=True,
+            dtype="auto",
+            device_map="auto"
+        )
+
+        # load the model
+        self.model = LLM(
+            model=vlm_model,
+            gpu_memory_utilization=0.8,
+            enforce_eager=True,
+            limit_mm_per_prompt={"video": 1},
+            tensor_parallel_size=2,
+        )
+
+        self.sampling_params = SamplingParams(max_tokens=1024)
+    
+
+    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receiver_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
+        rendered_frames = []
+        for i in range(len(rgb_frame_list)):
+            rgb_frame = np.array(rgb_frame_list[i])
+            receiver_mask = receiver_part_masks[i]
+            effector_mask = effector_part_masks[i]
+
+            # Create color masks
+            receiver_color_mask = np.zeros_like(rgb_frame)
+            receiver_color_mask[:, :, 1] = receiver_mask * 255  # Green for receiver
+
+            effector_color_mask = np.zeros_like(rgb_frame)
+            effector_color_mask[:, :, 0] = effector_mask * 255  # Red for effector
+
+            # Blend the original frame with the masks
+            alpha = 0.5
+            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receiver_color_mask, alpha, 0)
+            blended_frame = cv2.addWeighted(blended_frame, 1 - alpha, effector_color_mask, alpha, 0)
+
+            rendered_frames.append(blended_frame.astype(np.uint8))
+        # tmp_dir = "tmp_masked_video_qwen"
+        # if os.path.exists(tmp_dir):
+        #     shutil.rmtree(tmp_dir)
+        # compose_video_from_numpy_frames(
+        #     frames=rendered_frames,
+        #     output_path=f"{tmp_dir}/rendered_video.mp4",
+        #     fps=15,
+        #     codec="libx264",
+        # )
+        # rendered_video = np.stack(rendered_frames)  # shape: (num_frames, H, W, 3)
+
+        grouped_results = {}
+        query_count = 0
+        # process the video and text
+        # 1) Build chat messages ONLY for the prompt template (keep your current structure)
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": self.prompt_template},
+                    {"type": "video", "video": "in memory"},  # used for templating
+                ],
+            },
+        ]
+
+        inputs = self.processor.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+
+        metadata = build_video_metadata(num_frames=len(rendered_frames), fps=15)
+
+        llm_inputs = {
+            "prompt": inputs,
+            "multi_modal_data": {
+                "video": (rendered_frames, metadata),  # <-- key: include metadata
+            },
+        }
+        while len(grouped_results.keys()) != 2 and query_count < self.max_query:
+            outputs = self.model.generate([llm_inputs], sampling_params=self.sampling_params)
+            query_count += 1
+            grouped_results = self.post_process_function_output(outputs[0].outputs[0].text)
+
+        return grouped_results
+    
+    def post_process_function_output(self, output_text: str) -> dict:
+        try:
+            grouped_results = eval(output_text)
+        except (SyntaxError, NameError):
+            print(f"Failed to evaluate output text: {output_text}")
+            grouped_results = {}
+        return grouped_results
 
 
 class QwenVideoNarrator(VLMPrompter):
@@ -708,7 +807,7 @@ def build_vlm_prompter(vlm_config: dict) -> VLMPrompter:
                 max_query=vlm_config.max_query
             )
         elif vlm_config["vlm_type"] == "molmo":
-            return MolmoVideoNarrator(
+            return MolmovllmVideoNarrator(
                 vlm_model=vlm_config.vlm_model,
                 prompt_template=vlm_config.prompt_template,
                 max_query=vlm_config.max_query
