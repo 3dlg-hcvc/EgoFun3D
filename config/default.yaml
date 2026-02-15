@@ -1,4 +1,4 @@
-name: "test-itaco-articulation"
+name: "test-gemini-function"
 seed: 42
 save_root_dir: "./outputs"
 input_modality: "rgb"
@@ -11,7 +11,7 @@ defaults:
 
 # Options: "rgb+extrinsics+intrinsics", "rgb"
 
-  - vlm: gemini
+  - vlm_segmentation: gemini_segmentation
 
   - segmentation: VisionReasoner
 
@@ -19,6 +19,6 @@ defaults:
 
   - reconstruction: da3
 
-
   - articulation: iTACO
 
+  - vlm_function: gemini_function

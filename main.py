@@ -4,7 +4,7 @@ from datetime import datetime
 import numpy as np
 import os
 from dataset.dataset import BaseDataset, build_dataset
-from segmentation.prompt_vlm import VLMPrompter, build_vlm_prompter
+from VLM.prompt_vlm import VLMPrompter, build_vlm_prompter
 from segmentation.ref_seg import RefSeg, build_refseg_model
 from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion, TrackingFusion
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction

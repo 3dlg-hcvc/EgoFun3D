@@ -8,6 +8,58 @@ import cv2
 import numpy as np
 from PIL import Image as PILImage
 import base64
+import os
+import shutil
+try:
+    # MoviePy >=2
+    from moviepy import ImageSequenceClip
+except ImportError:
+    try:
+        # MoviePy 1.x
+        from moviepy.editor import ImageSequenceClip
+    except ImportError:
+        ImageSequenceClip = None
+
+from typing import List, Tuple, Dict
+
+
+def compose_video_from_numpy_frames(
+    frames: List[np.ndarray],
+    output_path: str,
+    fps: int = 30,
+    codec: str = "libx264",
+) -> None:
+    """Compose an MP4 video from a list of HxWx3 numpy frames."""
+    if ImageSequenceClip is None:
+        raise ImportError(
+            "moviepy is required to compose videos. Install with `pip install moviepy`."
+        )
+    if len(frames) == 0:
+        raise ValueError("frames must contain at least one frame")
+    if fps <= 0:
+        raise ValueError("fps must be > 0")
+
+    normalized_frames = []
+    first_shape = frames[0].shape
+    for i, frame in enumerate(frames):
+        frame_np = np.asarray(frame)
+        if frame_np.ndim != 3 or frame_np.shape[2] != 3:
+            raise ValueError(f"frame {i} must have shape (H, W, 3), got {frame_np.shape}")
+        if frame_np.shape != first_shape:
+            raise ValueError(
+                f"all frames must have the same shape; frame 0 is {first_shape}, frame {i} is {frame_np.shape}"
+            )
+        if frame_np.dtype != np.uint8:
+            frame_np = np.clip(frame_np, 0, 255).astype(np.uint8)
+        normalized_frames.append(frame_np)
+
+    out_dir = os.path.dirname(output_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
+    clip = ImageSequenceClip(normalized_frames, fps=fps)
+    clip.write_videofile(output_path, codec=codec)
+    clip.close()
 
 
 class VLMPrompter:
@@ -24,7 +76,7 @@ class GeminiVideoNarrator(VLMPrompter):
         super().__init__(vlm_model, prompt_template, max_query)
         self.client = genai.Client()
     
-    def prompt(self, video_path: str) -> dict:
+    def prompt_description(self, video_path: str) -> dict:
         grouped_results = {}
         query_count = 0
         video_bytes = open(video_path, 'rb').read()
@@ -40,10 +92,10 @@ class GeminiVideoNarrator(VLMPrompter):
                 )
             )
             query_count += 1
-            grouped_results = self.post_process_output(response.text)
+            grouped_results = self.post_process_description_output(response.text)
         return grouped_results
     
-    def post_process_output(self, output_text: str) -> dict:
+    def post_process_description_output(self, output_text: str) -> dict:
         pairs = re.findall(r'\{\s*name:\s*(.*?)\s*,\s*description:\s*(.*?)\s*\}', output_text, flags=re.S)
 
         def clean(t: str) -> str:
@@ -59,6 +111,63 @@ class GeminiVideoNarrator(VLMPrompter):
         else:
             print("Warning: Unexpected number of parts found in VLM output.")
         return grouped
+    
+    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receiver_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
+        rendered_frames = []
+        for i in range(len(rgb_frame_list)):
+            rgb_frame = np.array(rgb_frame_list[i])
+            receiver_mask = receiver_part_masks[i]
+            effector_mask = effector_part_masks[i]
+
+            # Create color masks
+            receiver_color_mask = np.zeros_like(rgb_frame)
+            receiver_color_mask[:, :, 1] = receiver_mask * 255  # Green for receiver
+
+            effector_color_mask = np.zeros_like(rgb_frame)
+            effector_color_mask[:, :, 0] = effector_mask * 255  # Red for effector
+
+            # Blend the original frame with the masks
+            alpha = 0.5
+            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receiver_color_mask, alpha, 0)
+            blended_frame = cv2.addWeighted(blended_frame, 1 - alpha, effector_color_mask, alpha, 0)
+
+            rendered_frames.append(blended_frame)
+        tmp_dir = "tmp_masked_video"
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)
+        compose_video_from_numpy_frames(
+            frames=rendered_frames,
+            output_path=f"{tmp_dir}/rendered_video.mp4",
+            fps=15,
+            codec="libx264",
+        )
+
+        grouped_results = {}
+        query_count = 0
+        video_bytes = open(f"{tmp_dir}/rendered_video.mp4", 'rb').read()
+        while len(grouped_results.keys()) != 2 and query_count < self.max_query:
+            response = self.client.models.generate_content(
+                model=self.vlm_model, contents=genai.types.Content(
+                    parts=[
+                        genai.types.Part(
+                            inline_data=genai.types.Blob(data=video_bytes, mime_type='video/mp4')
+                        ),
+                        genai.types.Part(text=self.prompt_template)
+                    ]
+                )
+            )
+            query_count += 1
+            grouped_results = self.post_process_function_output(response.text)
+
+        return grouped_results
+    
+    def post_process_function_output(self, output_text: str) -> dict:
+        try:
+            grouped_results = eval(output_text)
+        except (SyntaxError, NameError):
+            print(f"Failed to evaluate output text: {output_text}")
+            grouped_results = {}
+        return grouped_results
 
 
 class GPTVideoNarrator(VLMPrompter):

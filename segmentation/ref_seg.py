@@ -9,7 +9,7 @@ from PIL import Image as PILImage
 import re
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 import numpy as np
-from segmentation.prompt_vlm import build_vlm_prompter
+from VLM.prompt_vlm import build_vlm_prompter
 
 from typing import List, Tuple
 
