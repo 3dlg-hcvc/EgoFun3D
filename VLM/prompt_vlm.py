@@ -589,7 +589,12 @@ class MolmovllmVideoNarrator(VLMPrompter):
         #     codec="libx264",
         # )
         # rendered_video = np.stack(rendered_frames)  # shape: (num_frames, H, W, 3)
-        rendered_frames = rendered_frames[::2]
+        if len(rendered_frames) < 600:
+            rendered_frames = rendered_frames[::2]
+        elif len(rendered_frames) < 900:
+            rendered_frames = rendered_frames[::3]
+        else:
+            rendered_frames = rendered_frames[::4]
 
         grouped_results = {}
         query_count = 0
