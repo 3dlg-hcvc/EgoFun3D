@@ -3,12 +3,20 @@ vlm_type: "molmo" # can be "gemini", "gpt", or "molmo"
 vlm_model: "allenai/Molmo2-8B"
 prompt_type: "text" # can be "text" or "points"
 prompt_template: "This is a video. The receptor part marked in green and the effector part marked in red have functional relationship. Function has two attributes: physical effect and numerical relationship. \
-                  Physical effect refers to the physical phenomenon of state change of the effector. \
-                  Numerical relationship refers to the mathematical relationship between the state of the receiver and the state of the effector. \
+                  Physical effect refers to the physical phenomenon of state change of the effector. We consider four different physical effects: geometry change, illumination change, temperature change, and fluid change. \
+                  If the function results in the change of shape or position of the effector, the physical effect is geometry change. \
+                  If the function results in the change of illumination status of the effector, such as brightness or color, the physical effect is illumination change. \
+                  If the function results in the change of temperature status of the effector, such as becoming hotter or colder, the physical effect is temperature change. \
+                  If the function results in the change of fluid status of the effector, such as fluid flowing in or out, the physical effect is fluid change. \
+                  Numerical relationship refers to the mathematical relationship between the state of the receiver and the state of the effector. We consider four different numerical function: binary function, step function, linear function, cumulative function. \
                   If both the states of the receptor and effector have only two possible values, and they are mapped one-to-one, the numerical relationship is binary function. \
+                  For example, the light switch is a binary function, where the state of the receptor (the switch) can be either on or off, and the state of the effector (the light) can also be either on or off. \
                   If the effector state changes only when the receiver state continuously changes until a certain threshold is reached, the numerical relationship is step function. \
+                  For example, when pressing the button of a microwave to a certain distance, the microwave's door will open. The state of the receptor (the button) continuously changes as you press it, but the state of the effector (the microwave door) only changes when the button is pressed to a certain distance. \
                   If both states change continuously in a linear manner, the numerical relationship is linear function. \
+                  For example, the volume of water flowing out of a faucet is a linear function of how much you turn the faucet. The state of the receptor (the faucet) and the state of the effector (the water flow) both change continuously, and they have a linear relationship. \
                   If the effector state accumulates over time as the receiver state changes, the numerical relationship is cumulative function. \
+                  For example, when you press \"increase temperature\" button of a electric induction cooker, the temperature of the cooker will increase a certain value. The state of the receptor (the button) changes as you keep pressing it, and the state of the effector (the cooker temperature) accumulates over time. \
                   Analyze this video and answer the following questions: \
                   1. Which physical effect best describes the functional relationship between the red part and green part? Please choose one from the following: \
                   (a) geometry change \ 
@@ -21,7 +29,7 @@ prompt_template: "This is a video. The receptor part marked in green and the eff
                   (c) linear function \
                   (d) cumulative function \
                   Please only answer in this template: \
-                  {\"1\": \"xxx\", \"2\": \"yyy\"} \
-                  Substitue \"xxx\" and \"yyy\" with the option letter a / b / c / d for each question. \
+                  {\"1\": \"xxx\", \"2\": \"yyy\", \"reason\": \"zzz\"} \
+                  Substitue \"xxx\" and \"yyy\" with the option letter a / b / c / d for each question. Also tell me the reason of choosing each option by substituting \"zzz\". \
                   DO NOT answer any other information."
 max_query: 10

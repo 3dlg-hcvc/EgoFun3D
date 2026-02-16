@@ -157,7 +157,7 @@ class GeminiVideoNarrator(VLMPrompter):
         grouped_results = {}
         query_count = 0
         video_bytes = open(f"{tmp_dir}/rendered_video.mp4", 'rb').read()
-        while len(grouped_results.keys()) != 2 and query_count < self.max_query:
+        while len(grouped_results.keys()) != 3 and query_count < self.max_query:
             response = self.client.models.generate_content(
                 model=self.vlm_model, contents=genai.types.Content(
                     parts=[
@@ -276,7 +276,7 @@ class GPTVideoNarrator(VLMPrompter):
         #     file=open(f"{tmp_dir}/rendered_video.mp4", "rb"),
         #     purpose="user_data"
         # )
-        while len(grouped_results.keys()) != 2 and query_count < self.max_query:
+        while len(grouped_results.keys()) != 3 and query_count < self.max_query:
             response = self.client.responses.create(
                 model=self.vlm_model,
                 input=[
@@ -624,7 +624,7 @@ class MolmovllmVideoNarrator(VLMPrompter):
                 "video": (rendered_frames, metadata),  # <-- key: include metadata
             },
         }
-        while len(grouped_results.keys()) != 2 and query_count < self.max_query:
+        while len(grouped_results.keys()) != 3 and query_count < self.max_query:
             outputs = self.model.generate([llm_inputs], sampling_params=self.sampling_params)
             query_count += 1
             grouped_results = self.post_process_function_output(outputs[0].outputs[0].text)
@@ -723,7 +723,7 @@ class QwenVideoNarrator(VLMPrompter):
                 "video": (rendered_frames, metadata),  # <-- key: include metadata
             },
         }
-        while len(grouped_results.keys()) != 2 and query_count < self.max_query:
+        while len(grouped_results.keys()) != 3 and query_count < self.max_query:
             outputs = self.model.generate([llm_inputs], sampling_params=self.sampling_params)
             query_count += 1
             grouped_results = self.post_process_function_output(outputs[0].outputs[0].text)
