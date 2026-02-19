@@ -1,4 +1,6 @@
 import argparse
+import gzip
+import pickle
 import omegaconf
 from datetime import datetime
 import numpy as np
@@ -13,6 +15,7 @@ from dataset.dataset import Dataset, build_dataset
 from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion, TrackingFusion
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction
 from fusion.evaluate_reconstruction import save_reconstruction_metrics, evaluate_reconstruction, save_pcd, save_reconstruction_results
+from utils.reconstruction_utils import refine_point_mask
 
 
 def set_seed(seed: int):
@@ -42,7 +45,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         reconstruction_results = None
         tracks3d = None
         save_pcd_dir = os.path.join(save_dir, data["video_name"], "reconstruction")
-        if os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz"):
+        if os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz") and not config.refine:
             print("Reconstruction results already exist, skipping reconstruction and evaluation for this sample.")
             continue
         if not os.path.exists(save_pcd_dir):
@@ -67,6 +70,12 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                     if input_modality.find("extrinsics") != -1:
                         input_extrinsics = data["camera_extrinsics"]
                     reconstruction_results = reconstruction_model.reconstruct(video_frame_list, init_extrinsics, input_intrinsics, input_extrinsics, input_depth)
+            else:
+                print("Using existing reconstruction results for this sample.")
+                with gzip.open(f"{save_pcd_dir}/reconstruction_results.pkl.gz", "rb") as f:
+                    reconstruction_results = pickle.load(f)
+            if config.refine:
+                reconstruction_results = refine_point_mask(reconstruction_results)
             if reconstruction_results is None:
                 print("Reconstruction failed, skipping this sample.")
                 break
@@ -108,15 +117,20 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 gt_pcd=data["geometry_data"][role]["part_pcd"],
                 gt_extrinsics=data["camera_extrinsics"],
             )
-            
-            save_pcd(fused_part_pcd, f"{save_pcd_dir}/{role}_fused.ply")
+            if not config.refine:
+                save_pcd(fused_part_pcd, f"{save_pcd_dir}/{role}_fused.ply")
+            else:
+                save_pcd(fused_part_pcd, f"{save_pcd_dir}/{role}_fused_refined.ply")
             reconstruction_metrics = {
                 "chamfer_distance": chamfer_dist,
                 "rotation_error_radians": rot_error,
                 "translation_error": trans_error
             }
-            save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}.json")
-        if reconstruction_results is not None:
+            if not config.refine:
+                save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}.json")
+            else:
+                save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}_refined.json")
+        if reconstruction_results is not None and not config.refine:
             save_reconstruction_results(reconstruction_results, f"{save_pcd_dir}/reconstruction_results.pkl.gz")
         data_count += 1
 

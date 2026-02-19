@@ -5,6 +5,7 @@ input_modality: "rgb"
 save_dir: ???
 reconstruction_results_dir: ???
 debug: False
+refine: False
 
 defaults:
   - dataset: dataset

@@ -64,3 +64,24 @@ def depth2xyz_world(depth_image: np.ndarray, intrinsics: np.ndarray, extrinsics:
     point_cloud_world_homogeneous = (extrinsics @ point_cloud_homogeneous.T).T
     point_cloud_world = point_cloud_world_homogeneous[:, :3] / point_cloud_world_homogeneous[:, 3:]
     return point_cloud_world.reshape(H, W, 3)
+
+
+def radius_filter_outliers(point_map: np.ndarray, radius: float = 0.01, nb_points: int = 15) -> np.ndarray:
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(point_map.reshape(-1, 3))
+    radius_inlier_pcd, radius_inlier_idx = pcd.remove_radius_outlier(nb_points=nb_points, radius=radius)
+    radius_inlier_mask = np.zeros(point_map.shape[:-1], dtype=bool)
+    radius_inlier_mask.reshape(-1)[radius_inlier_idx] = True
+    return radius_inlier_mask.reshape(point_map.shape[:-1])
+
+
+def refine_point_mask(reconstruction_results: dict) -> dict:
+    full_points_list = reconstruction_results["points"]
+    full_points_mask_list = reconstruction_results["points_mask"]
+    refined_points_mask_list = []
+    for points, mask in zip(full_points_list, full_points_mask_list):
+        radius_inlier_mask = radius_filter_outliers(points, radius=0.01, nb_points=15)
+        refined_mask = np.logical_and(mask, radius_inlier_mask)
+        refined_points_mask_list.append(refined_mask)
+    reconstruction_results["points_mask"] = np.stack(refined_points_mask_list, axis=0)
+    return reconstruction_results
