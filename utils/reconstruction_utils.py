@@ -76,7 +76,16 @@ def radius_filter_outliers(point_map: np.ndarray, radius: float = 0.01, nb_point
 
 
 def refine_point_mask(reconstruction_results: dict) -> dict:
-    full_points_list = reconstruction_results["points"]
+    if "points" not in reconstruction_results.keys():
+        full_points_list = []
+        for i in range(len(reconstruction_results["depth"])):
+            depth_i = reconstruction_results["depth"][i]
+            intrinsics = reconstruction_results["intrinsics"]
+            extrinsics_i = reconstruction_results["extrinsics"][i]
+            base_pc_origin = depth2xyz_world(depth_i, intrinsics, extrinsics_i, cam_type="opencv")
+            full_points_list.append(base_pc_origin)
+    else:
+        full_points_list = reconstruction_results["points"]
     full_points_mask_list = reconstruction_results["points_mask"]
     refined_points_mask_list = []
     for points, mask in zip(full_points_list, full_points_mask_list):
