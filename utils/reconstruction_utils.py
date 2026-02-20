@@ -84,11 +84,14 @@ def refine_point_mask(reconstruction_results: dict) -> dict:
             extrinsics_i = reconstruction_results["extrinsics"][i]
             base_pc_origin = depth2xyz_world(depth_i, intrinsics, extrinsics_i, cam_type="opencv")
             full_points_list.append(base_pc_origin)
+        reconstruction_results["points"] = np.stack(full_points_list, axis=0)
     else:
         full_points_list = reconstruction_results["points"]
     full_points_mask_list = reconstruction_results["points_mask"]
     refined_points_mask_list = []
-    for points, mask in zip(full_points_list, full_points_mask_list):
+    for frame_id in range(len(full_points_list)):
+        points = full_points_list[frame_id]
+        mask = full_points_mask_list[frame_id]
         radius_inlier_mask = radius_filter_outliers(points, radius=0.01, nb_points=15)
         refined_mask = np.logical_and(mask, radius_inlier_mask)
         refined_points_mask_list.append(refined_mask)
