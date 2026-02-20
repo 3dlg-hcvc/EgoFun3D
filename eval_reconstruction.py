@@ -74,11 +74,11 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 print("Using existing reconstruction results for this sample.")
                 with gzip.open(f"{save_pcd_dir}/reconstruction_results.pkl.gz", "rb") as f:
                     reconstruction_results = pickle.load(f)
-            if config.refine:
-                reconstruction_results = refine_point_mask(reconstruction_results)
             if reconstruction_results is None:
                 print("Reconstruction failed, skipping this sample.")
                 break
+            if config.refine:
+                reconstruction_results = refine_point_mask(reconstruction_results)
             # run fusion
             if config.debug:
                 full_points = reconstruction_results["points"]
