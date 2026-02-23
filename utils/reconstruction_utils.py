@@ -1,6 +1,7 @@
 import open3d as o3d
 import numpy as np
 import multiprocessing as mp
+from multiprocessing import shared_memory
 
 
 def estimate_se3_transformation(target_xyz: np.ndarray, source_xyz: np.ndarray) -> np.ndarray:
@@ -215,63 +216,99 @@ def sanitize_points_np(points: np.ndarray) -> np.ndarray:
 #     return flat_mask.reshape(point_map.shape[:-1])
 
 
-def _gpu_worker(points_f32, radius, nb_points, q):
-    import open3d as o3d
-    import numpy as np
+def _gpu_worker_shm(points_f32, radius, nb_points, shm_name, n, err_q):
+    """
+    Writes uint8 mask (0/1) into shared memory of length n.
+    """
+    try:
+        dev = o3d.core.Device("CUDA:0")
+        pcd_t = o3d.t.geometry.PointCloud(dev)
+        pcd_t.point["positions"] = o3d.core.Tensor(points_f32, device=dev)
 
-    dev = o3d.core.Device("CUDA:0")
-    pcd_t = o3d.t.geometry.PointCloud(dev)
-    pcd_t.point["positions"] = o3d.core.Tensor(points_f32, device=dev)
-    print("GPU worker: created tensor point cloud on device", dev)
-    out = pcd_t.remove_radius_outliers(nb_points=nb_points, search_radius=radius)
-    print("GPU worker: completed radius outlier removal")
+        out = pcd_t.remove_radius_outliers(nb_points=nb_points, search_radius=radius)
 
-    # IMPORTANT: force error to surface inside the worker
-    o3d.core.cuda.synchronize()
+        # Force CUDA error to surface inside worker
+        o3d.core.cuda.synchronize()
 
-    # Unpack mask (Open3D version dependent)
-    if isinstance(out, tuple) and len(out) == 2:
-        a, b = out
-        mask_t = a if isinstance(a, o3d.core.Tensor) else b
-    else:
-        mask_t = out
+        # Unpack mask (Open3D version dependent)
+        if isinstance(out, tuple) and len(out) == 2:
+            a, b = out
+            mask_t = a if isinstance(a, o3d.core.Tensor) else b
+        else:
+            mask_t = out
 
-    mask = mask_t.cpu().numpy().astype(bool).reshape(-1)
-    q.put(mask)
+        mask = mask_t.cpu().numpy().astype(bool).reshape(-1)  # 0/1
+
+        shm = shared_memory.SharedMemory(name=shm_name)
+        buf = np.ndarray((n,), dtype=bool, buffer=shm.buf)
+        buf[:] = mask  # write result
+        shm.close()
+    except Exception as e:
+        # report error to parent
+        try:
+            err_q.put(repr(e))
+        except Exception:
+            pass
 
 
-def remove_radius_outliers_mask_robust(point_map, radius=0.01, nb_points=15):
+def remove_radius_outliers_mask_robust_shm(point_map, radius=0.01, nb_points=15, timeout_s=300):
     assert point_map.shape[-1] == 3, f"Expected (..., 3), got {point_map.shape}"
     pts = point_map.reshape(-1, 3)
+    # points_np = np.asarray(points_np)
+    # assert points_np.ndim == 2 and points_np.shape[1] == 3
     pts_valid, finite = sanitize_points_np(pts)
-    pts = np.ascontiguousarray(pts_valid.astype(np.float32))
+
+    # finite = np.isfinite(points_np).all(axis=1)
+    pts_valid = np.ascontiguousarray(pts_valid.astype(np.float32))
+    n = pts_valid.shape[0]
 
     flat_mask = np.zeros(pts.shape[0], dtype=bool)
 
-    if pts.shape[0] == 0:
+    if n == 0:
         return flat_mask.reshape(point_map.shape[:-1])
 
-    ctx = mp.get_context("spawn")   # safest cross-platform
-    q = ctx.Queue(maxsize=1)
-    p = ctx.Process(target=_gpu_worker, args=(pts, radius, nb_points, q))
-    print("Starting GPU worker process for radius outlier removal...")
-    p.start()
-    p.join()
-    print("GPU worker process finished with exit code", p.exitcode)
+    ctx = mp.get_context("spawn")
+    err_q = ctx.Queue(maxsize=1)
 
-    if p.exitcode == 0:
-        valid_mask = q.get()
-    else:
-        print(f"GPU worker process failed with exit code {p.exitcode}. Falling back to CPU method.")
-        # GPU failed (illegal access or other). Do CPU fallback safely in parent.
+    # Allocate shared memory for bool mask (0/1)
+    shm = shared_memory.SharedMemory(create=True, size=n * np.dtype(bool).itemsize)
+    shm_name = shm.name
+    shm_buf = np.ndarray((n,), dtype=bool, buffer=shm.buf)
+    shm_buf[:] = False
+
+    p = ctx.Process(
+        target=_gpu_worker_shm,
+        args=(pts_valid, radius, nb_points, shm_name, n, err_q),
+    )
+    p.start()
+    p.join(timeout=timeout_s)
+
+    if p.is_alive():
+        p.terminate()
+        p.join()
+        shm.close()
+        shm.unlink()
+        raise TimeoutError(f"GPU worker did not finish within {timeout_s}s (likely stuck).")
+
+    # If worker reported an error, do CPU fallback
+    err = None
+    if not err_q.empty():
+        err = err_q.get()
+
+    if p.exitcode != 0 or err is not None:
+        # CPU fallback in parent (safe)
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pts.astype(np.float32))
         _, idx = pcd.remove_radius_outlier(nb_points=nb_points, radius=radius)
-        valid_mask = np.zeros(pts.shape[0], dtype=bool)
-        valid_mask[np.array(idx, dtype=np.int32)] = True
-        print("CPU radius outlier removal completed.")
+        valid_mask = np.zeros(n, dtype=bool)
+        valid_mask[np.asarray(idx, dtype=np.int32)] = True
+    else:
+        valid_mask = shm_buf.astype(bool)
 
-    # full_mask = np.zeros(points_np.shape[0], dtype=bool)
+    # Cleanup shared memory
+    shm.close()
+    shm.unlink()
+
     flat_mask[np.where(finite)[0]] = valid_mask
     return flat_mask.reshape(point_map.shape[:-1])
         
@@ -294,7 +331,7 @@ def refine_point_mask(reconstruction_results: dict) -> dict:
         print(f"Refining frame {frame_id} with radius outlier removal...")
         points = full_points_list[frame_id]
         mask = full_points_mask_list[frame_id]
-        radius_inlier_mask = remove_radius_outliers_mask_robust(points, radius=0.01, nb_points=15)
+        radius_inlier_mask = remove_radius_outliers_mask_robust_shm(points, radius=0.01, nb_points=15)
         refined_mask = np.logical_and(mask, radius_inlier_mask)
         refined_points_mask_list.append(refined_mask)
     reconstruction_results["points_mask"] = np.stack(refined_points_mask_list, axis=0)
