@@ -204,8 +204,11 @@ def radius_filter_outliers_gpu(
     del pcd_t  # free GPU memory
     del inlier_mask_t
     print("after cleanup")
-    o3d.core.cuda.synchronize()
-    o3d.core.cuda.release_cache()
+    try:
+        o3d.core.cuda.synchronize()
+        o3d.core.cuda.release_cache()
+    except Exception:
+        print("Failed to synchronize GPU")
     print("after GPU synchronization and cache release")
     
     return flat_mask.reshape(point_map.shape[:-1])
