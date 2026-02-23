@@ -572,17 +572,18 @@ def refine_point_mask(reconstruction_results: dict) -> dict:
         full_points_list = reconstruction_results["points"]
     full_points_mask_list = reconstruction_results["points_mask"]
     refined_points_mask_list = []
-    worker = Open3DRadiusOutlierGPUWorker()
-    try:
-        for frame_id in range(len(full_points_list)):
-            print(f"Refining frame {frame_id} with radius outlier removal...")
-            points = full_points_list[frame_id]
-            mask = full_points_mask_list[frame_id]
-            # radius_inlier_mask = remove_radius_outliers_mask_robust_shm(points, radius=0.01, nb_points=15)
-            radius_inlier_mask = worker.run(points, radius=0.01, nb_points=15, timeout_s=60.0, fallback_to_cpu=True, restart_on_gpu_fail=True)
-            refined_mask = np.logical_and(mask, radius_inlier_mask)
-            refined_points_mask_list.append(refined_mask)
-        reconstruction_results["points_mask"] = np.stack(refined_points_mask_list, axis=0)
-    finally:
-        worker.close()
+    # worker = Open3DRadiusOutlierGPUWorker()
+    # try:
+    for frame_id in range(len(full_points_list)):
+        print(f"Refining frame {frame_id} with radius outlier removal...")
+        points = full_points_list[frame_id]
+        mask = full_points_mask_list[frame_id]
+        # radius_inlier_mask = remove_radius_outliers_mask_robust_shm(points, radius=0.01, nb_points=15)
+        # radius_inlier_mask = worker.run(points, radius=0.01, nb_points=15, timeout_s=60.0, fallback_to_cpu=True, restart_on_gpu_fail=True)
+        radius_inlier_mask = radius_filter_outliers(points, radius=0.01, nb_points=15)
+        refined_mask = np.logical_and(mask, radius_inlier_mask)
+        refined_points_mask_list.append(refined_mask)
+    reconstruction_results["points_mask"] = np.stack(refined_points_mask_list, axis=0)
+    # finally:
+    #     worker.close()
     return reconstruction_results
