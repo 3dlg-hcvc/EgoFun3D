@@ -223,7 +223,7 @@ def _gpu_worker(points_f32, radius, nb_points, q):
     pcd_t = o3d.t.geometry.PointCloud(dev)
     pcd_t.point["positions"] = o3d.core.Tensor(points_f32, device=dev)
 
-    out = pcd_t.remove_radius_outliers(nb_points=nb_points, radius=radius)
+    out = pcd_t.remove_radius_outliers(nb_points=nb_points, search_radius=radius)
 
     # IMPORTANT: force error to surface inside the worker
     o3d.core.cuda.synchronize()
