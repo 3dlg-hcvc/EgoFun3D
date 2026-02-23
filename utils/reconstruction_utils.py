@@ -354,7 +354,7 @@ def _gpu_worker_loop(ctrl_conn):
             pcd_t.point["positions"] = o3d.core.Tensor(pts, device=dev)
             print("GPU worker: Created tensor point cloud on CUDA.")
 
-            out = pcd_t.remove_radius_outliers(nb_points=nb_points, radius=radius)
+            out = pcd_t.remove_radius_outliers(nb_points=nb_points, search_radius=radius)
             print("GPU worker: Completed radius outlier removal on CUDA.")
 
             # Force async CUDA errors to surface inside worker
