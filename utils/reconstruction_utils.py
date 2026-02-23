@@ -1,3 +1,5 @@
+import time
+
 import open3d as o3d
 import numpy as np
 import multiprocessing as mp
@@ -317,6 +319,242 @@ def remove_radius_outliers_mask_robust_shm(point_map, radius=0.01, nb_points=15,
 
     flat_mask[np.where(finite)[0]] = valid_mask
     return flat_mask.reshape(point_map.shape[:-1])
+
+
+# ---------------- Worker ----------------
+def _gpu_worker_loop(ctrl_conn):
+    import numpy as np
+    import open3d as o3d
+    from multiprocessing import shared_memory
+
+    dev = o3d.core.Device("CUDA:0")
+
+    while True:
+        msg = ctrl_conn.recv()
+        if msg["cmd"] == "stop":
+            ctrl_conn.send({"ok": True})
+            return
+
+        shm_in_name = msg["shm_in"]
+        shm_out_name = msg["shm_out"]
+        n = int(msg["n"])
+        radius = float(msg["radius"])
+        nb_points = int(msg["nb_points"])
+
+        shm_in = shm_out = None
+        try:
+            shm_in = shared_memory.SharedMemory(name=shm_in_name)
+            shm_out = shared_memory.SharedMemory(name=shm_out_name)
+
+            pts = np.ndarray((n, 3), dtype=np.float32, buffer=shm_in.buf)
+            out_buf = np.ndarray((n,), dtype=bool, buffer=shm_out.buf)
+
+            # Tensor point cloud on CUDA
+            pcd_t = o3d.t.geometry.PointCloud(dev)
+            pcd_t.point["positions"] = o3d.core.Tensor(pts, device=dev)
+            print("GPU worker: Created tensor point cloud on CUDA.")
+
+            out = pcd_t.remove_radius_outliers(nb_points=nb_points, radius=radius)
+            print("GPU worker: Completed radius outlier removal on CUDA.")
+
+            # Force async CUDA errors to surface inside worker
+            o3d.core.cuda.synchronize()
+            print("GPU worker: Synchronized CUDA after radius outlier removal.")
+            # Unpack mask tensor (Open3D version dependent)
+            if isinstance(out, tuple) and len(out) == 2:
+                a, b = out
+                mask_t = a if isinstance(a, o3d.core.Tensor) else b
+            else:
+                mask_t = out
+
+            mask = mask_t.cpu().numpy().astype(bool).reshape(-1)
+            out_buf[:] = mask.astype(bool)
+
+            # Optional: release cached CUDA memory (you said this helps)
+            # del pcd_t, mask_t, out
+            # o3d.core.cuda.release_cache()
+
+            ctrl_conn.send({"ok": True})
+        except Exception as e:
+            # NOTE: if this is cudaErrorIllegalAddress, this worker is likely poisoned.
+            # Parent will restart worker.
+            ctrl_conn.send({"ok": False, "err": repr(e)})
+        finally:
+            try:
+                if shm_in is not None:
+                    shm_in.close()
+            except Exception:
+                pass
+            try:
+                if shm_out is not None:
+                    shm_out.close()
+            except Exception:
+                pass
+
+
+# ---------------- Client wrapper ----------------
+class Open3DRadiusOutlierGPUWorker:
+    """
+    Persistent GPU worker with CPU fallback and auto-restart-on-GPU-failure.
+    """
+
+    def __init__(self, device: str = "CUDA:0"):
+        self.device = device
+        self.ctx = mp.get_context("spawn")
+        self._conn = None
+        self._proc = None
+        self._start_worker()
+
+    def _start_worker(self):
+        parent_conn, child_conn = self.ctx.Pipe()
+        self._conn = parent_conn
+        self._proc = self.ctx.Process(target=_gpu_worker_loop, args=(child_conn,), daemon=True)
+        self._proc.start()
+
+    def _stop_worker(self):
+        if self._proc is None:
+            return
+        try:
+            if self._conn is not None:
+                self._conn.send({"cmd": "stop"})
+                if self._conn.poll(1.0):
+                    _ = self._conn.recv()
+        except Exception:
+            pass
+        try:
+            self._proc.join(timeout=1.0)
+            if self._proc.is_alive():
+                self._proc.terminate()
+                self._proc.join()
+        except Exception:
+            pass
+        self._proc = None
+        self._conn = None
+
+    def restart_worker(self):
+        self._stop_worker()
+        self._start_worker()
+
+    def close(self):
+        self._stop_worker()
+
+    @staticmethod
+    def _cpu_fallback_mask(pts_valid_f32: np.ndarray, radius: float, nb_points: int) -> np.ndarray:
+        """
+        CPU remove_radius_outlier on valid points only. Returns bool mask of shape (N_valid,).
+        """
+        print("Running CPU fallback for radius outlier removal...")
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pts_valid_f32.astype(np.float32, copy=False))
+        _, idx = pcd.remove_radius_outlier(nb_points=int(nb_points), radius=float(radius))
+        mask = np.zeros(pts_valid_f32.shape[0], dtype=bool)
+        mask[np.asarray(idx, dtype=np.int32)] = True
+        print("CPU fallback: Completed radius outlier removal on CPU.")
+        return mask
+
+    def run(
+        self,
+        point_map: np.ndarray,
+        radius: float = 0.01,
+        nb_points: int = 15,
+        timeout_s: float = 60.0,
+        fallback_to_cpu: bool = True,
+        restart_on_gpu_fail: bool = True,
+    ) -> np.ndarray:
+        """
+        Returns a boolean mask with shape (N,) for input points_np (N,3).
+        Any NaN/Inf points are marked False.
+        """
+        assert point_map.shape[-1] == 3, f"Expected (..., 3), got {point_map.shape}"
+        pts = point_map.reshape(-1, 3)
+        # points_np = np.asarray(points_np)
+        # assert points_np.ndim == 2 and points_np.shape[1] == 3
+        pts_valid, finite = sanitize_points_np(pts)
+
+        # finite = np.isfinite(points_np).all(axis=1)
+        pts_valid = np.ascontiguousarray(pts_valid.astype(np.float32))
+        n = pts_valid.shape[0]
+
+        flat_mask = np.zeros(pts.shape[0], dtype=bool)
+
+        if n == 0:
+            return flat_mask.reshape(point_map.shape[:-1])
+        # points_np = np.asarray(points_np)
+        # assert points_np.ndim == 2 and points_np.shape[1] == 3
+
+        # finite = np.isfinite(points_np).all(axis=1)
+        # pts_valid = np.ascontiguousarray(points_np[finite].astype(np.float32))
+        # n = pts_valid.shape[0]
+
+        # full_mask = np.zeros(points_np.shape[0], dtype=bool)
+        # if n == 0:
+        #     return full_mask
+
+        # Allocate shared memory for input and output
+        shm_in = shared_memory.SharedMemory(create=True, size=pts_valid.nbytes)
+        shm_out = shared_memory.SharedMemory(create=True, size=n * np.dtype(bool).itemsize)
+
+        gpu_ok = False
+        gpu_err = None
+
+        try:
+            in_buf = np.ndarray((n, 3), dtype=np.float32, buffer=shm_in.buf)
+            out_buf = np.ndarray((n,), dtype=bool, buffer=shm_out.buf)
+            in_buf[:] = pts_valid
+            out_buf[:] = False
+
+            # Send GPU job
+            self._conn.send({
+                "cmd": "run",
+                "shm_in": shm_in.name,
+                "shm_out": shm_out.name,
+                "n": n,
+                "radius": float(radius),
+                "nb_points": int(nb_points),
+            })
+
+            # Wait for response with timeout
+            t0 = time.time()
+            while True:
+                if self._conn.poll(0.01):
+                    resp = self._conn.recv()
+                    gpu_ok = bool(resp.get("ok", False))
+                    gpu_err = resp.get("err")
+                    break
+                if (time.time() - t0) > timeout_s:
+                    gpu_ok = False
+                    gpu_err = f"Timeout after {timeout_s}s"
+                    break
+
+            if gpu_ok:
+                valid_mask = out_buf.astype(bool)
+                flat_mask[np.where(finite)[0]] = valid_mask
+                return flat_mask.reshape(point_map.shape[:-1])
+
+            # GPU failed or timed out
+            if restart_on_gpu_fail:
+                # Worker may be poisoned; restart it
+                print(f"GPU worker failed with error: {gpu_err}. Restarting worker and falling back to CPU method.")
+                self.restart_worker()
+
+            if not fallback_to_cpu:
+                raise RuntimeError(f"GPU remove_radius_outliers failed: {gpu_err}")
+
+            # CPU fallback in parent
+            valid_mask = self._cpu_fallback_mask(pts_valid, radius=radius, nb_points=nb_points)
+            flat_mask[np.where(finite)[0]] = valid_mask
+            return flat_mask.reshape(point_map.shape[:-1])
+
+        finally:
+            # Clean up shared memory
+            try:
+                shm_in.close(); shm_in.unlink()
+            except Exception:
+                pass
+            try:
+                shm_out.close(); shm_out.unlink()
+            except Exception:
+                pass
         
 
 def refine_point_mask(reconstruction_results: dict) -> dict:
@@ -333,12 +571,16 @@ def refine_point_mask(reconstruction_results: dict) -> dict:
         full_points_list = reconstruction_results["points"]
     full_points_mask_list = reconstruction_results["points_mask"]
     refined_points_mask_list = []
-    for frame_id in range(len(full_points_list)):
-        print(f"Refining frame {frame_id} with radius outlier removal...")
-        points = full_points_list[frame_id]
-        mask = full_points_mask_list[frame_id]
-        radius_inlier_mask = remove_radius_outliers_mask_robust_shm(points, radius=0.01, nb_points=15)
-        refined_mask = np.logical_and(mask, radius_inlier_mask)
-        refined_points_mask_list.append(refined_mask)
-    reconstruction_results["points_mask"] = np.stack(refined_points_mask_list, axis=0)
+    worker = Open3DRadiusOutlierGPUWorker()
+    try:
+        for frame_id in range(len(full_points_list)):
+            print(f"Refining frame {frame_id} with radius outlier removal...")
+            points = full_points_list[frame_id]
+            mask = full_points_mask_list[frame_id]
+            radius_inlier_mask = remove_radius_outliers_mask_robust_shm(points, radius=0.01, nb_points=15)
+            refined_mask = np.logical_and(mask, radius_inlier_mask)
+            refined_points_mask_list.append(refined_mask)
+        reconstruction_results["points_mask"] = np.stack(refined_points_mask_list, axis=0)
+    finally:
+        worker.close()
     return reconstruction_results
