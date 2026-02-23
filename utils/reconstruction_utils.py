@@ -1,5 +1,6 @@
 import open3d as o3d
 import numpy as np
+import multiprocessing as mp
 
 
 def estimate_se3_transformation(target_xyz: np.ndarray, source_xyz: np.ndarray) -> np.ndarray:
@@ -89,129 +90,182 @@ def sanitize_points_np(points: np.ndarray) -> np.ndarray:
     return points, finite
 
 
-def radius_filter_outliers_gpu(
-    point_map: np.ndarray,
-    radius: float = 0.01,
-    nb_points: int = 15,
-    device: str = "CUDA:0",
-    allow_cpu_fallback: bool = False,
-) -> np.ndarray:
-    """
-    GPU attempt using Open3D Tensor API.
-    - If your Open3D build supports radius outlier removal on CUDA in t.geometry, this will be fast.
-    - If not supported, you can either raise or fall back to CPU (legacy).
-    """
-    assert point_map.shape[-1] == 3, f"Expected (..., 3), got {point_map.shape}"
-    pts = point_map.reshape(-1, 3)
+# def radius_filter_outliers_gpu(
+#     point_map: np.ndarray,
+#     radius: float = 0.01,
+#     nb_points: int = 15,
+#     device: str = "CUDA:0",
+#     allow_cpu_fallback: bool = False,
+# ) -> np.ndarray:
+#     """
+#     GPU attempt using Open3D Tensor API.
+#     - If your Open3D build supports radius outlier removal on CUDA in t.geometry, this will be fast.
+#     - If not supported, you can either raise or fall back to CPU (legacy).
+#     """
+#     assert point_map.shape[-1] == 3, f"Expected (..., 3), got {point_map.shape}"
+#     pts = point_map.reshape(-1, 3)
 
-    # Optional: drop NaN/Inf
-    # finite = np.isfinite(pts).all(axis=1)
-    # pts_valid = pts[finite].astype(np.float32)
-    pts_valid, finite = sanitize_points_np(pts)
+#     # Optional: drop NaN/Inf
+#     # finite = np.isfinite(pts).all(axis=1)
+#     # pts_valid = pts[finite].astype(np.float32)
+#     pts_valid, finite = sanitize_points_np(pts)
 
-    # Prepare output mask (invalid points remain False)
-    flat_mask = np.zeros(pts.shape[0], dtype=bool)
+#     # Prepare output mask (invalid points remain False)
+#     flat_mask = np.zeros(pts.shape[0], dtype=bool)
 
-    if pts_valid.shape[0] == 0:
-        return flat_mask.reshape(point_map.shape[:-1])
+#     if pts_valid.shape[0] == 0:
+#         return flat_mask.reshape(point_map.shape[:-1])
 
-    # Choose device
-    dev = o3d.core.Device(device)
-    if dev.get_type() == o3d.core.Device.DeviceType.CUDA and not o3d.core.cuda.is_available():
-        if allow_cpu_fallback:
-            dev = o3d.core.Device("CPU:0")
-        else:
-            raise RuntimeError("CUDA device requested but o3d.core.cuda.is_available() is False.")
-    print(f"Using device: {dev}")
+#     # Choose device
+#     dev = o3d.core.Device(device)
+#     if dev.get_type() == o3d.core.Device.DeviceType.CUDA and not o3d.core.cuda.is_available():
+#         if allow_cpu_fallback:
+#             dev = o3d.core.Device("CPU:0")
+#         else:
+#             raise RuntimeError("CUDA device requested but o3d.core.cuda.is_available() is False.")
+#     print(f"Using device: {dev}")
 
-    # Tensor point cloud on device
-    pcd_t = o3d.t.geometry.PointCloud(dev)
-    pcd_t.point["positions"] = o3d.core.Tensor(pts_valid, o3d.core.float32, device=dev)
+#     # Tensor point cloud on device
+#     pcd_t = o3d.t.geometry.PointCloud(dev)
+#     pcd_t.point["positions"] = o3d.core.Tensor(pts_valid, o3d.core.float32, device=dev)
 
-    print("after creating tensor point cloud")
+#     print("after creating tensor point cloud")
 
-    # --- Try GPU/tensor radius outlier removal ---
-    # Different Open3D versions expose different method names; try a few common ones.
-    inlier_mask_t = None
+#     # --- Try GPU/tensor radius outlier removal ---
+#     # Different Open3D versions expose different method names; try a few common ones.
+#     inlier_mask_t = None
 
-    # Candidate method names seen across versions / docs / builds
-    candidates = [
-        "remove_radius_outliers",
-        "remove_radius_outlier",
-        "radius_outlier_removal",
-    ]
+#     # Candidate method names seen across versions / docs / builds
+#     candidates = [
+#         "remove_radius_outliers",
+#         "remove_radius_outlier",
+#         "radius_outlier_removal",
+#     ]
 
-    last_err = None
-    for name in candidates:
-        fn = getattr(pcd_t, name, None)
-        if fn is None:
-            print(f"Method '{name}' not available on tensor point cloud.")
-            continue
-        try:
-            print(f"Attempting to call '{name}' for radius outlier removal on device {dev}...")
-            o3d.core.cuda.synchronize()
-            print("Before radius outlier removal call")
-            out = fn(nb_points=nb_points, search_radius=radius)
-            print("After radius outlier removal call")
-            o3d.core.cuda.synchronize()
-            print(f"Successfully called '{name}' for radius outlier removal.")
-            # Possible return formats:
-            #   (pcd_filtered, mask)  OR (mask, pcd_filtered) OR just mask
-            if isinstance(out, tuple) and len(out) == 2:
-                a, b = out
-                # identify which is mask
-                if isinstance(a, o3d.core.Tensor):
-                    inlier_mask_t = a
-                    print(f"Identified inlier mask tensor in output of '{name}' as first element.")
-                elif isinstance(b, o3d.core.Tensor):
-                    inlier_mask_t = b
-                    print(f"Identified inlier mask tensor in output of '{name}' as second element.")
-                else:
-                    # could be bool numpy/other
-                    print(f"Neither output of '{name}' is a tensor. Output types: {type(a)}, {type(b)}. Cannot identify inlier mask.")
-                    pass
-            elif isinstance(out, o3d.core.Tensor):
-                inlier_mask_t = out
-                print(f"Output of '{name}' is a tensor, treating as inlier mask.")
-            break
-        except Exception as e:
-            last_err = e
-    print("after radius outlier removal attempt")
-    if inlier_mask_t is None:
-        if allow_cpu_fallback:
-            print("GPU radius outlier removal not available, falling back to CPU method.")
-            # Fallback to your original CPU method
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(pts_valid.astype(np.float32))
-            _, idx = pcd.remove_radius_outlier(nb_points=nb_points, radius=radius)
-            valid_mask = np.zeros(pts_valid.shape[0], dtype=bool)
-            valid_mask[np.array(idx, dtype=np.int32)] = True
-            print("after CPU radius outlier removal")
-        else:
-            raise RuntimeError(
-                "Your Open3D build does not expose a tensor/CUDA radius-outlier removal API. "
-                "This operation is CPU-only in many Open3D versions.\n"
-                f"Last error (if any): {repr(last_err)}"
-            )
-    else:
-        # Bring mask back to CPU numpy
-        valid_mask = inlier_mask_t.to(o3d.core.Device("CPU:0")).numpy().astype(bool).reshape(-1)
-    print("after radius outlier removal and mask retrieval")
+#     last_err = None
+#     for name in candidates:
+#         fn = getattr(pcd_t, name, None)
+#         if fn is None:
+#             print(f"Method '{name}' not available on tensor point cloud.")
+#             continue
+#         try:
+#             print(f"Attempting to call '{name}' for radius outlier removal on device {dev}...")
+#             o3d.core.cuda.synchronize()
+#             print("Before radius outlier removal call")
+#             out = fn(nb_points=nb_points, search_radius=radius)
+#             print("After radius outlier removal call")
+#             o3d.core.cuda.synchronize()
+#             print(f"Successfully called '{name}' for radius outlier removal.")
+#             # Possible return formats:
+#             #   (pcd_filtered, mask)  OR (mask, pcd_filtered) OR just mask
+#             if isinstance(out, tuple) and len(out) == 2:
+#                 a, b = out
+#                 # identify which is mask
+#                 if isinstance(a, o3d.core.Tensor):
+#                     inlier_mask_t = a
+#                     print(f"Identified inlier mask tensor in output of '{name}' as first element.")
+#                 elif isinstance(b, o3d.core.Tensor):
+#                     inlier_mask_t = b
+#                     print(f"Identified inlier mask tensor in output of '{name}' as second element.")
+#                 else:
+#                     # could be bool numpy/other
+#                     print(f"Neither output of '{name}' is a tensor. Output types: {type(a)}, {type(b)}. Cannot identify inlier mask.")
+#                     pass
+#             elif isinstance(out, o3d.core.Tensor):
+#                 inlier_mask_t = out
+#                 print(f"Output of '{name}' is a tensor, treating as inlier mask.")
+#             break
+#         except Exception as e:
+#             last_err = e
+#     print("after radius outlier removal attempt")
+#     if inlier_mask_t is None:
+#         if allow_cpu_fallback:
+#             print("GPU radius outlier removal not available, falling back to CPU method.")
+#             # Fallback to your original CPU method
+#             pcd = o3d.geometry.PointCloud()
+#             pcd.points = o3d.utility.Vector3dVector(pts_valid.astype(np.float32))
+#             _, idx = pcd.remove_radius_outlier(nb_points=nb_points, radius=radius)
+#             valid_mask = np.zeros(pts_valid.shape[0], dtype=bool)
+#             valid_mask[np.array(idx, dtype=np.int32)] = True
+#             print("after CPU radius outlier removal")
+#         else:
+#             raise RuntimeError(
+#                 "Your Open3D build does not expose a tensor/CUDA radius-outlier removal API. "
+#                 "This operation is CPU-only in many Open3D versions.\n"
+#                 f"Last error (if any): {repr(last_err)}"
+#             )
+#     else:
+#         # Bring mask back to CPU numpy
+#         valid_mask = inlier_mask_t.to(o3d.core.Device("CPU:0")).numpy().astype(bool).reshape(-1)
+#     print("after radius outlier removal and mask retrieval")
 
-    # Write valid_mask back into full mask (including invalid points)
-    flat_mask[np.where(finite)[0]] = valid_mask
+#     # Write valid_mask back into full mask (including invalid points)
+#     flat_mask[np.where(finite)[0]] = valid_mask
 
-    del pcd_t  # free GPU memory
-    del inlier_mask_t
-    print("after cleanup")
-    try:
-        o3d.core.cuda.synchronize()
-        o3d.core.cuda.release_cache()
-    except Exception:
-        print("Failed to synchronize GPU")
-    print("after GPU synchronization and cache release")
+#     del pcd_t  # free GPU memory
+#     del inlier_mask_t
+#     print("after cleanup")
+#     try:
+#         o3d.core.cuda.synchronize()
+#         o3d.core.cuda.release_cache()
+#     except Exception:
+#         print("Failed to synchronize GPU")
+#     print("after GPU synchronization and cache release")
     
-    return flat_mask.reshape(point_map.shape[:-1])
+#     return flat_mask.reshape(point_map.shape[:-1])
+
+
+def _gpu_worker(points_f32, radius, nb_points, q):
+    import open3d as o3d
+    import numpy as np
+
+    dev = o3d.core.Device("CUDA:0")
+    pcd_t = o3d.t.geometry.PointCloud(dev)
+    pcd_t.point["positions"] = o3d.core.Tensor(points_f32, device=dev)
+
+    out = pcd_t.remove_radius_outliers(nb_points=nb_points, radius=radius)
+
+    # IMPORTANT: force error to surface inside the worker
+    o3d.core.cuda.synchronize()
+
+    # Unpack mask (Open3D version dependent)
+    if isinstance(out, tuple) and len(out) == 2:
+        a, b = out
+        mask_t = a if isinstance(a, o3d.core.Tensor) else b
+    else:
+        mask_t = out
+
+    mask = mask_t.cpu().numpy().astype(bool).reshape(-1)
+    q.put(mask)
+
+
+def remove_radius_outliers_mask_robust(points_np, radius=0.01, nb_points=15):
+    points_np = np.asarray(points_np)
+    finite = np.isfinite(points_np).all(axis=1)
+    pts = np.ascontiguousarray(points_np[finite].astype(np.float32))
+
+    if pts.shape[0] == 0:
+        return np.zeros(points_np.shape[0], dtype=bool)
+
+    ctx = mp.get_context("spawn")   # safest cross-platform
+    q = ctx.Queue(maxsize=1)
+    p = ctx.Process(target=_gpu_worker, args=(pts, radius, nb_points, q))
+    p.start()
+    p.join()
+
+    if p.exitcode == 0:
+        valid_mask = q.get()
+    else:
+        # GPU failed (illegal access or other). Do CPU fallback safely in parent.
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pts.astype(np.float64))
+        _, idx = pcd.remove_radius_outlier(nb_points=nb_points, radius=radius)
+        valid_mask = np.zeros(pts.shape[0], dtype=bool)
+        valid_mask[np.array(idx, dtype=np.int64)] = True
+
+    full_mask = np.zeros(points_np.shape[0], dtype=bool)
+    full_mask[np.where(finite)[0]] = valid_mask
+    return full_mask
         
 
 def refine_point_mask(reconstruction_results: dict) -> dict:
@@ -232,7 +286,7 @@ def refine_point_mask(reconstruction_results: dict) -> dict:
         print(f"Refining frame {frame_id} with radius outlier removal...")
         points = full_points_list[frame_id]
         mask = full_points_mask_list[frame_id]
-        radius_inlier_mask = radius_filter_outliers_gpu(points, radius=0.01, nb_points=15, allow_cpu_fallback=True)
+        radius_inlier_mask = remove_radius_outliers_mask_robust(points, radius=0.01, nb_points=15)
         refined_mask = np.logical_and(mask, radius_inlier_mask)
         refined_points_mask_list.append(refined_mask)
     reconstruction_results["points_mask"] = np.stack(refined_points_mask_list, axis=0)
