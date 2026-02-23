@@ -190,13 +190,14 @@ def refine_point_mask(reconstruction_results: dict) -> dict:
     full_points_mask_list = reconstruction_results["points_mask"]
     refined_points_mask_list = []
     for frame_id in range(len(full_points_list)):
-        print(f"Refining frame {frame_id} with radius outlier removal...")
+        # print(f"Refining frame {frame_id} with radius outlier removal...")
         points = full_points_list[frame_id]
         mask = full_points_mask_list[frame_id]
         radius_inlier_mask = radius_filter_outliers_gpu(points, radius=0.01, nb_points=15)
         refined_mask = np.logical_and(mask, radius_inlier_mask)
         refined_points_mask_list.append(refined_mask)
-        o3d.core.cuda.release_cache()
+        if frame_id % 50 == 0:
+            o3d.core.cuda.release_cache()
     reconstruction_results["points_mask"] = np.stack(refined_points_mask_list, axis=0)
     o3d.core.cuda.release_cache()
     return reconstruction_results
