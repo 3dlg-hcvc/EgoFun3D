@@ -222,8 +222,9 @@ def _gpu_worker(points_f32, radius, nb_points, q):
     dev = o3d.core.Device("CUDA:0")
     pcd_t = o3d.t.geometry.PointCloud(dev)
     pcd_t.point["positions"] = o3d.core.Tensor(points_f32, device=dev)
-
+    print("GPU worker: created tensor point cloud on device", dev)
     out = pcd_t.remove_radius_outliers(nb_points=nb_points, search_radius=radius)
+    print("GPU worker: completed radius outlier removal")
 
     # IMPORTANT: force error to surface inside the worker
     o3d.core.cuda.synchronize()
@@ -253,18 +254,22 @@ def remove_radius_outliers_mask_robust(point_map, radius=0.01, nb_points=15):
     ctx = mp.get_context("spawn")   # safest cross-platform
     q = ctx.Queue(maxsize=1)
     p = ctx.Process(target=_gpu_worker, args=(pts, radius, nb_points, q))
+    print("Starting GPU worker process for radius outlier removal...")
     p.start()
     p.join()
+    print("GPU worker process finished with exit code", p.exitcode)
 
     if p.exitcode == 0:
         valid_mask = q.get()
     else:
+        print(f"GPU worker process failed with exit code {p.exitcode}. Falling back to CPU method.")
         # GPU failed (illegal access or other). Do CPU fallback safely in parent.
         pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(pts.astype(np.float64))
+        pcd.points = o3d.utility.Vector3dVector(pts.astype(np.float32))
         _, idx = pcd.remove_radius_outlier(nb_points=nb_points, radius=radius)
         valid_mask = np.zeros(pts.shape[0], dtype=bool)
-        valid_mask[np.array(idx, dtype=np.int64)] = True
+        valid_mask[np.array(idx, dtype=np.int32)] = True
+        print("CPU radius outlier removal completed.")
 
     # full_mask = np.zeros(points_np.shape[0], dtype=bool)
     flat_mask[np.where(finite)[0]] = valid_mask
