@@ -369,7 +369,7 @@ def _gpu_worker_loop(ctrl_conn):
 
             mask = mask_t.cpu().numpy().astype(bool).reshape(-1)
             out_buf[:] = mask.astype(bool)
-            o3d.core.cuda.synchronize()
+            # o3d.core.cuda.synchronize()
             o3d.core.cuda.release_cache()
             # Optional: release cached CUDA memory (you said this helps)
             # del pcd_t, mask_t, out
