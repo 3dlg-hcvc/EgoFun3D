@@ -165,6 +165,7 @@ def radius_filter_outliers_gpu(
     else:
         # Bring mask back to CPU numpy
         valid_mask = inlier_mask_t.to(o3d.core.Device("CPU:0")).numpy().astype(bool).reshape(-1)
+        o3d.core.cuda.release_cache()
 
     # Write valid_mask back into full mask (including invalid points)
     flat_mask[np.where(finite)[0]] = valid_mask
@@ -196,6 +197,5 @@ def refine_point_mask(reconstruction_results: dict) -> dict:
         radius_inlier_mask = radius_filter_outliers_gpu(points, radius=0.01, nb_points=15, allow_cpu_fallback=True)
         refined_mask = np.logical_and(mask, radius_inlier_mask)
         refined_points_mask_list.append(refined_mask)
-        o3d.core.cuda.release_cache()
     reconstruction_results["points_mask"] = np.stack(refined_points_mask_list, axis=0)
     return reconstruction_results
