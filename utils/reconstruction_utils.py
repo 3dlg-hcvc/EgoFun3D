@@ -224,11 +224,13 @@ def _gpu_worker_shm(points_f32, radius, nb_points, shm_name, n, err_q):
         dev = o3d.core.Device("CUDA:0")
         pcd_t = o3d.t.geometry.PointCloud(dev)
         pcd_t.point["positions"] = o3d.core.Tensor(points_f32, device=dev)
-
+        print("GPU worker: Created tensor point cloud on CUDA.")
         out = pcd_t.remove_radius_outliers(nb_points=nb_points, search_radius=radius)
+        print("GPU worker: Completed radius outlier removal on CUDA.")
 
         # Force CUDA error to surface inside worker
         o3d.core.cuda.synchronize()
+        print("GPU worker: Synchronized CUDA after radius outlier removal.")
 
         # Unpack mask (Open3D version dependent)
         if isinstance(out, tuple) and len(out) == 2:
@@ -238,11 +240,12 @@ def _gpu_worker_shm(points_f32, radius, nb_points, shm_name, n, err_q):
             mask_t = out
 
         mask = mask_t.cpu().numpy().astype(bool).reshape(-1)  # 0/1
-
+        print("GPU worker: Retrieved mask from CUDA and converted to numpy.")
         shm = shared_memory.SharedMemory(name=shm_name)
         buf = np.ndarray((n,), dtype=bool, buffer=shm.buf)
         buf[:] = mask  # write result
         shm.close()
+        print("GPU worker: Wrote mask to shared memory and closed it.")
     except Exception as e:
         # report error to parent
         try:
@@ -296,18 +299,21 @@ def remove_radius_outliers_mask_robust_shm(point_map, radius=0.01, nb_points=15,
         err = err_q.get()
 
     if p.exitcode != 0 or err is not None:
+        print(f"GPU worker failed with exit code {p.exitcode}. Error: {err}. Falling back to CPU method.")
         # CPU fallback in parent (safe)
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pts.astype(np.float32))
         _, idx = pcd.remove_radius_outlier(nb_points=nb_points, radius=radius)
         valid_mask = np.zeros(n, dtype=bool)
         valid_mask[np.asarray(idx, dtype=np.int32)] = True
+        print("CPU fallback: Completed radius outlier removal on CPU.")
     else:
         valid_mask = shm_buf.astype(bool)
 
     # Cleanup shared memory
     shm.close()
     shm.unlink()
+    print("Cleaned up shared memory and GPU worker process.")
 
     flat_mask[np.where(finite)[0]] = valid_mask
     return flat_mask.reshape(point_map.shape[:-1])
