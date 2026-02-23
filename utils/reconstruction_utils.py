@@ -179,12 +179,14 @@ def radius_filter_outliers_gpu(
     print("after radius outlier removal attempt")
     if inlier_mask_t is None:
         if allow_cpu_fallback:
+            print("GPU radius outlier removal not available, falling back to CPU method.")
             # Fallback to your original CPU method
             pcd = o3d.geometry.PointCloud()
             pcd.points = o3d.utility.Vector3dVector(pts_valid.astype(np.float32))
             _, idx = pcd.remove_radius_outlier(nb_points=nb_points, radius=radius)
             valid_mask = np.zeros(pts_valid.shape[0], dtype=bool)
             valid_mask[np.array(idx, dtype=np.int32)] = True
+            print("after CPU radius outlier removal")
         else:
             raise RuntimeError(
                 "Your Open3D build does not expose a tensor/CUDA radius-outlier removal API. "
