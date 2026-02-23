@@ -110,7 +110,7 @@ def radius_filter_outliers_gpu(
 
     # Tensor point cloud on device
     pcd_t = o3d.t.geometry.PointCloud(dev)
-    pcd_t.point["positions"] = o3d.core.Tensor(pts_valid, device=dev)
+    pcd_t.point["positions"] = o3d.core.Tensor(pts_valid, o3d.core.float32, device=dev)
 
     # --- Try GPU/tensor radius outlier removal ---
     # Different Open3D versions expose different method names; try a few common ones.
