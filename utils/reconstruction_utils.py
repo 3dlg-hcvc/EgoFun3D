@@ -133,6 +133,7 @@ def radius_filter_outliers_gpu(
             print(f"Method '{name}' not available on tensor point cloud.")
             continue
         try:
+            print(f"Attempting to call '{name}' for radius outlier removal on device {dev}...")
             out = fn(nb_points=nb_points, search_radius=radius)
             print(f"Successfully called '{name}' for radius outlier removal.")
             # Possible return formats:
