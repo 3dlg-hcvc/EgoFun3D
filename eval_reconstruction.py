@@ -10,7 +10,7 @@ import os
 from torch.utils.data import DataLoader
 import hydra
 from omegaconf import DictConfig, OmegaConf
-
+import time
 from dataset.dataset import Dataset, build_dataset
 from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion, TrackingFusion
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction
@@ -48,8 +48,12 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         if os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz") and not config.refine:
             print("Reconstruction results already exist, skipping reconstruction and evaluation for this sample.")
             continue
+        # if config.refine and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_receiver_refined.json") and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_effector_refined.json"):
+        #     print("Refined reconstruction metrics already exist, skipping refinement and evaluation for this sample.")
+        #     continue
         if not os.path.exists(save_pcd_dir):
             os.makedirs(save_pcd_dir)
+        refined = False
         for role in ["receiver", "effector"]:
             video_frame_list = data["rgb_list"]
             mask_list = data[f"{role}_mask_list"]
@@ -57,28 +61,32 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
 
             # run reconstruction
             if reconstruction_results is None:
-                init_extrinsics = data["camera_extrinsics"][0]
-                if isinstance(reconstruction_model, ViPEReconstruction):
-                    video_dir = os.path.dirname(data["rgb_path_list"][0])
-                    reconstruction_results = reconstruction_model.reconstruct(video_dir, init_extrinsics, data["sample_indices"])
+                if config.refine and os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz"):
+                    print("Existing reconstruction results found, loading for refinement.")
+                    with gzip.open(f"{save_pcd_dir}/reconstruction_results.pkl.gz", "rb") as f:
+                        reconstruction_results = pickle.load(f)
                 else:
-                    input_intrinsics = None
-                    input_extrinsics = None
-                    input_depth = None
-                    if input_modality.find("intrinsics") != -1:
-                        input_intrinsics = data["camera_intrinsics"]
-                    if input_modality.find("extrinsics") != -1:
-                        input_extrinsics = data["camera_extrinsics"]
-                    reconstruction_results = reconstruction_model.reconstruct(video_frame_list, init_extrinsics, input_intrinsics, input_extrinsics, input_depth)
-            else:
-                print("Using existing reconstruction results for this sample.")
-                with gzip.open(f"{save_pcd_dir}/reconstruction_results.pkl.gz", "rb") as f:
-                    reconstruction_results = pickle.load(f)
+                    init_extrinsics = data["camera_extrinsics"][0]
+                    if isinstance(reconstruction_model, ViPEReconstruction):
+                        video_dir = os.path.dirname(data["rgb_path_list"][0])
+                        reconstruction_results = reconstruction_model.reconstruct(video_dir, init_extrinsics, data["sample_indices"])
+                    else:
+                        input_intrinsics = None
+                        input_extrinsics = None
+                        input_depth = None
+                        if input_modality.find("intrinsics") != -1:
+                            input_intrinsics = data["camera_intrinsics"]
+                        if input_modality.find("extrinsics") != -1:
+                            input_extrinsics = data["camera_extrinsics"]
+                        reconstruction_results = reconstruction_model.reconstruct(video_frame_list, init_extrinsics, input_intrinsics, input_extrinsics, input_depth)
+                
             if reconstruction_results is None:
                 print("Reconstruction failed, skipping this sample.")
                 break
-            if config.refine:
+            refine_time_start = time.time()
+            if config.refine and not refined:
                 reconstruction_results = refine_point_mask(reconstruction_results)
+                refined = True
             # run fusion
             if config.debug:
                 full_points = reconstruction_results["points"]
