@@ -130,9 +130,11 @@ def radius_filter_outliers_gpu(
     for name in candidates:
         fn = getattr(pcd_t, name, None)
         if fn is None:
+            print(f"Method '{name}' not available on tensor point cloud.")
             continue
         try:
             out = fn(nb_points=nb_points, search_radius=radius)
+            print(f"Successfully called '{name}' for radius outlier removal.")
             # Possible return formats:
             #   (pcd_filtered, mask)  OR (mask, pcd_filtered) OR just mask
             if isinstance(out, tuple) and len(out) == 2:
@@ -140,13 +142,17 @@ def radius_filter_outliers_gpu(
                 # identify which is mask
                 if isinstance(a, o3d.core.Tensor):
                     inlier_mask_t = a
+                    print(f"Identified inlier mask tensor in output of '{name}' as first element.")
                 elif isinstance(b, o3d.core.Tensor):
                     inlier_mask_t = b
+                    print(f"Identified inlier mask tensor in output of '{name}' as second element.")
                 else:
                     # could be bool numpy/other
+                    print(f"Neither output of '{name}' is a tensor. Output types: {type(a)}, {type(b)}. Cannot identify inlier mask.")
                     pass
             elif isinstance(out, o3d.core.Tensor):
                 inlier_mask_t = out
+                print(f"Output of '{name}' is a tensor, treating as inlier mask.")
             break
         except Exception as e:
             last_err = e
@@ -196,7 +202,7 @@ def refine_point_mask(reconstruction_results: dict) -> dict:
     full_points_mask_list = reconstruction_results["points_mask"]
     refined_points_mask_list = []
     for frame_id in range(len(full_points_list)):
-        # print(f"Refining frame {frame_id} with radius outlier removal...")
+        print(f"Refining frame {frame_id} with radius outlier removal...")
         points = full_points_list[frame_id]
         mask = full_points_mask_list[frame_id]
         radius_inlier_mask = radius_filter_outliers_gpu(points, radius=0.01, nb_points=15, allow_cpu_fallback=True)
