@@ -107,10 +107,13 @@ def radius_filter_outliers_gpu(
             dev = o3d.core.Device("CPU:0")
         else:
             raise RuntimeError("CUDA device requested but o3d.core.cuda.is_available() is False.")
+    print(f"Using device: {dev}")
 
     # Tensor point cloud on device
     pcd_t = o3d.t.geometry.PointCloud(dev)
     pcd_t.point["positions"] = o3d.core.Tensor(pts_valid, o3d.core.float32, device=dev)
+
+    print("after creating tensor point cloud")
 
     # --- Try GPU/tensor radius outlier removal ---
     # Different Open3D versions expose different method names; try a few common ones.
@@ -147,7 +150,7 @@ def radius_filter_outliers_gpu(
             break
         except Exception as e:
             last_err = e
-
+    print("after radius outlier removal attempt")
     if inlier_mask_t is None:
         if allow_cpu_fallback:
             # Fallback to your original CPU method
@@ -166,12 +169,14 @@ def radius_filter_outliers_gpu(
         # Bring mask back to CPU numpy
         valid_mask = inlier_mask_t.to(o3d.core.Device("CPU:0")).numpy().astype(bool).reshape(-1)
         o3d.core.cuda.release_cache()
+    print("after radius outlier removal and mask retrieval")
 
     # Write valid_mask back into full mask (including invalid points)
     flat_mask[np.where(finite)[0]] = valid_mask
 
     del pcd_t  # free GPU memory
     del inlier_mask_t
+    print("after cleanup")
     
     return flat_mask.reshape(point_map.shape[:-1])
         
