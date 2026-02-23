@@ -75,6 +75,20 @@ def radius_filter_outliers(point_map: np.ndarray, radius: float = 0.01, nb_point
     return radius_inlier_mask.reshape(point_map.shape[:-1])
 
 
+def sanitize_points_np(points: np.ndarray) -> np.ndarray:
+    # points: (N,3)
+    points = np.asarray(points)
+    assert points.ndim == 2 and points.shape[1] == 3
+    # drop NaN/Inf
+    finite = np.isfinite(points).all(axis=1)
+    points = points[finite]
+    # float32 is safest for CUDA kernels
+    points = points.astype(np.float32, copy=False)
+    # ensure contiguous
+    points = np.ascontiguousarray(points)
+    return points, finite
+
+
 def radius_filter_outliers_gpu(
     point_map: np.ndarray,
     radius: float = 0.01,
@@ -91,8 +105,9 @@ def radius_filter_outliers_gpu(
     pts = point_map.reshape(-1, 3)
 
     # Optional: drop NaN/Inf
-    finite = np.isfinite(pts).all(axis=1)
-    pts_valid = pts[finite].astype(np.float32)
+    # finite = np.isfinite(pts).all(axis=1)
+    # pts_valid = pts[finite].astype(np.float32)
+    pts_valid, finite = sanitize_points_np(pts)
 
     # Prepare output mask (invalid points remain False)
     flat_mask = np.zeros(pts.shape[0], dtype=bool)
@@ -134,7 +149,11 @@ def radius_filter_outliers_gpu(
             continue
         try:
             print(f"Attempting to call '{name}' for radius outlier removal on device {dev}...")
+            o3d.core.cuda.synchronize()
+            print("Before radius outlier removal call")
             out = fn(nb_points=nb_points, search_radius=radius)
+            print("After radius outlier removal call")
+            o3d.core.cuda.synchronize()
             print(f"Successfully called '{name}' for radius outlier removal.")
             # Possible return formats:
             #   (pcd_filtered, mask)  OR (mask, pcd_filtered) OR just mask
@@ -175,7 +194,6 @@ def radius_filter_outliers_gpu(
     else:
         # Bring mask back to CPU numpy
         valid_mask = inlier_mask_t.to(o3d.core.Device("CPU:0")).numpy().astype(bool).reshape(-1)
-        o3d.core.cuda.release_cache()
     print("after radius outlier removal and mask retrieval")
 
     # Write valid_mask back into full mask (including invalid points)
@@ -184,6 +202,9 @@ def radius_filter_outliers_gpu(
     del pcd_t  # free GPU memory
     del inlier_mask_t
     print("after cleanup")
+    o3d.core.cuda.synchronize()
+    o3d.core.cuda.release_cache()
+    print("after GPU synchronization and cache release")
     
     return flat_mask.reshape(point_map.shape[:-1])
         
