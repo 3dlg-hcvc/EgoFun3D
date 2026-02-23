@@ -239,13 +239,16 @@ def _gpu_worker(points_f32, radius, nb_points, q):
     q.put(mask)
 
 
-def remove_radius_outliers_mask_robust(points_np, radius=0.01, nb_points=15):
-    points_np = np.asarray(points_np)
-    finite = np.isfinite(points_np).all(axis=1)
-    pts = np.ascontiguousarray(points_np[finite].astype(np.float32))
+def remove_radius_outliers_mask_robust(point_map, radius=0.01, nb_points=15):
+    assert point_map.shape[-1] == 3, f"Expected (..., 3), got {point_map.shape}"
+    pts = point_map.reshape(-1, 3)
+    pts_valid, finite = sanitize_points_np(pts)
+    pts = np.ascontiguousarray(pts_valid.astype(np.float32))
+
+    flat_mask = np.zeros(pts.shape[0], dtype=bool)
 
     if pts.shape[0] == 0:
-        return np.zeros(points_np.shape[0], dtype=bool)
+        return flat_mask.reshape(point_map.shape[:-1])
 
     ctx = mp.get_context("spawn")   # safest cross-platform
     q = ctx.Queue(maxsize=1)
@@ -263,9 +266,9 @@ def remove_radius_outliers_mask_robust(points_np, radius=0.01, nb_points=15):
         valid_mask = np.zeros(pts.shape[0], dtype=bool)
         valid_mask[np.array(idx, dtype=np.int64)] = True
 
-    full_mask = np.zeros(points_np.shape[0], dtype=bool)
-    full_mask[np.where(finite)[0]] = valid_mask
-    return full_mask
+    # full_mask = np.zeros(points_np.shape[0], dtype=bool)
+    flat_mask[np.where(finite)[0]] = valid_mask
+    return flat_mask.reshape(point_map.shape[:-1])
         
 
 def refine_point_mask(reconstruction_results: dict) -> dict:
