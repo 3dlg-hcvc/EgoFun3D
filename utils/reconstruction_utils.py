@@ -572,7 +572,7 @@ class Open3DRadiusOutlierGPUWorker:
         
 
 def pytorch3d_remove_outlier(point_map: np.ndarray, radius: float = 0.01, nb_points: int = 15) -> np.ndarray:
-    pcd = Pointclouds(torch.from_numpy(point_map.reshape(-1, 3).astype(torch.float32))[None,...])
+    pcd = Pointclouds(torch.from_numpy(point_map.reshape(-1, 3)).cuda().to(torch.float32)[None,...])
     nn_dists, nn_idx, nn = knn_points(oputil.convert_pointclouds_to_tensor(pcd)[0],
                                     oputil.convert_pointclouds_to_tensor(pcd)[0],
                                     K=nb_points)
@@ -580,7 +580,7 @@ def pytorch3d_remove_outlier(point_map: np.ndarray, radius: float = 0.01, nb_poi
     # threshold = 0.1 # you could estimate this based on assuming a Gaussian over K-nn distances as in PCL
     radius_inlier_mask = nn_dists[0,:,1:].mean(1) < radius
     # pcd_filtered = Pointclouds(pcd[nn_dists[0,:,1:].mean(1) < radius][None,...])
-    return radius_inlier_mask.reshape(point_map.shape[:-1])
+    return radius_inlier_mask.reshape(point_map.shape[:-1]).cpu().numpy().astype(bool)
 
 
 def refine_point_mask(reconstruction_results: dict) -> dict:
