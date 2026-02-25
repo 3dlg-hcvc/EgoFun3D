@@ -95,7 +95,7 @@ class FeatureMatchingFusion(BaseFusion):
                 if kptsA_origin_list is None or kptsB_origin_list is None:
                     kptsA_origin_list_new.append(kptsA_origin)
                     kptsB_origin_list_new.append(kptsB_origin)
-                transformation = transformation[0]
+                # transformation = transformation[0]
                 transformation_list.append(transformation)
         
         fused_part_pcd = []
