@@ -45,6 +45,8 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             break
         reconstruction_results = None
         tracks3d = None
+        kptsA_origin_list = None
+        kptsB_origin_list = None
         save_pcd_dir = os.path.join(save_dir, data["video_name"], "reconstruction")
         if os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz") and not config.refine:
             print("Reconstruction results already exist, skipping reconstruction and evaluation for this sample.")
@@ -118,7 +120,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             
             fuse_start = time.time()
             if isinstance(fusion_model, FeatureMatchingFusion):
-                fused_part_pcd, transformation_list = fusion_model.fuse_part_pcds(valid_image_path_list, valid_mask_list, valid_points_map_list)
+                fused_part_pcd, transformation_list, kptsA_origin_list, kptsB_origin_list = fusion_model.fuse_part_pcds(valid_image_path_list, valid_mask_list, valid_points_map_list, kptsA_origin_list, kptsB_origin_list)
             elif isinstance(fusion_model, TrackingFusion):
                 if tracks3d is None:
                     tracks3d = fusion_model.tracking_video(video_frame_list, reconstruction_results["depth"], reconstruction_results["extrinsics"], intrinsics, reconstruction_results["points_mask"])

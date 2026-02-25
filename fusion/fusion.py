@@ -27,25 +27,27 @@ class FeatureMatchingFusion(BaseFusion):
         # self.monocular_model = MoGeModel.from_pretrained(moge_model_path).to(device)
         self.device = device
 
-    def compute_part_transformation(self, current_image_path: str, current_point_map: np.ndarray, current_part_mask: np.ndarray, anchor_image_path: str, anchor_point_map: np.ndarray, anchor_part_mask: np.ndarray) -> np.ndarray:
-        warp, certainty = self.feature_matching_model.match(anchor_image_path, current_image_path, device=self.device)
-        # Sample matches for estimation
-        matches, certainty = self.feature_matching_model.sample(warp, certainty)
-        # Convert to pixel coordinates (RoMa produces matches in [-1,1]x[-1,1])
-        certainty_mask = certainty > 0.95
-        matches = matches[certainty_mask]
-        certainty = certainty[certainty_mask]
-        
-        H, W = current_part_mask.shape
-        kptsA, kptsB = self.feature_matching_model.to_pixel_coordinates(matches, H, W, H, W)
-        kptsA = kptsA.cpu().numpy().astype(np.int32)
-        kptsB = kptsB.cpu().numpy().astype(np.int32)
+    def compute_part_transformation(self, current_image_path: str, current_point_map: np.ndarray, current_part_mask: np.ndarray, anchor_image_path: str, 
+                                    anchor_point_map: np.ndarray, anchor_part_mask: np.ndarray, kptsA_origin: np.ndarray = None, kptsB_origin: np.ndarray = None) -> np.ndarray:
+        if kptsA_origin is None or kptsB_origin is None:
+            warp, certainty = self.feature_matching_model.match(anchor_image_path, current_image_path, device=self.device)
+            # Sample matches for estimation
+            matches, certainty = self.feature_matching_model.sample(warp, certainty)
+            # Convert to pixel coordinates (RoMa produces matches in [-1,1]x[-1,1])
+            certainty_mask = certainty > 0.95
+            matches = matches[certainty_mask]
+            certainty = certainty[certainty_mask]
+            
+            H, W = current_part_mask.shape
+            kptsA, kptsB = self.feature_matching_model.to_pixel_coordinates(matches, H, W, H, W)
+            kptsA_origin = kptsA.cpu().numpy().astype(np.int32)
+            kptsB_origin = kptsB.cpu().numpy().astype(np.int32)
         # Filter keypoints with part masks
-        kptsA_boundary_mask = (kptsA[:,0] >= 0) & (kptsA[:,0] < anchor_part_mask.shape[1]) & (kptsA[:,1] >= 0) & (kptsA[:,1] < anchor_part_mask.shape[0])
-        kptsB_boundary_mask = (kptsB[:,0] >= 0) & (kptsB[:,0] < current_part_mask.shape[1]) & (kptsB[:,1] >= 0) & (kptsB[:,1] < current_part_mask.shape[0])
+        kptsA_boundary_mask = (kptsA_origin[:,0] >= 0) & (kptsA_origin[:,0] < anchor_part_mask.shape[1]) & (kptsA_origin[:,1] >= 0) & (kptsA_origin[:,1] < anchor_part_mask.shape[0])
+        kptsB_boundary_mask = (kptsB_origin[:,0] >= 0) & (kptsB_origin[:,0] < current_part_mask.shape[1]) & (kptsB_origin[:,1] >= 0) & (kptsB_origin[:,1] < current_part_mask.shape[0])
         boundary_mask = np.logical_and(kptsA_boundary_mask, kptsB_boundary_mask)
-        kptsA = kptsA[boundary_mask]
-        kptsB = kptsB[boundary_mask]
+        kptsA = kptsA_origin[boundary_mask]
+        kptsB = kptsB_origin[boundary_mask]
         kptsA_index = current_part_mask[kptsA[:,1], kptsA[:,0]]
         kptsB_index = anchor_part_mask[kptsB[:,1], kptsB[:,0]]
         valid_index = np.logical_and(kptsA_index, kptsB_index)
@@ -60,14 +62,16 @@ class FeatureMatchingFusion(BaseFusion):
             return np.eye(4)
         # Estimate transformation
         current2anchor = estimate_se3_transformation(current_part_3dkpts, anchor_part_3dkpts)
-        return current2anchor
+        return current2anchor, kptsA_origin, kptsB_origin
 
-    def fuse_part_pcds(self, image_path_list: List[str], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
+    def fuse_part_pcds(self, image_path_list: List[str], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray], kptsA_origin_list: List[np.ndarray] = None, kptsB_origin_list: List[np.ndarray] = None) -> Tuple[np.ndarray, List[np.ndarray]]:
         part_pcd_list = []
         transformation_list = []
         anchor_image_path = None
         anchor_point_map = None
         anchor_part_mask = None
+        kptsA_origin_list_new = []
+        kptsB_origin_list_new = []
         for frame_id, image_path in enumerate(image_path_list):
             part_mask = part_mask_list[frame_id]
             current_point_map = points_map_list[frame_id]
@@ -81,10 +85,17 @@ class FeatureMatchingFusion(BaseFusion):
                 anchor_point_map = current_point_map
                 anchor_part_mask = part_mask
             else:
-                transformation = self.compute_part_transformation(
+
+                transformation, kptsA_origin, kptsB_origin = self.compute_part_transformation(
                     image_path, current_point_map, part_mask,
-                    anchor_image_path, anchor_point_map, anchor_part_mask
+                    anchor_image_path, anchor_point_map, anchor_part_mask, 
+                    kptsA_origin_list[frame_id-1] if (kptsA_origin_list is not None and len(kptsA_origin_list) > 0) else None, 
+                    kptsB_origin_list[frame_id-1] if (kptsB_origin_list is not None and len(kptsB_origin_list) > 0) else None
                 )
+                if kptsA_origin_list is None or kptsB_origin_list is None:
+                    kptsA_origin_list_new.append(kptsA_origin)
+                    kptsB_origin_list_new.append(kptsB_origin)
+                transformation = transformation[0]
                 transformation_list.append(transformation)
         
         fused_part_pcd = []
@@ -92,7 +103,10 @@ class FeatureMatchingFusion(BaseFusion):
             part_pcd_anchored = part_pcd @ transformation[:3, :3].T + transformation[:3, 3:].T
             fused_part_pcd.append(part_pcd_anchored)
         fused_part_pcd = np.concatenate(fused_part_pcd, axis=0)
-        return fused_part_pcd, transformation_list
+        if kptsA_origin_list is not None and kptsB_origin_list is not None:
+            kptsA_origin_list_new = kptsA_origin_list
+            kptsB_origin_list_new = kptsB_origin_list
+        return fused_part_pcd, transformation_list, kptsA_origin_list_new, kptsB_origin_list_new
         
 
 class TrackingFusion(BaseFusion):
