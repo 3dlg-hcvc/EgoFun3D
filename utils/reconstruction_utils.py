@@ -4,6 +4,10 @@ import open3d as o3d
 import numpy as np
 import multiprocessing as mp
 from multiprocessing import shared_memory
+import torch
+from pytorch3d.ops import utils as oputil
+from pytorch3d.ops import knn_points
+from pytorch3d.structures.pointclouds import Pointclouds
 
 
 def estimate_se3_transformation(target_xyz: np.ndarray, source_xyz: np.ndarray) -> np.ndarray:
@@ -567,6 +571,18 @@ class Open3DRadiusOutlierGPUWorker:
                 pass
         
 
+def pytorch3d_remove_outlier(point_map: np.ndarray, radius: float = 0.01, nb_points: int = 15) -> np.ndarray:
+    pcd = Pointclouds(torch.from_numpy(point_map.reshape(-1, 3).astype(torch.float32))[None,...])
+    nn_dists, nn_idx, nn = knn_points(oputil.convert_pointclouds_to_tensor(pcd)[0],
+                                    oputil.convert_pointclouds_to_tensor(pcd)[0],
+                                    K=nb_points)
+
+    # threshold = 0.1 # you could estimate this based on assuming a Gaussian over K-nn distances as in PCL
+    radius_inlier_mask = nn_dists[0,:,1:].mean(1) < radius
+    # pcd_filtered = Pointclouds(pcd[nn_dists[0,:,1:].mean(1) < radius][None,...])
+    return radius_inlier_mask.reshape(point_map.shape[:-1])
+
+
 def refine_point_mask(reconstruction_results: dict) -> dict:
     if "points" not in reconstruction_results.keys():
         full_points_list = []
@@ -581,18 +597,19 @@ def refine_point_mask(reconstruction_results: dict) -> dict:
         full_points_list = reconstruction_results["points"]
     full_points_mask_list = reconstruction_results["points_mask"]
     refined_points_mask_list = []
-    worker = Open3DRadiusOutlierGPUWorker()
-    try:
-        for frame_id in range(len(full_points_list)):
-            print(f"Refining frame {frame_id} with radius outlier removal...")
-            points = full_points_list[frame_id]
-            mask = full_points_mask_list[frame_id]
-            # radius_inlier_mask = remove_radius_outliers_mask_robust_shm(points, radius=0.01, nb_points=15)
-            radius_inlier_mask = worker.run(points, radius=0.01, nb_points=15, timeout_s=60.0, fallback_to_cpu=True, restart_on_gpu_fail=True)
-            # radius_inlier_mask = radius_filter_outliers(points, radius=0.01, nb_points=15)
-            refined_mask = np.logical_and(mask, radius_inlier_mask)
-            refined_points_mask_list.append(refined_mask)
-        reconstruction_results["points_mask"] = np.stack(refined_points_mask_list, axis=0)
-    finally:
-        worker.close()
+    # worker = Open3DRadiusOutlierGPUWorker()
+    # try:
+    for frame_id in range(len(full_points_list)):
+        print(f"Refining frame {frame_id} with radius outlier removal...")
+        points = full_points_list[frame_id]
+        mask = full_points_mask_list[frame_id]
+        # radius_inlier_mask = remove_radius_outliers_mask_robust_shm(points, radius=0.01, nb_points=15)
+        # radius_inlier_mask = worker.run(points, radius=0.01, nb_points=15, timeout_s=60.0, fallback_to_cpu=True, restart_on_gpu_fail=True)
+        # radius_inlier_mask = radius_filter_outliers(points, radius=0.01, nb_points=15)
+        radius_inlier_mask = pytorch3d_remove_outlier(points, radius=0.01, nb_points=15)
+        refined_mask = np.logical_and(mask, radius_inlier_mask)
+        refined_points_mask_list.append(refined_mask)
+    reconstruction_results["points_mask"] = np.stack(refined_points_mask_list, axis=0)
+    # finally:
+    #     worker.close()
     return reconstruction_results
