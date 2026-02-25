@@ -51,9 +51,9 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         if os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz") and not config.refine:
             print("Reconstruction results already exist, skipping reconstruction and evaluation for this sample.")
             continue
-        # if config.refine and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_receiver_refined.json") and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_effector_refined.json"):
-        #     print("Refined reconstruction metrics already exist, skipping refinement and evaluation for this sample.")
-        #     continue
+        if config.refine and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_receiver_refined.json") and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_effector_refined.json"):
+            print("Refined reconstruction metrics already exist, skipping refinement and evaluation for this sample.")
+            continue
         if not os.path.exists(save_pcd_dir):
             os.makedirs(save_pcd_dir)
         refined = False
