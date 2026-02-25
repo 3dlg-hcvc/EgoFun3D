@@ -60,6 +60,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             valid_frame_ids = [i for i, mask in enumerate(mask_list) if mask.sum() > 0]
 
             # run reconstruction
+            load_results_start = time.time()
             if reconstruction_results is None:
                 if config.refine and os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz"):
                     print("Existing reconstruction results found, loading for refinement.")
@@ -79,7 +80,8 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                         if input_modality.find("extrinsics") != -1:
                             input_extrinsics = data["camera_extrinsics"]
                         reconstruction_results = reconstruction_model.reconstruct(video_frame_list, init_extrinsics, input_intrinsics, input_extrinsics, input_depth)
-                
+            load_results_end = time.time()
+            print(f"Initial reconstruction time: {load_results_end - load_results_start:.2f} seconds")
             if reconstruction_results is None:
                 print("Reconstruction failed, skipping this sample.")
                 break
@@ -87,6 +89,8 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             if config.refine and not refined:
                 reconstruction_results = refine_point_mask(reconstruction_results)
                 refined = True
+            refine_time_end = time.time()
+            print(f"Refinement time: {refine_time_end - refine_time_start:.2f} seconds")
             # run fusion
             if config.debug:
                 full_points = reconstruction_results["points"]
