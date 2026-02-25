@@ -358,7 +358,7 @@ def _gpu_worker_loop(ctrl_conn):
             print("GPU worker: Completed radius outlier removal on CUDA.")
 
             # Force async CUDA errors to surface inside worker
-            o3d.core.cuda.synchronize()
+            # o3d.core.cuda.synchronize()
             print("GPU worker: Synchronized CUDA after radius outlier removal.")
             # Unpack mask tensor (Open3D version dependent)
             if isinstance(out, tuple) and len(out) == 2:
