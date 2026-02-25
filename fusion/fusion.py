@@ -28,7 +28,7 @@ class FeatureMatchingFusion(BaseFusion):
         self.device = device
 
     def compute_part_transformation(self, current_image_path: str, current_point_map: np.ndarray, current_part_mask: np.ndarray, anchor_image_path: str, 
-                                    anchor_point_map: np.ndarray, anchor_part_mask: np.ndarray, kptsA_origin: np.ndarray = None, kptsB_origin: np.ndarray = None) -> np.ndarray:
+                                    anchor_point_map: np.ndarray, anchor_part_mask: np.ndarray, kptsA_origin: np.ndarray = None, kptsB_origin: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if kptsA_origin is None or kptsB_origin is None:
             warp, certainty = self.feature_matching_model.match(anchor_image_path, current_image_path, device=self.device)
             # Sample matches for estimation
@@ -59,7 +59,7 @@ class FeatureMatchingFusion(BaseFusion):
         current_part_3dkpts = current_point_map[kptsB[:,1], kptsB[:,0]]
         if len(current_part_3dkpts) < 10 or len(anchor_part_3dkpts) < 10:
             print("Not enough keypoints for transformation estimation.")
-            return np.eye(4)
+            return np.eye(4), kptsA_origin, kptsB_origin
         # Estimate transformation
         current2anchor = estimate_se3_transformation(current_part_3dkpts, anchor_part_3dkpts)
         return current2anchor, kptsA_origin, kptsB_origin
