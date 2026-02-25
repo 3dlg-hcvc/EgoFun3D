@@ -38,6 +38,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         max_dataset_size = 1
     data_count = 0
     for data in eval_dataloader:
+        start_time = time.time()
         # data = batch[0]  # batch size is 1
         print("Evaluating data:", data["video_name"])
         if config.debug and data_count >= max_dataset_size:
@@ -55,6 +56,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             os.makedirs(save_pcd_dir)
         refined = False
         for role in ["receiver", "effector"]:
+            role_start = time.time()
             video_frame_list = data["rgb_list"]
             mask_list = data[f"{role}_mask_list"]
             valid_frame_ids = [i for i, mask in enumerate(mask_list) if mask.sum() > 0]
@@ -114,6 +116,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             intrinsics = reconstruction_results["intrinsics"]
             valid_points_map_list = [reconstruction_results["points"][i] for i in valid_frame_ids]
             
+            fuse_start = time.time()
             if isinstance(fusion_model, FeatureMatchingFusion):
                 fused_part_pcd, transformation_list = fusion_model.fuse_part_pcds(valid_image_path_list, valid_mask_list, valid_points_map_list)
             elif isinstance(fusion_model, TrackingFusion):
@@ -121,7 +124,8 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                     tracks3d = fusion_model.tracking_video(video_frame_list, reconstruction_results["depth"], reconstruction_results["extrinsics"], intrinsics, reconstruction_results["points_mask"])
                 valid_tracks3d = [tracks3d[i] for i in valid_frame_ids]
                 fused_part_pcd, transformation_list = fusion_model.fuse_part_pcds(valid_image_path_list, valid_mask_list, valid_points_map_list, valid_tracks3d)
-
+            fuse_end = time.time()
+            print(f"Fusion time: {fuse_end - fuse_start:.2f} seconds")
             # Evaluate reconstruction
             chamfer_dist, rot_error, trans_error = evaluate_reconstruction(
                 pred_pcd=fused_part_pcd,
@@ -142,9 +146,13 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}.json")
             else:
                 save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}_refined.json")
+            role_end = time.time()
+            print(f"Total time for {role} (including fusion and evaluation): {role_end - role_start:.2f} seconds")
         if reconstruction_results is not None and not config.refine:
             save_reconstruction_results(reconstruction_results, f"{save_pcd_dir}/reconstruction_results.pkl.gz")
         data_count += 1
+        end_time = time.time()
+        print(f"Total evaluation time for this sample: {end_time - start_time:.2f} seconds")
 
 
 @hydra.main(version_base="1.3", config_path="config", config_name="default")
