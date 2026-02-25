@@ -10,7 +10,7 @@ from third_party.SpaTrackerV2.models.SpaTrackV2.models.utils import get_points_o
 
 from utils.reconstruction_utils import estimate_se3_transformation
 
-from typing import Tuple, List
+from typing import Dict, Tuple, List
 
 
 class BaseFusion:
@@ -64,14 +64,14 @@ class FeatureMatchingFusion(BaseFusion):
         current2anchor = estimate_se3_transformation(current_part_3dkpts, anchor_part_3dkpts)
         return current2anchor, kptsA_origin, kptsB_origin
 
-    def fuse_part_pcds(self, image_path_list: List[str], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray], kptsA_origin_list: List[np.ndarray] = None, kptsB_origin_list: List[np.ndarray] = None) -> Tuple[np.ndarray, List[np.ndarray]]:
+    def fuse_part_pcds(self, image_path_list: List[str], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray], kptsA_origin_dict: Dict[str, np.ndarray] = None, kptsB_origin_dict: Dict[str, np.ndarray] = None) -> Tuple[np.ndarray, List[np.ndarray]]:
         part_pcd_list = []
         transformation_list = []
         anchor_image_path = None
         anchor_point_map = None
         anchor_part_mask = None
-        kptsA_origin_list_new = []
-        kptsB_origin_list_new = []
+        # kptsA_origin_dict_new = {}
+        # kptsB_origin_dict_new = {}
         for frame_id, image_path in enumerate(image_path_list):
             part_mask = part_mask_list[frame_id]
             current_point_map = points_map_list[frame_id]
@@ -85,16 +85,17 @@ class FeatureMatchingFusion(BaseFusion):
                 anchor_point_map = current_point_map
                 anchor_part_mask = part_mask
             else:
-
+                # print("Computing transformation for frame", frame_id)
                 transformation, kptsA_origin, kptsB_origin = self.compute_part_transformation(
                     image_path, current_point_map, part_mask,
                     anchor_image_path, anchor_point_map, anchor_part_mask, 
-                    kptsA_origin_list[frame_id-1] if (kptsA_origin_list is not None and len(kptsA_origin_list) > 0) else None, 
-                    kptsB_origin_list[frame_id-1] if (kptsB_origin_list is not None and len(kptsB_origin_list) > 0) else None
+                    kptsA_origin_dict[f"{image_path}_{anchor_image_path}"] if (kptsA_origin_dict is not None and f"{image_path}_{anchor_image_path}" in kptsA_origin_dict.keys()) else None, 
+                    kptsB_origin_dict[f"{image_path}_{anchor_image_path}"] if (kptsB_origin_dict is not None and f"{image_path}_{anchor_image_path}" in kptsB_origin_dict.keys()) else None
                 )
-                if kptsA_origin_list is None or kptsB_origin_list is None:
-                    kptsA_origin_list_new.append(kptsA_origin)
-                    kptsB_origin_list_new.append(kptsB_origin)
+                if (f"{image_path}_{anchor_image_path}" not in kptsA_origin_dict.keys()) or (f"{image_path}_{anchor_image_path}" not in kptsB_origin_dict.keys()):
+                    # print("add kptsA_origin and kptsB_origin to the dict")
+                    kptsA_origin_dict[f"{image_path}_{anchor_image_path}"] = kptsA_origin
+                    kptsB_origin_dict[f"{image_path}_{anchor_image_path}"] = kptsB_origin
                 # transformation = transformation[0]
                 transformation_list.append(transformation)
         
@@ -103,10 +104,10 @@ class FeatureMatchingFusion(BaseFusion):
             part_pcd_anchored = part_pcd @ transformation[:3, :3].T + transformation[:3, 3:].T
             fused_part_pcd.append(part_pcd_anchored)
         fused_part_pcd = np.concatenate(fused_part_pcd, axis=0)
-        if kptsA_origin_list is not None and kptsB_origin_list is not None:
-            kptsA_origin_list_new = kptsA_origin_list
-            kptsB_origin_list_new = kptsB_origin_list
-        return fused_part_pcd, transformation_list, kptsA_origin_list_new, kptsB_origin_list_new
+        # if kptsA_origin_dict is not None and kptsB_origin_dict is not None:
+        #     kptsA_origin_dict_new = kptsA_origin_dict
+        #     kptsB_origin_dict_new = kptsB_origin_dict
+        return fused_part_pcd, transformation_list, kptsA_origin_dict, kptsB_origin_dict
         
 
 class TrackingFusion(BaseFusion):

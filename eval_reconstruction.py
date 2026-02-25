@@ -45,8 +45,8 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             break
         reconstruction_results = None
         tracks3d = None
-        kptsA_origin_list = None
-        kptsB_origin_list = None
+        kptsA_origin_dict = {}
+        kptsB_origin_dict = {}
         save_pcd_dir = os.path.join(save_dir, data["video_name"], "reconstruction")
         if os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz") and not config.refine:
             print("Reconstruction results already exist, skipping reconstruction and evaluation for this sample.")
@@ -101,8 +101,9 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 full_masks = reconstruction_results["points_mask"]
                 points_list = []
                 for i, (points, mask) in enumerate(zip(full_points, full_masks)):
-                    # part_points = points[mask]
-                    # save_pcd(points.reshape(-1, 3), f"{save_pcd_dir}/frame_{i}_full_points.ply")
+                    if i == len(full_points) // 2:
+                        part_points = points[mask]
+                        save_pcd(points.reshape(-1, 3), f"{save_pcd_dir}/frame_{i}_full_points.ply")
                     points_list.append(points.reshape(-1, 3))
                 save_pcd_dir_debug = os.path.join(save_dir, data["video_name"], "debug_full_reconstruction")
                 if not os.path.exists(save_pcd_dir_debug):
@@ -120,7 +121,8 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             
             fuse_start = time.time()
             if isinstance(fusion_model, FeatureMatchingFusion):
-                fused_part_pcd, transformation_list, kptsA_origin_list, kptsB_origin_list = fusion_model.fuse_part_pcds(valid_image_path_list, valid_mask_list, valid_points_map_list, kptsA_origin_list, kptsB_origin_list)
+                fused_part_pcd, transformation_list, kptsA_origin_dict, kptsB_origin_dict = fusion_model.fuse_part_pcds(valid_image_path_list, valid_mask_list, valid_points_map_list, kptsA_origin_dict, kptsB_origin_dict)
+                # print("kpts len:", len(kptsA_origin_dict), len(kptsB_origin_dict))
             elif isinstance(fusion_model, TrackingFusion):
                 if tracks3d is None:
                     tracks3d = fusion_model.tracking_video(video_frame_list, reconstruction_results["depth"], reconstruction_results["extrinsics"], intrinsics, reconstruction_results["points_mask"])
