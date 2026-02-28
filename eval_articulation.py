@@ -8,6 +8,7 @@ import os
 from torch.utils.data import DataLoader
 import pickle
 import gzip
+import json
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import loguru
@@ -47,8 +48,11 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
         articulation_results = {}
         reconstruction_results = None
         save_articulation_dir = os.path.join(save_dir, data["video_name"], "articulation")
-        if os.path.exists(f"{save_articulation_dir}/articulation_results.json"):
+        if os.path.exists(f"{save_articulation_dir}/articulation_results.json") and not config.pred_mask:
             loguru.logger.info("Articulation results already exist, skipping articulation and evaluation for this sample.")
+            continue
+        if config.pred_mask and os.path.exists(f"{save_articulation_dir}/articulation_results_pred_mask.json"):
+            loguru.logger.info("Pred mask articulation results already exist, skipping articulation and evaluation for this sample.")
             continue
         if not os.path.exists(save_articulation_dir):
             os.makedirs(save_articulation_dir)
@@ -59,8 +63,30 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
                 articulation_results[role] = "No GT articulation, skipping evaluation for this role."
                 continue
             video_frame_list = data["rgb_list"]
-            mask_list = data[f"{role}_mask_list"]
-            # valid_frame_ids = [i for i, mask in enumerate(mask_list) if mask.sum() > 0]
+            if not config.pred_mask:
+                mask_list = data[f"{role}_mask_list"]
+            else:
+                role_mask_dir = os.path.join(config.segmentation_results_dir, data["video_name"], f"00/segmentation_{role}")
+                segmentation_metric_path = f"{role_mask_dir}/segmentation_metrics.json"
+                with open(segmentation_metric_path, "r") as f:
+                    segmentation_metrics = json.load(f)
+                mean_iou = segmentation_metrics["mean_iou"]
+                if mean_iou < config.pred_mask_iou_threshold:
+                    loguru.logger.info(f"Mean IoU for {role} is below threshold ({mean_iou:.4f} < {config.pred_mask_iou_threshold}), skipping articulation estimation for this role.")
+                    articulation_results[role] = "Pred mask IoU below threshold, skipping articulation estimation."
+                    articulation_metrics = {
+                        "joint axis error": MAX_JOINT_ORI_ERROR,
+                        "joint position error": MAX_JOINT_POS_ERROR,
+                        "joint type correct": False
+                    }
+                    save_articulation_metrics(articulation_metrics, f"{save_articulation_dir}/articulation_metrics_{role}_pred_mask.json")
+                    continue
+                mask_list = []
+                for i in range(len(video_frame_list)):
+                    mask = np.load(f"{role_mask_dir}/segmentation_mask_{i:04d}.npy")
+                    mask_list.append(mask)
+                mask_list = np.stack(mask_list, axis=0)  # (T, H, W)
+                valid_frame_ids = [i for i, mask in enumerate(mask_list) if mask.sum() > 0]
 
             # load reconstruction
             if reconstruction_results is None:
@@ -96,8 +122,14 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
                 "joint position error": joint_pos_error,
                 "joint type correct": joint_type_correct
             }
-            save_articulation_metrics(articulation_metrics, f"{save_articulation_dir}/articulation_metrics_{role}.json")
-        save_articulation_results(articulation_results, f"{save_articulation_dir}/articulation_results.json")
+            if not config.pred_mask:
+                save_articulation_metrics(articulation_metrics, f"{save_articulation_dir}/articulation_metrics_{role}.json")
+            else:
+                save_articulation_metrics(articulation_metrics, f"{save_articulation_dir}/articulation_metrics_{role}_pred_mask.json")
+        if not config.pred_mask:
+            save_articulation_results(articulation_results, f"{save_articulation_dir}/articulation_results.json")
+        else:
+            save_articulation_results(articulation_results, f"{save_articulation_dir}/articulation_results_pred_mask.json")
 
 
 @hydra.main(version_base="1.3", config_path="config", config_name="default")

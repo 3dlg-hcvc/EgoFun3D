@@ -5,7 +5,9 @@ input_modality: "rgb"
 save_dir: ???
 reconstruction_results_dir: ???
 debug: False
-refine: False
+pred_mask: False
+pred_mask_iou_threshold: 0.5
+segmentation_results_dir: "outputs/full_dataset_gamini3_flash_labels"
 
 defaults:
   - dataset: dataset

@@ -588,7 +588,7 @@ def pytorch3d_remove_outlier(point_map: np.ndarray, radius: float = 0.01, nb_poi
     return radius_inlier_mask.reshape(point_map.shape[:-1]).cpu().numpy().astype(bool)
 
 
-def refine_point_mask(reconstruction_results: dict) -> dict:
+def refine_point_mask(reconstruction_results: dict, refine: bool = False) -> dict:
     if "points" not in reconstruction_results.keys():
         full_points_list = []
         for i in range(len(reconstruction_results["depth"])):
@@ -601,21 +601,22 @@ def refine_point_mask(reconstruction_results: dict) -> dict:
     else:
         full_points_list = reconstruction_results["points"]
     full_points_mask_list = reconstruction_results["points_mask"]
-    refined_points_mask_list = []
     # worker = Open3DRadiusOutlierGPUWorker()
     # try:
-    for frame_id in range(len(full_points_list)):
-        print(f"Refining frame {frame_id} with radius outlier removal...")
-        points = full_points_list[frame_id]
-        mask = full_points_mask_list[frame_id]
-        # radius_inlier_mask = remove_radius_outliers_mask_robust_shm(points, radius=0.01, nb_points=15)
-        # radius_inlier_mask = worker.run(points, radius=0.01, nb_points=15, timeout_s=60.0, fallback_to_cpu=True, restart_on_gpu_fail=True)
-        # radius_inlier_mask = radius_filter_outliers(points, radius=0.01, nb_points=15)
-        # radius_inlier_mask = pytorch3d_remove_outlier(points, radius=0.01, nb_points=15)
-        radius_inlier_mask = radius_filter_outliers_gpu(points, radius=0.01, nb_points=15, stride=4, device="CUDA:0", allow_cpu_fallback=True)
-        refined_mask = np.logical_and(mask, radius_inlier_mask)
-        refined_points_mask_list.append(refined_mask)
-    reconstruction_results["points_mask"] = np.stack(refined_points_mask_list, axis=0)
+    if refine:
+        refined_points_mask_list = []
+        for frame_id in range(len(full_points_list)):
+            print(f"Refining frame {frame_id} with radius outlier removal...")
+            points = full_points_list[frame_id]
+            mask = full_points_mask_list[frame_id]
+            # radius_inlier_mask = remove_radius_outliers_mask_robust_shm(points, radius=0.01, nb_points=15)
+            # radius_inlier_mask = worker.run(points, radius=0.01, nb_points=15, timeout_s=60.0, fallback_to_cpu=True, restart_on_gpu_fail=True)
+            # radius_inlier_mask = radius_filter_outliers(points, radius=0.01, nb_points=15)
+            # radius_inlier_mask = pytorch3d_remove_outlier(points, radius=0.01, nb_points=15)
+            radius_inlier_mask = radius_filter_outliers_gpu(points, radius=0.01, nb_points=15, stride=4, device="CUDA:0", allow_cpu_fallback=True)
+            refined_mask = np.logical_and(mask, radius_inlier_mask)
+            refined_points_mask_list.append(refined_mask)
+        reconstruction_results["points_mask"] = np.stack(refined_points_mask_list, axis=0)
     # finally:
     #     worker.close()
     return reconstruction_results

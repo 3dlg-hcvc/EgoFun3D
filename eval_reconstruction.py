@@ -8,6 +8,7 @@ import random
 import torch
 import os
 from torch.utils.data import DataLoader
+import json
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import time
@@ -48,26 +49,48 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         kptsA_origin_dict = {}
         kptsB_origin_dict = {}
         save_pcd_dir = os.path.join(save_dir, data["video_name"], "reconstruction")
-        if os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz") and not config.refine:
+        if os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz") and not config.pred_mask:
             print("Reconstruction results already exist, skipping reconstruction and evaluation for this sample.")
             continue
-        if config.refine and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_receiver_refined.json") and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_effector_refined.json"):
-            print("Refined reconstruction metrics already exist, skipping refinement and evaluation for this sample.")
+        if config.pred_mask and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_receiver_pred_mask.json") and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_effector_pred_mask.json"):
+            print("Pred mask reconstruction metrics already exist, skipping refinement and evaluation for this sample.")
             continue
         if not os.path.exists(save_pcd_dir):
             os.makedirs(save_pcd_dir)
-        refined = False
+        project = False
         for role in ["receiver", "effector"]:
             role_start = time.time()
             video_frame_list = data["rgb_list"]
-            mask_list = data[f"{role}_mask_list"]
-            valid_frame_ids = [i for i, mask in enumerate(mask_list) if mask.sum() > 0]
+            if not config.pred_mask:
+                mask_list = data[f"{role}_mask_list"]
+                valid_frame_ids = [i for i, mask in enumerate(mask_list) if mask.sum() > 0]
+            else:
+                role_mask_dir = os.path.join(config.segmentation_results_dir, data["video_name"], f"00/segmentation_{role}")
+                segmentation_metric_path = f"{role_mask_dir}/segmentation_metrics.json"
+                with open(segmentation_metric_path, "r") as f:
+                    segmentation_metrics = json.load(f)
+                mean_iou = segmentation_metrics["mean_iou"]
+                if mean_iou < config.pred_mask_iou_threshold:
+                    print(f"Mean IoU for {role} is below threshold ({mean_iou:.4f} < {config.pred_mask_iou_threshold}), skipping reconstruction and evaluation for this role.")
+                    reconstruction_metrics = {
+                        "chamfer_distance": 200,
+                        "rotation_error_radians": 0,
+                        "translation_error": 0
+                    }
+                    save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}_pred_mask.json")
+                    continue
+                mask_list = []
+                for i in range(len(video_frame_list)):
+                    mask = np.load(f"{role_mask_dir}/segmentation_mask_{i:04d}.npy")
+                    mask_list.append(mask)
+                mask_list = np.stack(mask_list, axis=0)
+                valid_frame_ids = [i for i, mask in enumerate(mask_list) if mask.sum() > 0]
 
             # run reconstruction
             load_results_start = time.time()
             if reconstruction_results is None:
-                if config.refine and os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz"):
-                    print("Existing reconstruction results found, loading for refinement.")
+                if config.pred_mask and os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz"):
+                    print("Existing reconstruction results found, loading for pred mask.")
                     with gzip.open(f"{save_pcd_dir}/reconstruction_results.pkl.gz", "rb") as f:
                         reconstruction_results = pickle.load(f)
                 else:
@@ -90,9 +113,9 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 print("Reconstruction failed, skipping this sample.")
                 break
             refine_time_start = time.time()
-            if config.refine and not refined:
+            if config.pred_mask and not project:
                 reconstruction_results = refine_point_mask(reconstruction_results)
-                refined = True
+                project = True
             refine_time_end = time.time()
             print(f"Refinement time: {refine_time_end - refine_time_start:.2f} seconds")
             # run fusion
@@ -137,22 +160,22 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 gt_pcd=data["geometry_data"][role]["part_pcd"],
                 gt_extrinsics=data["camera_extrinsics"],
             )
-            if not config.refine:
+            if not config.pred_mask:
                 save_pcd(fused_part_pcd, f"{save_pcd_dir}/{role}_fused.ply")
             else:
-                save_pcd(fused_part_pcd, f"{save_pcd_dir}/{role}_fused_refined.ply")
+                save_pcd(fused_part_pcd, f"{save_pcd_dir}/{role}_fused_pred_mask.ply")
             reconstruction_metrics = {
                 "chamfer_distance": chamfer_dist,
                 "rotation_error_radians": rot_error,
                 "translation_error": trans_error
             }
-            if not config.refine:
+            if not config.pred_mask:
                 save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}.json")
             else:
-                save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}_refined.json")
+                save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}_pred_mask.json")
             role_end = time.time()
             print(f"Total time for {role} (including fusion and evaluation): {role_end - role_start:.2f} seconds")
-        if reconstruction_results is not None and not config.refine:
+        if reconstruction_results is not None and not config.pred_mask:
             save_reconstruction_results(reconstruction_results, f"{save_pcd_dir}/reconstruction_results.pkl.gz")
         data_count += 1
         end_time = time.time()
