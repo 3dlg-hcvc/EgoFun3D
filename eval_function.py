@@ -59,6 +59,13 @@ def evaluate(eval_dataloader: DataLoader, vlm: VLMPrompter, config: omegaconf.Di
         else:
             receiver_mask_dir = os.path.join(config.segmentation_results_dir, data["video_name"], f"00/segmentation_receiver")
             effector_mask_dir = os.path.join(config.segmentation_results_dir, data["video_name"], f"00/segmentation_effector")
+            if not os.path.exists(receiver_mask_dir) or not os.path.exists(effector_mask_dir):
+                loguru.logger.info(f"Segmentation results for receiver or effector do not exist, skipping function estimation and evaluation for this sample.")
+                function_error_metrics = {"physical_effect": False, "numerical_function": False}
+                function_results = {"1": None, "2": None}
+                save_function_results(function_error_metrics, f"{save_function_dir}/function_metrics_pred_mask.json")
+                save_function_results(function_results, f"{save_function_dir}/function_results_pred_mask.json")
+                continue
             receiver_segmentation_metric_path = f"{receiver_mask_dir}/segmentation_metrics.json"
             with open(receiver_segmentation_metric_path, "r") as f:
                 receiver_segmentation_metrics = json.load(f)

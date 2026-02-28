@@ -66,6 +66,14 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 valid_frame_ids = [i for i, mask in enumerate(mask_list) if mask.sum() > 0]
             else:
                 role_mask_dir = os.path.join(config.segmentation_results_dir, data["video_name"], f"00/segmentation_{role}")
+                if not os.path.exists(role_mask_dir):
+                    reconstruction_metrics = {
+                        "chamfer_distance": 200,
+                        "rotation_error_radians": 0,
+                        "translation_error": 0
+                    }
+                    save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}_pred_mask.json")
+                    continue
                 segmentation_metric_path = f"{role_mask_dir}/segmentation_metrics.json"
                 with open(segmentation_metric_path, "r") as f:
                     segmentation_metrics = json.load(f)

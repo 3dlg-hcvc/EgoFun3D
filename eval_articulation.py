@@ -67,6 +67,16 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
                 mask_list = data[f"{role}_mask_list"]
             else:
                 role_mask_dir = os.path.join(config.segmentation_results_dir, data["video_name"], f"00/segmentation_{role}")
+                if not os.path.exists(role_mask_dir):
+                    loguru.logger.info(f"Segmentation results for {role} do not exist, skipping articulation estimation for this role.")
+                    articulation_results[role] = "No segmentation results, skipping articulation estimation for this role."
+                    articulation_metrics = {
+                        "joint axis error": MAX_JOINT_ORI_ERROR,
+                        "joint position error": MAX_JOINT_POS_ERROR,
+                        "joint type correct": False
+                    }
+                    save_articulation_metrics(articulation_metrics, f"{save_articulation_dir}/articulation_metrics_{role}_pred_mask.json")
+                    continue
                 segmentation_metric_path = f"{role_mask_dir}/segmentation_metrics.json"
                 with open(segmentation_metric_path, "r") as f:
                     segmentation_metrics = json.load(f)
