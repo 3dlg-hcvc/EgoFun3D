@@ -79,11 +79,13 @@ def evaluate(eval_dataloader: DataLoader, vlm: VLMPrompter, config: omegaconf.Di
                 mask = np.load(f"{receiver_mask_dir}/segmentation_mask_{i:04d}.npy")
                 receiver_mask_list.append(mask)
             receiver_mask_list = np.stack(receiver_mask_list, axis=0)
+            receiver_mask_list = receiver_mask_list[:, data["cropped_top_left"][1]:data["cropped_bottom_right"][1], data["cropped_top_left"][0]:data["cropped_bottom_right"][0]]
             effector_mask_list = []
             for i in range(len(video_frame_list)):
                 mask = np.load(f"{effector_mask_dir}/segmentation_mask_{i:04d}.npy")
                 effector_mask_list.append(mask)
             effector_mask_list = np.stack(effector_mask_list, axis=0)
+            effector_mask_list = effector_mask_list[:, data["cropped_top_left"][1]:data["cropped_bottom_right"][1], data["cropped_top_left"][0]:data["cropped_bottom_right"][0]]
 
         # run articulation estimation
         function_results = vlm.prompt_function(video_frame_list, receiver_mask_list, effector_mask_list)

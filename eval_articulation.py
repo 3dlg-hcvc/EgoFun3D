@@ -86,6 +86,7 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
                     mask = np.load(f"{role_mask_dir}/segmentation_mask_{i:04d}.npy")
                     mask_list.append(mask)
                 mask_list = np.stack(mask_list, axis=0)  # (T, H, W)
+                mask_list = mask_list[:, data["cropped_top_left"][1]:data["cropped_bottom_right"][1], data["cropped_top_left"][0]:data["cropped_bottom_right"][0]]
                 valid_frame_ids = [i for i, mask in enumerate(mask_list) if mask.sum() > 0]
 
             # load reconstruction

@@ -309,6 +309,8 @@ class UniformDataset(Dataset):
             "receiver_mask_list": receiver_mask_list,
             "effector_mask_list": effector_mask_list,
             "object_mask_list": object_mask_list,
+            "cropped_top_left": cropped_top_left,
+            "cropped_bottom_right": cropped_bottom_right,
             "receiver_name": receiver_name,
             "effector_name": effector_name,
             "object_name": object_name,
