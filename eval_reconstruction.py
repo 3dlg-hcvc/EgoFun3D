@@ -71,7 +71,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                     segmentation_metrics = json.load(f)
                 mean_iou = segmentation_metrics["mean_iou"]
                 if mean_iou is None or mean_iou < config.pred_mask_iou_threshold:
-                    print(f"Mean IoU for {role} is below threshold ({mean_iou:.4f} < {config.pred_mask_iou_threshold}), skipping reconstruction and evaluation for this role.")
+                    print(f"Mean IoU for {role} is below threshold ({config.pred_mask_iou_threshold}), skipping reconstruction and evaluation for this role.")
                     reconstruction_metrics = {
                         "chamfer_distance": 200,
                         "rotation_error_radians": 0,

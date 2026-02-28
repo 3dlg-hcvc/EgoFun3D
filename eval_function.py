@@ -68,7 +68,7 @@ def evaluate(eval_dataloader: DataLoader, vlm: VLMPrompter, config: omegaconf.Di
                 effector_segmentation_metrics = json.load(f)
             effector_mean_iou = effector_segmentation_metrics["mean_iou"]
             if receiver_mean_iou is None or effector_mean_iou is None or receiver_mean_iou < config.pred_mask_iou_threshold or effector_mean_iou < config.pred_mask_iou_threshold:
-                loguru.logger.warning(f"Mean IoU for receiver ({receiver_mean_iou:.4f}) or effector ({effector_mean_iou:.4f}) is below threshold ({config.pred_mask_iou_threshold}), skipping function and evaluation for this sample.")
+                loguru.logger.warning(f"Mean IoU for receiver or effector is below threshold ({config.pred_mask_iou_threshold}), skipping function and evaluation for this sample.")
                 function_error_metrics = {"physical_effect": False, "numerical_function": False}
                 function_results = {"1": None, "2": None}
                 save_function_results(function_error_metrics, f"{save_function_dir}/function_metrics_pred_mask.json")
