@@ -71,7 +71,7 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
                 with open(segmentation_metric_path, "r") as f:
                     segmentation_metrics = json.load(f)
                 mean_iou = segmentation_metrics["mean_iou"]
-                if mean_iou < config.pred_mask_iou_threshold:
+                if mean_iou is None or mean_iou < config.pred_mask_iou_threshold:
                     loguru.logger.info(f"Mean IoU for {role} is below threshold ({mean_iou:.4f} < {config.pred_mask_iou_threshold}), skipping articulation estimation for this role.")
                     articulation_results[role] = "Pred mask IoU below threshold, skipping articulation estimation."
                     articulation_metrics = {
