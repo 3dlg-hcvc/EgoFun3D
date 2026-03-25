@@ -1,7 +1,7 @@
 import json
 
 
-PHYSICAL_EFFECT_MAP = {"a": "geometry", "b": "illumination", "c": "temperature", "d": "existence"}
+PHYSICAL_EFFECT_MAP = {"a": "geometry", "b": "illumination", "c": "temperature", "d": "fluid"}
 NUMERICAL_FUNCTION_MAP = {"a": "binary", "b": "step", "c": "linear", "d": "cumulative"}
 
 

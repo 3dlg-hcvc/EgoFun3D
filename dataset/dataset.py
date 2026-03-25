@@ -403,7 +403,7 @@ class UniformDataset(Dataset):
         if function_instance_id not in annotations:
             raise ValueError(f"Segment ID {function_instance_id} not found in annotations.")
         geometry_annotations = {}
-        for role in ["receiver", "effector"]:
+        for role in ["receptor", "effector"]:
             # print(annotations[function_instance_id].keys())
             part_name = annotations[function_instance_id][role]["label"]
             part_indices = annotations[function_instance_id][role]["indices"]
@@ -426,7 +426,7 @@ class UniformDataset(Dataset):
             raise ValueError(f"Segment ID {function_instance_id} not found in annotations.")
         geometry_annotations = {}
 
-        for role in ["receiver", "effector"]:
+        for role in ["receptor", "effector"]:
             # print(annotations[function_instance_id].keys())
             part_name = annotations[function_instance_id][role]["label"]
             part_indices = annotations[function_instance_id][role]["indices"]
@@ -450,11 +450,11 @@ class UniformDataset(Dataset):
         if os.path.exists(articulation_path):
             with open(articulation_path, "r") as f:
                 articulation_data = json.load(f)
-            for role in ["receiver", "effector"]:
+            for role in ["receptor", "effector"]:
                 pid = geometry_data[role]["pid"]
                 for joint_data in articulation_data:
                     if joint_data["pid"] == pid:
-                        if role == "receiver":
+                        if role == "receptor":
                             receiver_articulation = joint_data
                         elif role == "effector":
                             effector_articulation = joint_data
