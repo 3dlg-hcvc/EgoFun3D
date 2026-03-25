@@ -8,14 +8,14 @@ prompt_template: "This is a video. The receptor part marked in green and the eff
                   If the function results in the change of illumination status of the effector, such as brightness or color, the physical effect is illumination change. \
                   If the function results in the change of temperature status of the effector, such as becoming hotter or colder, the physical effect is temperature change. \
                   If the function results in the change of fluid status of the effector, such as fluid flowing in or out, the physical effect is fluid change. \
-                  Numerical relationship refers to the mathematical relationship between the state of the receiver and the state of the effector. We consider four different numerical function: binary function, step function, linear function, cumulative function. \
+                  Numerical relationship refers to the mathematical relationship between the state of the receptor and the state of the effector. We consider four different numerical function: binary function, step function, linear function, cumulative function. \
                   If both the states of the receptor and effector have only two possible values, and they are mapped one-to-one, the numerical relationship is binary function. \
                   For example, the light switch is a binary function, where the state of the receptor (the switch) can be either on or off, and the state of the effector (the light) can also be either on or off. \
-                  If the effector state changes only when the receiver state continuously changes until a certain threshold is reached, the numerical relationship is step function. \
+                  If the effector state changes only when the receptor state continuously changes until a certain threshold is reached, the numerical relationship is step function. \
                   For example, when pressing the button of a microwave to a certain distance, the microwave's door will open. The state of the receptor (the button) continuously changes as you press it, but the state of the effector (the microwave door) only changes when the button is pressed to a certain distance. \
                   If both states change continuously in a linear manner, the numerical relationship is linear function. \
                   For example, the volume of water flowing out of a faucet is a linear function of how much you turn the faucet. The state of the receptor (the faucet) and the state of the effector (the water flow) both change continuously, and they have a linear relationship. \
-                  If the effector state accumulates over time as the receiver state changes, the numerical relationship is cumulative function. \
+                  If the effector state accumulates over time as the receptor state changes, the numerical relationship is cumulative function. \
                   For example, when you press \"increase temperature\" button of a electric induction cooker, the temperature of the cooker will increase a certain value. The state of the receptor (the button) changes as you keep pressing it, and the state of the effector (the cooker temperature) accumulates over time. \
                   Analyze this video and answer the following questions: \
                   1. Which physical effect best describes the functional relationship between the red part and green part? Please choose one from the following: \

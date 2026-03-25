@@ -54,39 +54,39 @@ def evaluate(eval_dataloader: DataLoader, vlm: VLMPrompter, config: omegaconf.Di
         assert gt_function is not None, "GT function annotation is required for evaluation."
         video_frame_list = data["rgb_list"]
         if not config.pred_mask:
-            receiver_mask_list = data[f"receiver_mask_list"]
+            receptor_mask_list = data[f"receptor_mask_list"]
             effector_mask_list = data[f"effector_mask_list"]
         else:
-            receiver_mask_dir = os.path.join(config.segmentation_results_dir, data["video_name"], f"00/segmentation_receiver")
+            receptor_mask_dir = os.path.join(config.segmentation_results_dir, data["video_name"], f"00/segmentation_receptor")
             effector_mask_dir = os.path.join(config.segmentation_results_dir, data["video_name"], f"00/segmentation_effector")
-            if not os.path.exists(receiver_mask_dir) or not os.path.exists(effector_mask_dir):
-                loguru.logger.info(f"Segmentation results for receiver or effector do not exist, skipping function estimation and evaluation for this sample.")
+            if not os.path.exists(receptor_mask_dir) or not os.path.exists(effector_mask_dir):
+                loguru.logger.info(f"Segmentation results for receptor or effector do not exist, skipping function estimation and evaluation for this sample.")
                 function_error_metrics = {"physical_effect": False, "numerical_function": False}
                 function_results = {"1": None, "2": None}
                 save_function_results(function_error_metrics, f"{save_function_dir}/function_metrics_pred_mask.json")
                 save_function_results(function_results, f"{save_function_dir}/function_results_pred_mask.json")
                 continue
-            receiver_segmentation_metric_path = f"{receiver_mask_dir}/segmentation_metrics.json"
-            with open(receiver_segmentation_metric_path, "r") as f:
-                receiver_segmentation_metrics = json.load(f)
-            receiver_mean_iou = receiver_segmentation_metrics["mean_iou"]
+            receptor_segmentation_metric_path = f"{receptor_mask_dir}/segmentation_metrics.json"
+            with open(receptor_segmentation_metric_path, "r") as f:
+                receptor_segmentation_metrics = json.load(f)
+            receptor_mean_iou = receptor_segmentation_metrics["mean_iou"]
             effector_segmentation_metric_path = f"{effector_mask_dir}/segmentation_metrics.json"
             with open(effector_segmentation_metric_path, "r") as f:
                 effector_segmentation_metrics = json.load(f)
             effector_mean_iou = effector_segmentation_metrics["mean_iou"]
-            if receiver_mean_iou is None or effector_mean_iou is None or receiver_mean_iou < config.pred_mask_iou_threshold or effector_mean_iou < config.pred_mask_iou_threshold:
-                loguru.logger.warning(f"Mean IoU for receiver or effector is below threshold ({config.pred_mask_iou_threshold}), skipping function and evaluation for this sample.")
+            if receptor_mean_iou is None or effector_mean_iou is None or receptor_mean_iou < config.pred_mask_iou_threshold or effector_mean_iou < config.pred_mask_iou_threshold:
+                loguru.logger.warning(f"Mean IoU for receptor or effector is below threshold ({config.pred_mask_iou_threshold}), skipping function and evaluation for this sample.")
                 function_error_metrics = {"physical_effect": False, "numerical_function": False}
                 function_results = {"1": None, "2": None}
                 save_function_results(function_error_metrics, f"{save_function_dir}/function_metrics_pred_mask.json")
                 save_function_results(function_results, f"{save_function_dir}/function_results_pred_mask.json")
                 continue
-            receiver_mask_list = []
+            receptor_mask_list = []
             for i in range(len(video_frame_list)):
-                mask = np.load(f"{receiver_mask_dir}/segmentation_mask_{i:04d}.npy")
-                receiver_mask_list.append(mask)
-            receiver_mask_list = np.stack(receiver_mask_list, axis=0)
-            receiver_mask_list = receiver_mask_list[:, data["cropped_top_left"][1]:data["cropped_bottom_right"][1], data["cropped_top_left"][0]:data["cropped_bottom_right"][0]]
+                mask = np.load(f"{receptor_mask_dir}/segmentation_mask_{i:04d}.npy")
+                receptor_mask_list.append(mask)
+            receptor_mask_list = np.stack(receptor_mask_list, axis=0)
+            receptor_mask_list = receptor_mask_list[:, data["cropped_top_left"][1]:data["cropped_bottom_right"][1], data["cropped_top_left"][0]:data["cropped_bottom_right"][0]]
             effector_mask_list = []
             for i in range(len(video_frame_list)):
                 mask = np.load(f"{effector_mask_dir}/segmentation_mask_{i:04d}.npy")
@@ -95,7 +95,7 @@ def evaluate(eval_dataloader: DataLoader, vlm: VLMPrompter, config: omegaconf.Di
             effector_mask_list = effector_mask_list[:, data["cropped_top_left"][1]:data["cropped_bottom_right"][1], data["cropped_top_left"][0]:data["cropped_bottom_right"][0]]
 
         # run articulation estimation
-        function_results = vlm.prompt_function(video_frame_list, receiver_mask_list, effector_mask_list)
+        function_results = vlm.prompt_function(video_frame_list, receptor_mask_list, effector_mask_list)
 
         # Evaluate reconstruction
         if function_results is None:

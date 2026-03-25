@@ -276,10 +276,10 @@ class UniformDataset(Dataset):
         )
         camera_extrinsics = camera_extrinsics[sample_indices]
 
-        receiver_mask_list, effector_mask_list, object_mask_list, receiver_name, effector_name, object_name = self.load_2d_masks(
+        receptor_mask_list, effector_mask_list, object_mask_list, receptor_name, effector_name, object_name = self.load_2d_masks(
             video_dict["video_mask_path"]
         )
-        receiver_mask_list = receiver_mask_list[sample_indices, cropped_top_left[1]:cropped_bottom_right[1], cropped_top_left[0]:cropped_bottom_right[0]]
+        receptor_mask_list = receptor_mask_list[sample_indices, cropped_top_left[1]:cropped_bottom_right[1], cropped_top_left[0]:cropped_bottom_right[0]]
         effector_mask_list = effector_mask_list[sample_indices, cropped_top_left[1]:cropped_bottom_right[1], cropped_top_left[0]:cropped_bottom_right[0]]
         object_mask_list = object_mask_list[sample_indices, cropped_top_left[1]:cropped_bottom_right[1], cropped_top_left[0]:cropped_bottom_right[0]]
 
@@ -290,7 +290,7 @@ class UniformDataset(Dataset):
             video_dict["function_instance_id"]
         )
 
-        receiver_articulation, effector_articulation = self.load_articulation(
+        receptor_articulation, effector_articulation = self.load_articulation(
             video_dict["articulation_path"],
             geometry_data
         )
@@ -306,16 +306,16 @@ class UniformDataset(Dataset):
             "rgb_path_list": rgb_path_list,
             "camera_extrinsics": camera_extrinsics,
             "camera_intrinsics": camera_intrinsics,
-            "receiver_mask_list": receiver_mask_list,
+            "receptor_mask_list": receptor_mask_list,
             "effector_mask_list": effector_mask_list,
             "object_mask_list": object_mask_list,
             "cropped_top_left": cropped_top_left,
             "cropped_bottom_right": cropped_bottom_right,
-            "receiver_name": receiver_name,
+            "receptor_name": receptor_name,
             "effector_name": effector_name,
             "object_name": object_name,
             "geometry_data": geometry_data,
-            "receiver_articulation": receiver_articulation,
+            "receptor_articulation": receptor_articulation,
             "effector_articulation": effector_articulation,
             "function_annotation": function_annotation,
             "sample_indices": sample_indices
@@ -367,16 +367,16 @@ class UniformDataset(Dataset):
         mask_path = os.path.join(self.root_path, mask_path)
         with gzip.open(mask_path, "rb") as f:
             mask_data = pickle.load(f)
-        receiver_mask = None
+        receptor_mask = None
         effector_mask = None
         object_mask = None
-        receiver_name = None
+        receptor_name = None
         effector_name = None
         object_name = None
         for mask_name in mask_data.keys():
             if mask_data[mask_name]["mask_idx"] == 3:
-                receiver_mask = mask_data[mask_name]["masks"]
-                receiver_name = mask_name
+                receptor_mask = mask_data[mask_name]["masks"]
+                receptor_name = mask_name
             elif mask_data[mask_name]["mask_idx"] == 4:
                 effector_mask = mask_data[mask_name]["masks"]
                 effector_name = mask_name
@@ -384,10 +384,10 @@ class UniformDataset(Dataset):
                 object_mask = mask_data[mask_name]["masks"]
                 object_name = mask_name
         if object_mask is None:
-            object_mask = np.logical_or(receiver_mask, effector_mask)
-            object_name = f"{receiver_name} and {effector_name}"
-        return receiver_mask, effector_mask, object_mask, receiver_name, effector_name, object_name
-    
+            object_mask = np.logical_or(receptor_mask, effector_mask)
+            object_name = f"{receptor_name} and {effector_name}"
+        return receptor_mask, effector_mask, object_mask, receptor_name, effector_name, object_name
+
     def load_part_point_cloud(self, geometry_type: str, geometry_path: str, part_annotation_path: str, function_instance_id: int) -> dict:
         if geometry_type == "point cloud":
             return self.load_point_cloud_data(geometry_path, part_annotation_path, function_instance_id)
@@ -444,7 +444,7 @@ class UniformDataset(Dataset):
         return geometry_annotations
     
     def load_articulation(self, articulation_path: str, geometry_data: dict) -> Tuple[dict, dict]:
-        receiver_articulation = None
+        receptor_articulation = None
         effector_articulation = None
         articulation_path = os.path.join(self.root_path, articulation_path)
         if os.path.exists(articulation_path):
@@ -455,10 +455,10 @@ class UniformDataset(Dataset):
                 for joint_data in articulation_data:
                     if joint_data["pid"] == pid:
                         if role == "receptor":
-                            receiver_articulation = joint_data
+                            receptor_articulation = joint_data
                         elif role == "effector":
                             effector_articulation = joint_data
-        return receiver_articulation, effector_articulation
+        return receptor_articulation, effector_articulation
     
     def load_function_annotation(self, function_annotation_path: str, function_instance_id: str) -> dict:
         function_annotation_path = os.path.join(self.root_path, function_annotation_path)

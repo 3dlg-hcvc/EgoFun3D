@@ -52,13 +52,13 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         if os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz") and not config.pred_mask:
             print("Reconstruction results already exist, skipping reconstruction and evaluation for this sample.")
             continue
-        if config.pred_mask and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_receiver_pred_mask.json") and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_effector_pred_mask.json"):
+        if config.pred_mask and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_receptor_pred_mask.json") and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_effector_pred_mask.json"):
             print("Pred mask reconstruction metrics already exist, skipping refinement and evaluation for this sample.")
             continue
         if not os.path.exists(save_pcd_dir):
             os.makedirs(save_pcd_dir)
         project = False
-        for role in ["receiver", "effector"]:
+        for role in ["receptor", "effector"]:
             role_start = time.time()
             video_frame_list = data["rgb_list"]
             if not config.pred_mask:

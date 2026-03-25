@@ -118,29 +118,29 @@ class GeminiVideoNarrator(VLMPrompter):
             for i, (name, desc) in enumerate(pairs):
                 name_c = clean(name)
                 desc_c = clean(desc)
-                role = "receiver" if i == 0 else "effector"
+                role = "receptor" if i == 0 else "effector"
                 grouped[role] = {"name": name_c, "description": desc_c}
         else:
             print("Warning: Unexpected number of parts found in VLM output.")
         return grouped
     
-    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receiver_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
+    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receptor_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
         rendered_frames = []
         for i in range(len(rgb_frame_list)):
             rgb_frame = np.array(rgb_frame_list[i])
-            receiver_mask = receiver_part_masks[i]
+            receptor_mask = receptor_part_masks[i]
             effector_mask = effector_part_masks[i]
 
             # Create color masks
-            receiver_color_mask = np.zeros_like(rgb_frame)
-            receiver_color_mask[:, :, 1] = receiver_mask * 255  # Green for receiver
+            receptor_color_mask = np.zeros_like(rgb_frame)
+            receptor_color_mask[:, :, 1] = receptor_mask * 255  # Green for receptor
 
             effector_color_mask = np.zeros_like(rgb_frame)
             effector_color_mask[:, :, 0] = effector_mask * 255  # Red for effector
 
             # Blend the original frame with the masks
             alpha = 0.5
-            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receiver_color_mask, alpha, 0)
+            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receptor_color_mask, alpha, 0)
             blended_frame = cv2.addWeighted(blended_frame, 1 - alpha, effector_color_mask, alpha, 0)
 
             rendered_frames.append(blended_frame)
@@ -228,29 +228,29 @@ class GPTVideoNarrator(VLMPrompter):
             for i, (name, desc) in enumerate(pairs):
                 name_c = clean(name)
                 desc_c = clean(desc)
-                role = "receiver" if i == 0 else "effector"
+                role = "receptor" if i == 0 else "effector"
                 grouped[role] = {"name": name_c, "description": desc_c}
         else:
             print("Warning: Unexpected number of parts found in VLM output.")
         return grouped
-    
-    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receiver_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
+
+    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receptor_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
         rendered_base64_frames = []
         for i in range(len(rgb_frame_list)):
             rgb_frame = np.array(rgb_frame_list[i])
-            receiver_mask = receiver_part_masks[i]
+            receptor_mask = receptor_part_masks[i]
             effector_mask = effector_part_masks[i]
 
             # Create color masks
-            receiver_color_mask = np.zeros_like(rgb_frame)
-            receiver_color_mask[:, :, 1] = receiver_mask * 255  # Green for receiver
+            receptor_color_mask = np.zeros_like(rgb_frame)
+            receptor_color_mask[:, :, 1] = receptor_mask * 255  # Green for receptor
 
             effector_color_mask = np.zeros_like(rgb_frame)
             effector_color_mask[:, :, 0] = effector_mask * 255  # Red for effector
 
             # Blend the original frame with the masks
             alpha = 0.5
-            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receiver_color_mask, alpha, 0)
+            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receptor_color_mask, alpha, 0)
             blended_frame = cv2.addWeighted(blended_frame, 1 - alpha, effector_color_mask, alpha, 0)
 
             blended_frame = cv2.cvtColor(blended_frame, cv2.COLOR_RGB2BGR)  # Convert to RGB for PIL compatibility
@@ -385,7 +385,7 @@ class MolmoVideoNarrator(VLMPrompter):
             for i, (name, desc) in enumerate(pairs):
                 name_c = clean(name)
                 desc_c = clean(desc)
-                role = "receiver" if i == 0 else "effector"
+                role = "receptor" if i == 0 else "effector"
                 grouped[role] = {"name": name_c, "description": desc_c}
         else:
             print("Warning: Unexpected number of parts found in VLM output.")
@@ -462,23 +462,23 @@ class MolmoVideoNarrator(VLMPrompter):
                         all_points.append((frame_id, x, y))
         return all_points
 
-    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receiver_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
+    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receptor_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
         rendered_frames = []
         for i in range(len(rgb_frame_list)):
             rgb_frame = np.array(rgb_frame_list[i])
-            receiver_mask = receiver_part_masks[i]
+            receptor_mask = receptor_part_masks[i]
             effector_mask = effector_part_masks[i]
 
             # Create color masks
-            receiver_color_mask = np.zeros_like(rgb_frame)
-            receiver_color_mask[:, :, 1] = receiver_mask * 255  # Green for receiver
+            receptor_color_mask = np.zeros_like(rgb_frame)
+            receptor_color_mask[:, :, 1] = receptor_mask * 255  # Green for receptor
 
             effector_color_mask = np.zeros_like(rgb_frame)
             effector_color_mask[:, :, 0] = effector_mask * 255  # Red for effector
 
             # Blend the original frame with the masks
             alpha = 0.5
-            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receiver_color_mask, alpha, 0)
+            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receptor_color_mask, alpha, 0)
             blended_frame = cv2.addWeighted(blended_frame, 1 - alpha, effector_color_mask, alpha, 0)
 
             rendered_frames.append(blended_frame)
@@ -559,23 +559,23 @@ class MolmovllmVideoNarrator(VLMPrompter):
         self.sampling_params = SamplingParams(max_tokens=1024)
     
 
-    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receiver_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
+    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receptor_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
         rendered_frames = []
         for i in range(len(rgb_frame_list)):
             rgb_frame = np.array(rgb_frame_list[i])
-            receiver_mask = receiver_part_masks[i]
+            receptor_mask = receptor_part_masks[i]
             effector_mask = effector_part_masks[i]
 
             # Create color masks
-            receiver_color_mask = np.zeros_like(rgb_frame)
-            receiver_color_mask[:, :, 1] = receiver_mask * 255  # Green for receiver
+            receptor_color_mask = np.zeros_like(rgb_frame)
+            receptor_color_mask[:, :, 1] = receptor_mask * 255  # Green for receptor
 
             effector_color_mask = np.zeros_like(rgb_frame)
             effector_color_mask[:, :, 0] = effector_mask * 255  # Red for effector
 
             # Blend the original frame with the masks
             alpha = 0.5
-            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receiver_color_mask, alpha, 0)
+            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receptor_color_mask, alpha, 0)
             blended_frame = cv2.addWeighted(blended_frame, 1 - alpha, effector_color_mask, alpha, 0)
 
             rendered_frames.append(blended_frame.astype(np.uint8))
@@ -663,23 +663,23 @@ class QwenVideoNarrator(VLMPrompter):
         self.sampling_params = SamplingParams(max_tokens=1024)
     
 
-    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receiver_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
+    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receptor_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
         rendered_frames = []
         for i in range(len(rgb_frame_list)):
             rgb_frame = np.array(rgb_frame_list[i])
-            receiver_mask = receiver_part_masks[i]
+            receptor_mask = receptor_part_masks[i]
             effector_mask = effector_part_masks[i]
 
             # Create color masks
-            receiver_color_mask = np.zeros_like(rgb_frame)
-            receiver_color_mask[:, :, 1] = receiver_mask * 255  # Green for receiver
+            receptor_color_mask = np.zeros_like(rgb_frame)
+            receptor_color_mask[:, :, 1] = receptor_mask * 255  # Green for receptor
 
             effector_color_mask = np.zeros_like(rgb_frame)
             effector_color_mask[:, :, 0] = effector_mask * 255  # Red for effector
 
             # Blend the original frame with the masks
             alpha = 0.5
-            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receiver_color_mask, alpha, 0)
+            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receptor_color_mask, alpha, 0)
             blended_frame = cv2.addWeighted(blended_frame, 1 - alpha, effector_color_mask, alpha, 0)
 
             rendered_frames.append(blended_frame.astype(np.uint8))

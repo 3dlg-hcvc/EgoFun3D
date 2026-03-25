@@ -56,7 +56,7 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
             continue
         if not os.path.exists(save_articulation_dir):
             os.makedirs(save_articulation_dir)
-        for role in ["receiver", "effector"]:
+        for role in ["receptor", "effector"]:
             gt_articulation = data[f"{role}_articulation"]
             if gt_articulation is None:
                 loguru.logger.debug(f"No GT articulation for role {role}, skipping evaluation for this role.")
@@ -108,7 +108,7 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
                         reconstruction_results = pickle.load(f)
             if reconstruction_results is None:
                 loguru.logger.info("Reconstruction failed, skipping this sample.")
-                articulation_results["receiver"] = "Reconstruction failed, skipping this sample."
+                articulation_results["receptor"] = "Reconstruction failed, skipping this sample."
                 articulation_results["effector"] = "Reconstruction failed, skipping this sample."
                 break
             # run articulation estimation
