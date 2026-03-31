@@ -17,7 +17,7 @@ class ArticulationEstimation:
     def __init__(self, config: omegaconf.DictConfig):
         self.config = config
     
-    def articulation_estimation(self, rgb_frame_list: List[PILImage.Image], reconstruction_results: Dict, part_masks: np.ndarray) -> Dict:
+    def articulation_estimation(self, rgb_frame_list: List[np.ndarray], reconstruction_results: Dict, part_masks: np.ndarray) -> Dict:
         raise NotImplementedError("Subclasses should implement this method to perform articulation estimation.")
     
 

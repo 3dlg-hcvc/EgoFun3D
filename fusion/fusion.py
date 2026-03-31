@@ -17,20 +17,23 @@ class BaseFusion:
     def __init__(self):
         pass
 
-    def fuse_part_pcds(self, image_path_list: List[PILImage.Image], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
+    def fuse_part_pcds(self, image_path_list: List[np.ndarray], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
         raise NotImplementedError
 
 
 class FeatureMatchingFusion(BaseFusion):
     def __init__(self, device: str):
         self.feature_matching_model = roma_indoor(device=device)
+        
         # self.monocular_model = MoGeModel.from_pretrained(moge_model_path).to(device)
         self.device = device
 
-    def compute_part_transformation(self, current_image_path: str, current_point_map: np.ndarray, current_part_mask: np.ndarray, anchor_image_path: str, 
+    def compute_part_transformation(self, current_image: np.ndarray, current_point_map: np.ndarray, current_part_mask: np.ndarray, anchor_image: np.ndarray, 
                                     anchor_point_map: np.ndarray, anchor_part_mask: np.ndarray, kptsA_origin: np.ndarray = None, kptsB_origin: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         if kptsA_origin is None or kptsB_origin is None:
-            warp, certainty = self.feature_matching_model.match(anchor_image_path, current_image_path, device=self.device)
+            anchor_image_pil = PILImage.fromarray(anchor_image)
+            current_image_pil = PILImage.fromarray(current_image)
+            warp, certainty = self.feature_matching_model.match(anchor_image_pil, current_image_pil, device=self.device)
             # Sample matches for estimation
             matches, certainty = self.feature_matching_model.sample(warp, certainty)
             # Convert to pixel coordinates (RoMa produces matches in [-1,1]x[-1,1])
@@ -64,15 +67,15 @@ class FeatureMatchingFusion(BaseFusion):
         current2anchor = estimate_se3_transformation(current_part_3dkpts, anchor_part_3dkpts)
         return current2anchor, kptsA_origin, kptsB_origin
 
-    def fuse_part_pcds(self, image_path_list: List[str], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray], kptsA_origin_dict: Dict[str, np.ndarray] = None, kptsB_origin_dict: Dict[str, np.ndarray] = None) -> Tuple[np.ndarray, List[np.ndarray]]:
+    def fuse_part_pcds(self, video_frame_list: List[np.ndarray], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray], kptsA_origin_dict: Dict[str, np.ndarray] = None, kptsB_origin_dict: Dict[str, np.ndarray] = None) -> Tuple[np.ndarray, List[np.ndarray]]:
         part_pcd_list = []
         transformation_list = []
-        anchor_image_path = None
+        anchor_image_id = None
         anchor_point_map = None
         anchor_part_mask = None
         # kptsA_origin_dict_new = {}
         # kptsB_origin_dict_new = {}
-        for frame_id, image_path in enumerate(image_path_list):
+        for frame_id, video_frame in enumerate(video_frame_list):
             part_mask = part_mask_list[frame_id]
             current_point_map = points_map_list[frame_id]
             part_pcd_world = current_point_map[part_mask]
@@ -81,21 +84,21 @@ class FeatureMatchingFusion(BaseFusion):
             
             if frame_id == 0:
                 transformation_list.append(np.eye(4))
-                anchor_image_path = image_path
+                anchor_image_id = frame_id
                 anchor_point_map = current_point_map
                 anchor_part_mask = part_mask
             else:
                 # print("Computing transformation for frame", frame_id)
                 transformation, kptsA_origin, kptsB_origin = self.compute_part_transformation(
-                    image_path, current_point_map, part_mask,
-                    anchor_image_path, anchor_point_map, anchor_part_mask, 
-                    kptsA_origin_dict[f"{image_path}_{anchor_image_path}"] if (kptsA_origin_dict is not None and f"{image_path}_{anchor_image_path}" in kptsA_origin_dict.keys()) else None, 
-                    kptsB_origin_dict[f"{image_path}_{anchor_image_path}"] if (kptsB_origin_dict is not None and f"{image_path}_{anchor_image_path}" in kptsB_origin_dict.keys()) else None
+                    video_frame, current_point_map, part_mask,
+                    video_frame_list[anchor_image_id], anchor_point_map, anchor_part_mask, 
+                    kptsA_origin_dict[f"{frame_id}_{anchor_image_id}"] if (kptsA_origin_dict is not None and f"{frame_id}_{anchor_image_id}" in kptsA_origin_dict.keys()) else None, 
+                    kptsB_origin_dict[f"{frame_id}_{anchor_image_id}"] if (kptsB_origin_dict is not None and f"{frame_id}_{anchor_image_id}" in kptsB_origin_dict.keys()) else None
                 )
-                if (f"{image_path}_{anchor_image_path}" not in kptsA_origin_dict.keys()) or (f"{image_path}_{anchor_image_path}" not in kptsB_origin_dict.keys()):
+                if (f"{frame_id}_{anchor_image_id}" not in kptsA_origin_dict.keys()) or (f"{frame_id}_{anchor_image_id}" not in kptsB_origin_dict.keys()):
                     # print("add kptsA_origin and kptsB_origin to the dict")
-                    kptsA_origin_dict[f"{image_path}_{anchor_image_path}"] = kptsA_origin
-                    kptsB_origin_dict[f"{image_path}_{anchor_image_path}"] = kptsB_origin
+                    kptsA_origin_dict[f"{frame_id}_{anchor_image_id}"] = kptsA_origin
+                    kptsB_origin_dict[f"{frame_id}_{anchor_image_id}"] = kptsB_origin
                 # transformation = transformation[0]
                 transformation_list.append(transformation)
         
@@ -123,10 +126,11 @@ class TrackingFusion(BaseFusion):
         self.grid_size = grid_size
         self.device = device
 
-    def tracking_video(self, video_frame_list: List[PILImage.Image], depth_frame_list: List[np.ndarray], cam_pose_list: List[np.ndarray], intrinsics: np.ndarray, depth_mask_list: List[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
+    def tracking_video(self, video_frame_list: List[np.ndarray], depth_frame_list: List[np.ndarray], cam_pose_list: List[np.ndarray], intrinsics: np.ndarray, depth_mask_list: List[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
         video_tensor_list = []
         for video_frame in video_frame_list:
-            video_tensor = pil_to_tensor(video_frame).to(torch.float32).to(self.device)
+            # video_tensor = pil_to_tensor(video_frame).to(torch.float32).to(self.device)
+            video_tensor = torch.from_numpy(video_frame).permute(2,0,1).float().to(self.device)
             video_tensor_list.append(video_tensor)
         video_tensor = torch.stack(video_tensor_list) # N, C, H, W
         
@@ -168,7 +172,7 @@ class TrackingFusion(BaseFusion):
         tracks2d = track2d_pred.cpu().numpy()
         return tracks3d, tracks2d
     
-    def fuse_part_pcds(self, video_frame_list: List[PILImage.Image], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray], tracks3d_list: List[np.ndarray], tracks2d_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
+    def fuse_part_pcds(self, video_frame_list: List[np.ndarray], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray], tracks3d_list: List[np.ndarray], tracks2d_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
         # tracks3d = self.tracking_video(video_frame_list, depth_frame_list, cam_pose_list, intrinsics, depth_mask_list)
         fused_part_pcd = []
         transformation_list = []

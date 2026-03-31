@@ -124,10 +124,10 @@ class GeminiVideoNarrator(VLMPrompter):
             print("Warning: Unexpected number of parts found in VLM output.")
         return grouped
     
-    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receptor_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
+    def prompt_function(self, rgb_frame_list: List[np.ndarray], receptor_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
         rendered_frames = []
         for i in range(len(rgb_frame_list)):
-            rgb_frame = np.array(rgb_frame_list[i])
+            rgb_frame = rgb_frame_list[i]
             receptor_mask = receptor_part_masks[i]
             effector_mask = effector_part_masks[i]
 
@@ -234,10 +234,10 @@ class GPTVideoNarrator(VLMPrompter):
             print("Warning: Unexpected number of parts found in VLM output.")
         return grouped
 
-    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receptor_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
+    def prompt_function(self, rgb_frame_list: List[np.ndarray], receptor_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
         rendered_base64_frames = []
         for i in range(len(rgb_frame_list)):
-            rgb_frame = np.array(rgb_frame_list[i])
+            rgb_frame = rgb_frame_list[i]
             receptor_mask = receptor_part_masks[i]
             effector_mask = effector_part_masks[i]
 
@@ -559,10 +559,10 @@ class MolmovllmVideoNarrator(VLMPrompter):
         self.sampling_params = SamplingParams(max_tokens=1024)
     
 
-    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receptor_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
+    def prompt_function(self, rgb_frame_list: List[np.ndarray], receptor_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
         rendered_frames = []
         for i in range(len(rgb_frame_list)):
-            rgb_frame = np.array(rgb_frame_list[i])
+            rgb_frame = rgb_frame_list[i]
             receptor_mask = receptor_part_masks[i]
             effector_mask = effector_part_masks[i]
 
@@ -663,10 +663,10 @@ class QwenVideoNarrator(VLMPrompter):
         self.sampling_params = SamplingParams(max_tokens=1024)
     
 
-    def prompt_function(self, rgb_frame_list: List[PILImage.Image], receptor_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
+    def prompt_function(self, rgb_frame_list: List[np.ndarray], receptor_part_masks: np.ndarray, effector_part_masks: np.ndarray) -> Dict[str, str]:
         rendered_frames = []
         for i in range(len(rgb_frame_list)):
-            rgb_frame = np.array(rgb_frame_list[i])
+            rgb_frame = rgb_frame_list[i]
             receptor_mask = receptor_part_masks[i]
             effector_mask = effector_part_masks[i]
 

@@ -8,6 +8,7 @@ import gzip
 import pickle
 import glob
 from torch.utils.data import Dataset
+import imageio
 
 from typing import Tuple, List, Dict, Any
 
@@ -30,16 +31,17 @@ class UniformDataset(Dataset):
         print(f"Loading video: {video_name}")
         
         if video_dict["source"] == "egoexo4d" and self.image_type == "cropped":
-            frame_dir = video_dict["cropped_frame_dir"]
+            video_path = video_dict["cropped_video_path"]
             crop = True
         else:
-            frame_dir = video_dict["original_frame_dir"]
+            video_path = video_dict["original_video_path"]
             crop = False
         # rgb
-        rgb_list, rgb_path_list = self.load_video(frame_dir)
+        # rgb_list, rgb_path_list = self.load_video(video_path)
+        rgb_list, full_video_path = self.load_video(video_path)
         sample_indices = self.get_sample_indices(len(rgb_list))
         rgb_list = [rgb_list[i] for i in sample_indices]
-        rgb_path_list = [rgb_path_list[i] for i in sample_indices]
+        # rgb_path_list = [rgb_path_list[i] for i in sample_indices]
 
         camera_extrinsics, camera_intrinsics, cropped_top_left, cropped_bottom_right = self.load_camera(
             video_dict["camera_extrinsics_path"],
@@ -74,8 +76,9 @@ class UniformDataset(Dataset):
 
         data_dict = {
             "video_name": video_name,
+            "video_path": full_video_path,
             "rgb_list": rgb_list,
-            "rgb_path_list": rgb_path_list,
+            # "rgb_path_list": rgb_path_list,
             "camera_extrinsics": camera_extrinsics,
             "camera_intrinsics": camera_intrinsics,
             "receptor_mask_list": receptor_mask_list,
@@ -106,17 +109,19 @@ class UniformDataset(Dataset):
             sample_indices = list(range(total_frames))
         return sample_indices
 
-    def load_video(self, frame_dir: str) -> Tuple[List[PILImage.Image], List[str]]:
+    def load_video(self, video_path: str) -> Tuple[np.ndarray, str]:
         # video_path = os.path.join(self.root_path, video_dict["video_path"])
-        video_frame_dir = os.path.join(self.root_path, frame_dir)
-        rgb_path_list = glob.glob(os.path.join(video_frame_dir, "*.jpg"))
-        rgb_path_list.sort()
-        rgb_list = []
-        for frame_path in rgb_path_list:
-            image = PILImage.open(frame_path)
-            image = image.convert("RGB")
-            rgb_list.append(image)
-        return rgb_list, rgb_path_list
+        full_video_path = os.path.join(self.root_path, video_path)
+        rgb_list = imageio.v3.imread(full_video_path)  # (T, H, W, 3)
+        return rgb_list, full_video_path
+        # rgb_path_list = glob.glob(os.path.join(video_frame_dir, "*.jpg"))
+        # rgb_path_list.sort()
+        # rgb_list = []
+        # for frame_path in rgb_path_list:
+        #     image = PILImage.open(frame_path)
+        #     image = image.convert("RGB")
+        #     rgb_list.append(image)
+        # return rgb_list, rgb_path_list
     
     def load_camera(self, extrinsics_path: str, intrinsics_path: str, crop: bool) -> Tuple[np.ndarray, np.ndarray, List[int], List[int]]:
         camera_extrinsics_path = os.path.join(self.root_path, extrinsics_path)

@@ -32,7 +32,7 @@ class BaseReconstruction:
     def __init__(self):
         pass
 
-    def reconstruct(self, video_frame_list: List[PILImage.Image], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: np.ndarray = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
+    def reconstruct(self, video_frame_list: List[np.ndarray], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: np.ndarray = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
         raise NotImplementedError
 
 
@@ -40,7 +40,7 @@ class NaiveReconstruction(BaseReconstruction):
     def __init__(self):
         pass
 
-    def reconstruct(self, video_frame_list: List[PILImage.Image], init_extrinsics: np.ndarray, intrinsics: np.ndarray, cam_pose_list: np.ndarray, depth_frame_list: List[np.ndarray]) -> Dict[str, np.ndarray]:
+    def reconstruct(self, video_frame_list: List[np.ndarray], init_extrinsics: np.ndarray, intrinsics: np.ndarray, cam_pose_list: np.ndarray, depth_frame_list: List[np.ndarray]) -> Dict[str, np.ndarray]:
         point_map_list = []
         valid_mask_list = []
         cam2init = init_extrinsics @ np.linalg.inv(cam_pose_list[0])
@@ -67,8 +67,8 @@ class MoGeReconstruction(BaseReconstruction):
         self.model = MoGeModel.from_pretrained(model_path).to(device)
         self.device = device
 
-    def reconstruct(self, video_frame_list: List[PILImage.Image], init_extrinsics: np.ndarray, intrinsics: np.ndarray, cam_pose_list: np.ndarray, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
-        w = video_frame_list[0].width
+    def reconstruct(self, video_frame_list: List[np.ndarray], init_extrinsics: np.ndarray, intrinsics: np.ndarray, cam_pose_list: np.ndarray, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
+        w = video_frame_list[0].shape[1]
         fov_x = 2 * np.arctan(w / (2 * intrinsics[0, 0]))
         point_map_list = []
         valid_mask_list = []
@@ -104,7 +104,7 @@ class SpatrackerReconstruction(BaseReconstruction):
         self.model = self.model.to(device)
         self.device = device
 
-    def reconstruct(self, video_frame_list: List[PILImage.Image], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: np.ndarray = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
+    def reconstruct(self, video_frame_list: List[np.ndarray], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: np.ndarray = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
         video_tensor_list = []
         for video_frame in video_frame_list:
             video_tensor = pil_to_tensor(video_frame).to(torch.float32).to(self.device)
@@ -157,22 +157,22 @@ class SpatrackerReconstruction(BaseReconstruction):
     
 
 class ViPEReconstruction(BaseReconstruction):
-    def reconstruct(self, video_dir: str, init_extrinsics: np.ndarray, sample_indices: List[int]) -> Dict[str, np.ndarray]:
+    def reconstruct(self, video_path: str, init_extrinsics: np.ndarray, sample_indices: List[int]) -> Dict[str, np.ndarray]:
         tmp_dir = "./tmp_vipe_reconstruction"
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir)
         try:
-            if "(" in video_dir or ")" in video_dir:
-                video_dir_escaped = video_dir.replace("(", "\(").replace(")", "\)")
+            if "(" in video_path or ")" in video_path:
+                video_path_escaped = video_path.replace("(", "\(").replace(")", "\)")
             else:
-                video_dir_escaped = video_dir
+                video_path_escaped = video_path
             # os.system(f"vipe infer --image-dir {video_dir_escaped} --output {tmp_dir} --pipeline dav3")
-            os.system(f"python third_party/vipe/run.py pipeline=dav3 streams=frame_dir_stream streams.base_path='{video_dir_escaped}' pipeline.output.path={tmp_dir} pipeline.output.save_artifacts=true")
+            os.system(f"python third_party/vipe/run.py pipeline=dav3 streams=raw_mp4_stream streams.base_path='{video_path_escaped}' pipeline.output.path={tmp_dir} pipeline.output.save_artifacts=true")
         except Exception as e:
             print(f"Error during vipe inference: {e}")
             return None
         
-        base_name = os.path.basename(video_dir)
+        base_name = os.path.basename(video_path).split(".")[0]
         depth_zip_file = os.path.join(tmp_dir, "depth", f"{base_name}.zip")
         depth_frame_list = []
         depth_mask_list = []
@@ -253,7 +253,7 @@ class DA3DReconstruction(BaseReconstruction):
         conf_thresh = min(max(conf_thresh, lower), upper)
         return conf_thresh
     
-    def reconstruct(self, video_frame_list: List[PILImage.Image], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: np.ndarray = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
+    def reconstruct(self, video_frame_list: List[np.ndarray], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: np.ndarray = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
         if intrinsics is not None and cam_pose_list is not None and depth_frame_list is not None:
             naive_recon = NaiveReconstruction()
             return naive_recon.reconstruct(video_frame_list, init_extrinsics, intrinsics, cam_pose_list, depth_frame_list)
@@ -279,7 +279,7 @@ class DA3DReconstruction(BaseReconstruction):
                     return None
                 depth = outputs.depth # N, H, W
                 depth_conf = outputs.conf
-                original_height, original_width = video_frame_list[0].height, video_frame_list[0].width
+                original_height, original_width = video_frame_list[0].shape[0], video_frame_list[0].shape[1]
                 new_height, new_width = depth.shape[1], depth.shape[2]
                 zoom_factors = (original_height / new_height, original_width / new_width)
                 if full_inv_extrinsics is None:
@@ -353,10 +353,10 @@ class MapAnythingReconstruction(BaseReconstruction):
         K[1:2] *= h / float(orig_h)
         return K
 
-    def reconstruct(self, video_frame_list: List[PILImage.Image], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: np.ndarray = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
+    def reconstruct(self, video_frame_list: List[np.ndarray], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: np.ndarray = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
         input_views = []
         # origin_extrinsics_list = []
-        original_height, original_width = video_frame_list[0].height, video_frame_list[0].width
+        original_height, original_width = video_frame_list[0].shape[0], video_frame_list[0].shape[1]
         for frame_id in range(len(video_frame_list)):
             input_view = {
                 "img": video_frame_list[frame_id],

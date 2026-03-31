@@ -45,7 +45,7 @@ class Artipoint(ArticulationEstimation):
         }
         self.arti_estimator = ArtiEstimator(motion_cfg)
 
-    def extract_hand_segments(self, rgb_frame_list: List[PILImage.Image]) -> List[Tuple[int, int]]:
+    def extract_hand_segments(self, rgb_frame_list: List[np.ndarray]) -> List[Tuple[int, int]]:
         """Extract hand action segments from RGB frames."""
         segments = self.arti_segmentor.extract_hand_action_segments_smoothed(
             rgb_frame_list,
@@ -57,14 +57,14 @@ class Artipoint(ArticulationEstimation):
         return segments
 
     def compute_human_masks(
-        self, rgb_frame_list: List[PILImage.Image], segments: List[Tuple[int, int]]
+        self, rgb_frame_list: List[np.ndarray], segments: List[Tuple[int, int]]
     ) -> List[List[np.ndarray]]:
         """Compute human masks for each segment."""
         masks_per_segment = []
         for seg_start, seg_end in segments:
             segment_masks = []
             for i in range(seg_end - seg_start):
-                img = np.array(rgb_frame_list[i + seg_start])
+                img = rgb_frame_list[i + seg_start]
                 human_masks = self.arti_estimator._segment_human(img)
                 if human_masks:
                     # Use first detected human mask and process it
@@ -93,14 +93,14 @@ class Artipoint(ArticulationEstimation):
         return masks_per_segment
 
     def extract_queries_per_segment(
-        self, rgb_frame_list: List[PILImage.Image], part_masks: np.ndarray, segments: List[Tuple[int, int]]
+        self, rgb_frame_list: List[np.ndarray], part_masks: np.ndarray, segments: List[Tuple[int, int]]
     ) -> Tuple[List[Tuple[int, int]], List[torch.Tensor]]:
         """Extract query points for each segment using articulated segmentation."""
         queries_segments = []
         valid_segments = []
         for seg_idx, (seg_start, seg_end) in enumerate(segments):
             if self.cfg.queries.manual_queries:
-                points = self.arti_estimator._select_points(np.array(rgb_frame_list[seg_start]))
+                points = self.arti_estimator._select_points(rgb_frame_list[seg_start])
                 queries = self.arti_estimator._create_queries_points(
                     points, frames=[0], device="cpu"
                 )
@@ -113,7 +113,7 @@ class Artipoint(ArticulationEstimation):
                 if part_mask.sum() == 0:
                     continue
                 orb_points = self.arti_segmentor.sample_fetures(
-                    np.array(rgb_frame_list[j + seg_start]), [part_mask], self.cfg.queries.max_feat_points, feat_type=self.cfg.queries.feat_type
+                    rgb_frame_list[j + seg_start], [part_mask], self.cfg.queries.max_feat_points, feat_type=self.cfg.queries.feat_type
                 )
                 if len(orb_points) == 0:
                     continue
@@ -167,7 +167,7 @@ class Artipoint(ArticulationEstimation):
 
     def track_and_project_queries(
         self,
-        rgb_frame_list: List[PILImage.Image],
+        rgb_frame_list: List[np.ndarray],
         depths: np.ndarray,
         intrinsics: np.ndarray,
         segments: List[Tuple[int, int]],
@@ -184,14 +184,14 @@ class Artipoint(ArticulationEstimation):
         # save_dir = "2d_tracks"
         # os.makedirs(save_dir, exist_ok=True)
         # vis = Visualizer(save_dir=save_dir, pad_value=120, linewidth=3)
-        rgb_frame_list_np = [np.array(frame) for frame in rgb_frame_list]
+        # rgb_frame_list_np = [np.array(frame) for frame in rgb_frame_list]
 
         pred_3d_tracks_segments = []
         pred_visibility_segments = []
         for idx, (seg_start, seg_end) in enumerate(segments):
             st = time.time()
             pred_2d_tracks, pred_visibility = self.arti_estimator._cotracker_process(
-                rgb_frame_list_np[seg_start:seg_end],
+                rgb_frame_list[seg_start:seg_end],
                 queries_segments[idx].to("cuda"),
                 backward_tracking=self.cfg.tracking.backward_tracking,
             )
@@ -492,7 +492,7 @@ class Artipoint(ArticulationEstimation):
             loguru.logger.error("Factor graph optimization failed.")
             return None, None, None
 
-    def articulation_estimation(self, rgb_frame_list: List[PILImage.Image], reconstruction_results: Dict, part_masks: np.ndarray) -> Dict[str, np.ndarray | str]:
+    def articulation_estimation(self, rgb_frame_list: List[np.ndarray], reconstruction_results: Dict, part_masks: np.ndarray) -> Dict[str, np.ndarray | str]:
         segments = self.extract_hand_segments(rgb_frame_list)
 
         # Extract query points per segment

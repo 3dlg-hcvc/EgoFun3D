@@ -1,4 +1,5 @@
 from copy import deepcopy
+import PIL
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from PIL import Image as PILImage
@@ -237,13 +238,13 @@ class iTACOCoarse:
         translation_dist = np.mean(np.dot(translation_vec, joint_axis))
         return translation_dist
 
-    def estimate_joint(self, rgb_frame_list: List[PILImage.Image], reconstruction_results: Dict, part_masks: np.ndarray) -> Tuple[Dict[str, Dict[str, np.ndarray]], str]:
+    def estimate_joint(self, rgb_frame_list: List[np.ndarray], reconstruction_results: Dict, part_masks: np.ndarray) -> Tuple[Dict[str, Dict[str, np.ndarray]], str]:
         result_list = []
         pair_list = []
         for interval in [1, 2, 3]:
             for i in range(0, len(rgb_frame_list) - interval, 1):
                 try:
-                    mkpts0, mkpts1, conf = self.compute_match(np.array(rgb_frame_list[i]), np.array(rgb_frame_list[i + interval]))
+                    mkpts0, mkpts1, conf = self.compute_match(rgb_frame_list[i], rgb_frame_list[i + interval])
                 except Exception as e:
                     print("Matcher fail between frame {} and frame {}! Error message: {}".format(i, i + interval, e))
                     continue
@@ -376,7 +377,7 @@ class iTACORefine:
 
         return dynamic_chamfer_loss
 
-    def optimize_joint(self, rgb_frame_list: List[PILImage.Image], reconstruction_results: Dict, part_masks: np.ndarray, coarse_prediction_results: Dict, joint_type: str):
+    def optimize_joint(self, rgb_frame_list: List[np.ndarray], reconstruction_results: Dict, part_masks: np.ndarray, coarse_prediction_results: Dict, joint_type: str):
         ## surface point cloud
         if "points" in reconstruction_results.keys():
             surface_xyz = torch.from_numpy(reconstruction_results["points"]).to(self.device).to(torch.float32) # H * W * 3
@@ -490,7 +491,7 @@ class iTACO(ArticulationEstimation):
         self.sample_strategy = config.sample_strategy
         self.sample_num = config.sample_num
 
-    def articulation_estimation(self, rgb_frame_list: List[PILImage.Image], reconstruction_results: Dict, part_masks: np.ndarray) -> Dict[str, np.ndarray]:
+    def articulation_estimation(self, rgb_frame_list: List[np.ndarray], reconstruction_results: Dict, part_masks: np.ndarray) -> Dict[str, np.ndarray]:
         sample_rgb_frame_list = deepcopy(rgb_frame_list)
         sample_reconstruction_results = deepcopy(reconstruction_results)
         sample_part_masks = deepcopy(part_masks)

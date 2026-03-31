@@ -105,8 +105,8 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 else:
                     init_extrinsics = data["camera_extrinsics"][0]
                     if isinstance(reconstruction_model, ViPEReconstruction):
-                        video_dir = os.path.dirname(data["rgb_path_list"][0])
-                        reconstruction_results = reconstruction_model.reconstruct(video_dir, init_extrinsics, data["sample_indices"])
+                        # video_dir = os.path.dirname(data["video_path"])
+                        reconstruction_results = reconstruction_model.reconstruct(data["video_path"], init_extrinsics, data["sample_indices"])
                     else:
                         input_intrinsics = None
                         input_extrinsics = None
@@ -147,19 +147,19 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 points_mask = points_mask_list[i]
                 combined_mask = np.logical_and(points_mask, mask_list[i])
                 valid_mask_list.append(combined_mask)
-            valid_image_path_list = [data["rgb_path_list"][i] for i in valid_frame_ids]
+            # valid_image_path_list = [data["rgb_path_list"][i] for i in valid_frame_ids]
             intrinsics = reconstruction_results["intrinsics"]
             valid_points_map_list = [reconstruction_results["points"][i] for i in valid_frame_ids]
             
             fuse_start = time.time()
             if isinstance(fusion_model, FeatureMatchingFusion):
-                fused_part_pcd, transformation_list, kptsA_origin_dict, kptsB_origin_dict = fusion_model.fuse_part_pcds(valid_image_path_list, valid_mask_list, valid_points_map_list, kptsA_origin_dict, kptsB_origin_dict)
+                fused_part_pcd, transformation_list, kptsA_origin_dict, kptsB_origin_dict = fusion_model.fuse_part_pcds(video_frame_list, valid_mask_list, valid_points_map_list, kptsA_origin_dict, kptsB_origin_dict)
                 # print("kpts len:", len(kptsA_origin_dict), len(kptsB_origin_dict))
             elif isinstance(fusion_model, TrackingFusion):
                 if tracks3d is None:
                     tracks3d = fusion_model.tracking_video(video_frame_list, reconstruction_results["depth"], reconstruction_results["extrinsics"], intrinsics, reconstruction_results["points_mask"])
                 valid_tracks3d = [tracks3d[i] for i in valid_frame_ids]
-                fused_part_pcd, transformation_list = fusion_model.fuse_part_pcds(valid_image_path_list, valid_mask_list, valid_points_map_list, valid_tracks3d)
+                fused_part_pcd, transformation_list = fusion_model.fuse_part_pcds(video_frame_list, valid_mask_list, valid_points_map_list, valid_tracks3d)
             fuse_end = time.time()
             print(f"Fusion time: {fuse_end - fuse_start:.2f} seconds")
             # Evaluate reconstruction
