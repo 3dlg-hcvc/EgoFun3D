@@ -202,31 +202,31 @@
       </div>
       <div class="works-list">
         <!-- TODO: Replace with your lab's related works -->
-        <a href="https://arxiv.org/abs/PAPER_ID_1" class="work-item" target="_blank">
+        <a href="https://arxiv.org/abs/2506.08334" class="work-item" target="_blank">
           <div class="work-info">
             <!-- TODO: Replace with actual paper title -->
-            <h5>Paper Title 1</h5>
+            <h5>iTACO: Interactable Digital Twins of Articulated Objects from Casually Captured RGBD Videos</h5>
             <!-- TODO: Replace with brief description -->
-            <p>Brief description of the work and its main contribution.</p>
+            <p>Build interactive digital twins of articulated objects from casually captured RGBD videos.</p>
             <!-- TODO: Replace with venue and year -->
-            <span class="work-venue">Conference/Journal 2024</span>
+            <span class="work-venue">3DV 2026</span>
           </div>
           <i class="fas fa-external-link-alt"></i>
         </a>
         <!-- TODO: Add more related works or remove extra items -->
-        <a href="https://arxiv.org/abs/PAPER_ID_2" class="work-item" target="_blank">
+        <a href="https://arxiv.org/abs/2409.18896" class="work-item" target="_blank">
           <div class="work-info">
-            <h5>Paper Title 2</h5>
-            <p>Brief description of the work and its main contribution.</p>
-            <span class="work-venue">Conference/Journal 2023</span>
+            <h5>S2O: Static to Openable Enhancement for Articulated 3D Objects</h5>
+            <p>Create interactive articulated 3D objects from static counterparts through openable part detection, motion prediction, and interior geometry completion.</p>
+            <span class="work-venue">WACV 2026</span>
           </div>
           <i class="fas fa-external-link-alt"></i>
         </a>
-        <a href="https://arxiv.org/abs/PAPER_ID_3" class="work-item" target="_blank">
+        <a href="https://arxiv.org/abs/2410.16499" class="work-item" target="_blank">
           <div class="work-info">
-            <h5>Paper Title 3</h5>
-            <p>Brief description of the work and its main contribution.</p>
-            <span class="work-venue">Conference/Journal 2023</span>
+            <h5>SINGAPO: Single Image Controlled Generation of Articulated Parts in Objects</h5>
+            <p>Create 3D assets for household articulated objects from a single image</p>
+            <span class="work-venue">ICLR 2025</span>
           </div>
           <i class="fas fa-external-link-alt"></i>
         </a>
@@ -353,7 +353,7 @@ Interactive objects are of high interest for embodied AI but scarce, making mode
 Our task focuses on obtaining simulation-ready interactive 3D objects from egocentric video input.
 While prior work largely focuses on articulations, we capture general cross-part functional mappings (e.g., rotation of stove knob controls stove burner temperature) through function templates, a structured computational representation.
 Function templates enable precise evaluation and direct compilation into executable code across simulation platforms.
-To enable comprehensive benchmarking, we introduce a dataset of \emph{271 egocentric videos} featuring challenging real-world interactions with paired \emph{3D geometry, segmentation over 2D and 3D, articulation and function template annotations}.
+To enable comprehensive benchmarking, we introduce a dataset of 271 egocentric videos featuring challenging real-world interactions with paired 3D geometry, segmentation over 2D and 3D, articulation and function template annotations.
 To tackle the task, we propose a 4-stage pipeline consisting of: 2D part segmentation, reconstruction, articulation estimation, and function template inference.
 Comprehensive benchmarking shows that the task is challenging for off-the-shelf methods, highlighting avenues for future work.
           </p>
@@ -365,118 +365,949 @@ Comprehensive benchmarking shows that the task is challenging for off-the-shelf 
 <!-- End paper abstract -->
 
 
-<!-- Image carousel -->
 <section class="hero is-small">
   <div class="hero-body">
     <div class="container">
-      <div id="results-carousel" class="carousel results-carousel">
-       <div class="item">
-        <!-- TODO: Replace with your research result images -->
-        <img src="static/images/carousel1.jpg" alt="First research result visualization" loading="lazy"/>
-        <!-- TODO: Replace with description of this result -->
-        <h2 class="subtitle has-text-centered">
-          First image description.
-        </h2>
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3">Part Functionality</h2>
+          <img src="static/images/functionality.png" alt="Part Functionality" loading="lazy"/>
+          <div class="content has-text-justified">
+          <!-- TODO: Replace with your paper abstract -->
+          <p>
+Illustration of a typical form of human-object interaction. 
+An agent interacts with a receptor, changing its state.
+Part functionality defines how the state change of the receptor maps to the state change of the effector. 
+On the right, we provide an example of human interacting with a knob of the stove. 
+The part function triggers the temperature change of the burner after knob actuation.
+          </p>
+        </div>
+        </div>
       </div>
-      <div class="item">
-        <!-- Your image here -->
-        <img src="static/images/carousel2.jpg" alt="Second research result visualization" loading="lazy"/>
-        <h2 class="subtitle has-text-centered">
-          Second image description.
-        </h2>
-      </div>
-      <div class="item">
-        <!-- Your image here -->
-        <img src="static/images/carousel3.jpg" alt="Third research result visualization" loading="lazy"/>
-        <h2 class="subtitle has-text-centered">
-         Third image description.
-       </h2>
-     </div>
-     <div class="item">
-      <!-- Your image here -->
-      <img src="static/images/carousel4.jpg" alt="Fourth research result visualization" loading="lazy"/>
-      <h2 class="subtitle has-text-centered">
-        Fourth image description.
-      </h2>
     </div>
   </div>
-</div>
-</div>
 </section>
-<!-- End image carousel -->
 
 
-
-
-<!-- Youtube video -->
 <section class="hero is-small is-light">
   <div class="hero-body">
     <div class="container">
-      <!-- Paper video. -->
-      <h2 class="title is-3">Part Functionality</h2>
       <div class="columns is-centered has-text-centered">
         <div class="column is-four-fifths">
-          
-          
+          <h2 class="title is-3">Baseline Method</h2>
+          <img src="static/images/pipeline.png" alt="Baseline Method" loading="lazy"/>
+          <div class="content has-text-justified">
+          <!-- TODO: Replace with your paper abstract -->
+          <p>
+Our baseline framework. 
+We break down the task into 4 steps that are individually targeted with off-the shelf components. 
+First, a VLM generates part descriptions which are used to segment the parts in the video. 
+Then, the geometry of the receptor and the effector are reconstructed, articulation parameters are estimated, and the function template is inferred. 
+These outputs are combined to build the interactive object.
+          </p>
+        </div>
         </div>
       </div>
     </div>
   </div>
 </section>
-<!-- End youtube video -->
 
 
-<!-- Video carousel -->
 <section class="hero is-small">
   <div class="hero-body">
     <div class="container">
-      <h2 class="title is-3">Another Carousel</h2>
-      <div id="results-carousel" class="carousel results-carousel">
-        <div class="item item-video1">
-          <!-- TODO: Add poster image for better preview -->
-          <video poster="" id="video1" controls muted loop height="100%" preload="metadata">
-            <!-- Your video file here -->
-            <source src="static/videos/carousel1.mp4" type="video/mp4">
-          </video>
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3">EgoFun3D Dataset</h2>
+          <style>
+            .dataset-table {
+              width: 100%;
+              border-collapse: collapse;
+              table-layout: fixed;
+            }
+
+            .dataset-table th,
+            .dataset-table td {
+              border: 1px solid #d9e2ec;
+              padding: 1rem;
+              vertical-align: middle;
+            }
+
+            .dataset-table th {
+              width: 18%;
+              background: #f5f7fa;
+              font-weight: 700;
+              text-align: left;
+            }
+
+            .dataset-table td {
+              width: 27.33%;
+            }
+
+            .dataset-media {
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
+              object-position: center;
+              border-radius: 10px;
+              background: #000;
+              display: block;
+            }
+
+            .dataset-media-frame {
+              width: 100%;
+              aspect-ratio: 1 / 1;
+              overflow: hidden;
+              border-radius: 10px;
+              background: #000;
+            }
+
+            .dataset-text {
+              text-align: left;
+              line-height: 1.6;
+            }
+
+            .dataset-image-row {
+              display: flex;
+              gap: 1.5rem;
+              align-items: flex-start;
+              margin: 1.5rem 0;
+            }
+
+            .dataset-image-row img {
+              width: calc(50% - 0.75rem);
+              border-radius: 10px;
+              display: block;
+            }
+
+            @media screen and (max-width: 768px) {
+              .dataset-table,
+              .dataset-table tbody,
+              .dataset-table tr,
+              .dataset-table th,
+              .dataset-table td {
+                display: block;
+                width: 100%;
+              }
+
+              .dataset-table tr {
+                margin-bottom: 1rem;
+              }
+
+              .dataset-table th,
+              .dataset-table td {
+                text-align: left;
+              }
+
+              .dataset-image-row {
+                flex-direction: column;
+                gap: 1rem;
+              }
+
+              .dataset-image-row img {
+                width: 100%;
+              }
+            }
+          </style>
+          <table class="dataset-table">
+            <tbody>
+              <tr>
+                <th>2D Segmentation</th>
+                <td>
+                  <div class="dataset-media-frame">
+                    <video class="dataset-media" controls muted loop preload="metadata">
+                      <source src="static/videos/dataset_segmentation_example1.mp4" type="video/mp4">
+                    </video>
+                  </div>
+                </td>
+                <td>
+                  <div class="dataset-media-frame">
+                    <video class="dataset-media" controls muted loop preload="metadata">
+                      <source src="static/videos/dataset_segmentation_example2.mp4" type="video/mp4">
+                    </video>
+                  </div>
+                </td>
+                <td>
+                  <div class="dataset-media-frame">
+                    <video class="dataset-media" controls muted loop preload="metadata">
+                      <source src="static/videos/dataset_segmentation_example3.mp4" type="video/mp4">
+                    </video>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <th>3D Segmentation and Articulation</th>
+                <td>
+                  <div class="dataset-media-frame">
+                    <video class="dataset-media" controls muted loop preload="metadata">
+                      <source src="static/videos/dataset_reconarti_example1.mp4" type="video/mp4">
+                    </video>
+                  </div>
+                </td>
+                <td>
+                  <div class="dataset-media-frame">
+                    <video class="dataset-media" controls muted loop preload="metadata">
+                      <source src="static/videos/dataset_reconarti_example2.mp4" type="video/mp4">
+                    </video>
+                  </div>
+                </td>
+                <td>
+                  <div class="dataset-media-frame">
+                    <img class="dataset-media" src="static/images/dataset_reconarti_example3.png" alt="3D segmentation and articulation example" loading="lazy"/>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <th>Function Template</th>
+                <td class="dataset-text">
+                  Physical Effect: Fluid Change <br> Mapping: Linear
+                </td>
+                <td class="dataset-text">
+                  Physical Effect: Geometry Change <br> Mapping: Step
+                </td>
+                <td class="dataset-text">
+                  Physical Effect: Illumination Change <br> Mapping: Binary
+                </td>
+              </tr>
+              <tr>
+                <th>Interactive Object</th>
+                <td>
+                  <div class="dataset-media-frame">
+                    <video class="dataset-media" controls muted loop preload="metadata">
+                      <source src="static/videos/dataset_final_example1.mp4" type="video/mp4">
+                    </video>
+                  </div>
+                </td>
+                <td>
+                  <div class="dataset-media-frame">
+                    <video class="dataset-media" controls muted loop preload="metadata">
+                      <source src="static/videos/dataset_final_example2.mp4" type="video/mp4">
+                    </video>
+                  </div>
+                </td>
+                <td>
+                  <div class="dataset-media-frame">
+                    <video class="dataset-media" controls muted loop preload="metadata">
+                      <source src="static/videos/dataset_final_example3.mp4" type="video/mp4">
+                    </video>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <th>Data Source</th>
+                <td class="dataset-text">
+                  Ego-Exo4D
+                </td>
+                <td class="dataset-text">
+                  FunGraph3D
+                </td>
+                <td class="dataset-text">
+                  Self-captured
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="content has-text-justified">
+          <!-- TODO: Replace with your paper abstract -->
+            <p>
+Examples of annotations in our dataset. 
+We provide 2D segmentation masks for hands, receptor (in teal), effector (in orange), and the whole object. 
+We annotate part segmentation for receptor and effector on reconstructed 3D meshes. 
+For articulation, we annotate revolute and prismatic joints, shown as red and green arrows respectively. 
+For the function template, we pick one of four physical effects and one of four numerical expressions. 
+Finally, we show concrete instantiations of interactive objects in different simulators: Genesis (left), Isaac Sim (middle), BEHAVIOR (right).
+            </p>
+          </div>
+          <div class="dataset-image-row">
+            <img src="static/images/object_category_distribution_phy2.png" alt="Object category distribution for physical effects" loading="lazy"/>
+            <img src="static/images/object_category_distribution_func2.png" alt="Object category distribution for mapping" loading="lazy"/>
+          </div>
+          <div class="content has-text-justified">
+          <!-- TODO: Replace with your paper abstract -->
+            <p>
+Our egocentric video dataset distributions across object categories. 
+There are prominent long tail distributions across categories, physical effects, and function mappings, primarily due to inherited biases from source datasets such as Ego-Exo4D.
+            </p>
+          </div>
         </div>
-        <div class="item item-video2">
-          <!-- TODO: Add poster image for better preview -->
-          <video poster="" id="video2" controls muted loop height="100%" preload="metadata">
-            <!-- Your video file here -->
-            <source src="static/videos/carousel2.mp4" type="video/mp4">
-          </video>
-        </div>
-        <div class="item item-video3">
-          <!-- TODO: Add poster image for better preview -->
-          <video poster="" id="video3" controls muted loop height="100%" preload="metadata">
-            <!-- Your video file here -->
-            <source src="static/videos/carousel3.mp4" type="video/mp4">
-          </video>
         </div>
       </div>
     </div>
   </div>
 </section>
-<!-- End video carousel -->
 
 
+<!-- Benchmark Results -->
+<section class="hero is-small is-light">
+  <div class="hero-body">
+    <div class="container">
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3">Benchmark Results</h2>
+          <style>
+            .benchmark-section {
+              margin-top: 2.5rem;
+            }
+
+            .benchmark-grid,
+            .benchmark-table {
+              width: 100%;
+              border-collapse: collapse;
+              table-layout: fixed;
+              margin-top: 1rem;
+            }
+
+            .benchmark-grid td,
+            .benchmark-grid th,
+            .benchmark-table td,
+            .benchmark-table th {
+              border: 1px solid #d9e2ec;
+              padding: 0.9rem;
+              vertical-align: middle;
+            }
+
+            .benchmark-grid th,
+            .benchmark-table th {
+              background: #f5f7fa;
+              font-weight: 700;
+              text-align: left;
+            }
+
+            .benchmark-label {
+              width: 16%;
+            }
+
+            .benchmark-media-frame {
+              width: 100%;
+              aspect-ratio: 1 / 1;
+              overflow: hidden;
+              border-radius: 10px;
+              background: #000;
+            }
+
+            .benchmark-media-frame.is-white {
+              background: #fff;
+            }
+
+            .benchmark-media {
+              width: 100%;
+              height: 100%;
+              display: block;
+              object-fit: cover;
+              object-position: center;
+            }
+
+            video.benchmark-media {
+              background: #000;
+            }
+
+            .benchmark-method {
+              text-align: center;
+              font-weight: 600;
+            }
+
+            .benchmark-empty {
+              min-height: 52px;
+            }
+
+            @media screen and (max-width: 768px) {
+              .benchmark-grid,
+              .benchmark-grid tbody,
+              .benchmark-grid tr,
+              .benchmark-grid td,
+              .benchmark-grid th,
+              .benchmark-table,
+              .benchmark-table tbody,
+              .benchmark-table tr,
+              .benchmark-table td,
+              .benchmark-table th {
+                display: block;
+                width: 100%;
+              }
+
+              .benchmark-grid tr,
+              .benchmark-table tr {
+                margin-bottom: 1rem;
+              }
+            }
+          </style>
+
+          <div class="benchmark-section">
+            <h3 class="title is-4">2D Segmentation</h3>
+            <table class="benchmark-table">
+              <tbody>
+                <tr>
+                  <th rowspan="2">Model</th>
+                  <th colspan="3">IoU (%)</th>
+                  <th colspan="2">Success (%)</th>
+                  <th rowspan="2">Avg. Run. (s)</th>
+                </tr>
+                <tr>
+                  <th>Receptor</th>
+                  <th>Effector</th>
+                  <th>Avg.</th>
+                  <th>Receptor</th>
+                  <th>Effector</th>
+                </tr>
+
+                <tr>
+                  <th>VisionReasoner</th>
+                  <td class="benchmark-empty">14.6</td>
+                  <td class="benchmark-empty">34.9</td>
+                  <td class="benchmark-empty">24.7</td>
+                  <td class="benchmark-empty">7.4</td>
+                  <td class="benchmark-empty">33.9</td>
+                  <td class="benchmark-empty">452</td>
+                </tr>
+
+                <tr>
+                  <th>SAM3 &amp; Qwen3-VL</th>
+                  <td class="benchmark-empty"><strong>30.0</strong></td>
+                  <td class="benchmark-empty"><strong>47.9</strong></td>
+                  <td class="benchmark-empty"><strong>38.8</strong></td>
+                  <td class="benchmark-empty"><strong>23.2</strong></td>
+                  <td class="benchmark-empty"><strong>55.0</strong></td>
+                  <td class="benchmark-empty">2012</td>
+                </tr>
+
+                <tr>
+                  <th>SAM3 &amp; Molmo2</th>
+                  <td class="benchmark-empty">14.0</td>
+                  <td class="benchmark-empty">29.4</td>
+                  <td class="benchmark-empty">21.7</td>
+                  <td class="benchmark-empty">6.6</td>
+                  <td class="benchmark-empty">20.7</td>
+                  <td class="benchmark-empty">392</td>
+                </tr>
+
+                <tr>
+                  <th>X-SAM</th>
+                  <td class="benchmark-empty">2.5</td>
+                  <td class="benchmark-empty">15.0</td>
+                  <td class="benchmark-empty">8.7</td>
+                  <td class="benchmark-empty">0.4</td>
+                  <td class="benchmark-empty">9.2</td>
+                  <td class="benchmark-empty">255</td>
+                </tr>
+
+                <tr>
+                  <th>Sa2VA</th>
+                  <td class="benchmark-empty">14.8</td>
+                  <td class="benchmark-empty">43.4</td>
+                  <td class="benchmark-empty">29.1</td>
+                  <td class="benchmark-empty">1.8</td>
+                  <td class="benchmark-empty">33.2</td>
+                  <td class="benchmark-empty">2006</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="content has-text-justified">
+              <p>
+As downstream pipeline steps rely on segmentation, we select only the parts with average IoU greater than 50% for further evaluation of the downstream modules. 
+We consider such cases to be a segmentation success, and report the success rates additionally.
+We find that SAM3 & Qwen3-VL outperforms other methods by a large margin, but is very inefficient.
+              </p>
+            </div>
+            <table class="benchmark-grid">
+              <tbody>
+                <tr>
+                  <th class="benchmark-label">Ground Truth</th>
+                  <td>
+                    <div class="benchmark-media-frame">
+                      <video class="benchmark-media" controls muted loop preload="metadata">
+                        <source src="static/videos/segmentation_gt_example1.mp4" type="video/mp4">
+                      </video>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="benchmark-media-frame">
+                      <video class="benchmark-media" controls muted loop preload="metadata">
+                        <source src="static/videos/segmentation_gt_example2.mp4" type="video/mp4">
+                      </video>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="benchmark-media-frame">
+                      <video class="benchmark-media" controls muted loop preload="metadata">
+                        <source src="static/videos/segmentation_gt_example3.mp4" type="video/mp4">
+                      </video>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <th class="benchmark-label">SAM3-Agent+Qwen3VL</th>
+                  <td>
+                    <div class="benchmark-media-frame">
+                      <video class="benchmark-media" controls muted loop preload="metadata">
+                        <source src="static/videos/segmentation_pred_example1.mp4" type="video/mp4">
+                      </video>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="benchmark-media-frame">
+                      <video class="benchmark-media" controls muted loop preload="metadata">
+                        <source src="static/videos/segmentation_pred_example2.mp4" type="video/mp4">
+                      </video>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="benchmark-media-frame">
+                      <video class="benchmark-media" controls muted loop preload="metadata">
+                        <source src="static/videos/segmentation_pred_example3.mp4" type="video/mp4">
+                      </video>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="content has-text-justified">
+              <p>
+Example 2D segmentation results. 
+We find that SAM3 with Qwen3-VL provides the best segmentation. 
+The main challenges in this subtask are segmentation of incorrect parts (left) and confusion between part instances across frames (middle). 
+Performance on videos featuring more static viewpoints and no part instance ambiguity is better, though such videos are rare (right).
+              </p>
+            </div>
+          </div>
+
+          <div class="benchmark-section">
+            <h3 class="title is-4">Reconstruction</h3>
+            <table class="benchmark-table">
+              <tbody>
+                <tr>
+                  <th>Method</th>
+                  <th>Receptor CD (m^2)</th>
+                  <th>Effector CD (m^2)</th>
+                  <th>Total CD (m^2)</th>
+                  <th>Camera Rot. Err. (rad)</th>
+                  <th>Camera Tr. Err. (m)</th>
+                </tr>
+                <tr>
+                  <th>MapAnything</th>
+                  <td class="benchmark-empty">0.380</td>
+                  <td class="benchmark-empty">0.953</td>
+                  <td class="benchmark-empty">0.580</td>
+                  <td class="benchmark-empty">1.033</td>
+                  <td class="benchmark-empty">0.742</td>
+                </tr>
+                <tr>
+                  <th>Depth Anything 3</th>
+                  <td class="benchmark-empty"><strong>0.026</strong></td>
+                  <td class="benchmark-empty"><strong>0.014</strong></td>
+                  <td class="benchmark-empty"><strong>0.016</strong></td>
+                  <td class="benchmark-empty"><strong>0.045</strong></td>
+                  <td class="benchmark-empty"><strong>0.049</strong></td>
+                </tr>
+                <tr>
+                  <th>ViPE</th>
+                  <td class="benchmark-empty">0.034</td>
+                  <td class="benchmark-empty">0.021</td>
+                  <td class="benchmark-empty">0.025</td>
+                  <td class="benchmark-empty">0.046</td>
+                  <td class="benchmark-empty">0.058</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="content has-text-justified">
+              <p>
+Evaluating reconstruction. 
+We report the median value of the chamfer distance and mean value of camera pose prediction error.
+Depth Anything 3 performs the best out of the methods we benchmark. 
+MapAnything severely underperforms due to the camera predictions errors. 
+              </p>
+            </div>
+            <table class="benchmark-grid">
+              <tbody>
+                <tr>
+                  <td>
+                    <div class="benchmark-media-frame is-white">
+                      <img class="benchmark-media" src="static/images/reconstruction_gt_example1.png" alt="Reconstruction GT example 1" loading="lazy"/>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="benchmark-media-frame is-white">
+                      <img class="benchmark-media" src="static/images/reconstruction_da3_example1.png" alt="Reconstruction DA3 example 1" loading="lazy"/>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="benchmark-media-frame is-white">
+                      <img class="benchmark-media" src="static/images/reconstruction_mapanything_example1.png" alt="Reconstruction MAP-Anything example 1" loading="lazy"/>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="benchmark-media-frame is-white">
+                      <img class="benchmark-media" src="static/images/reconstruction_vipe_example1.png" alt="Reconstruction VIPE example 1" loading="lazy"/>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <div class="benchmark-media-frame is-white">
+                      <img class="benchmark-media" src="static/images/reconstruction_gt_example2.png" alt="Reconstruction GT example 2" loading="lazy"/>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="benchmark-media-frame is-white">
+                      <img class="benchmark-media" src="static/images/reconstruction_da3_example2.png" alt="Reconstruction DA3 example 2" loading="lazy"/>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="benchmark-media-frame is-white">
+                      <img class="benchmark-media" src="static/images/reconstruction_mapanything_example2.png" alt="Reconstruction MAP-Anything example 2" loading="lazy"/>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="benchmark-media-frame is-white">
+                      <img class="benchmark-media" src="static/images/reconstruction_vipe_example2.png" alt="Reconstruction VIPE example 2" loading="lazy"/>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="benchmark-method">Ground Truth</td>
+                  <td class="benchmark-method">Depth Anything 3</td>
+                  <td class="benchmark-method">MapAnything</td>
+                  <td class="benchmark-method">ViPE</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="content has-text-justified">
+              <p>
+Example results for reconstruction. 
+MapAnything exhibits severe drifting issues as predicted camera poses for different video frames are inaccurate. 
+Other approaches also exhibit significant artifacts. 
+Overall, reconstruction from our egocentric video data is highly challenging for all methods.
+              </p>
+            </div>
+          </div>
+
+          <div class="benchmark-section">
+            <h3 class="title is-4">Articulation Estimation</h3>
+            <table class="benchmark-table">
+              <tbody>
+                <tr>
+                  <th>Method</th>
+                  <th>Joint Axis Err. (Rad)</th>
+                  <th>Joint Origin Err. (m)</th>
+                  <th>Joint Type Acc. (%)</th>
+                  <th>Failure Rate (%)</th>
+                </tr>
+                <tr>
+                  <th>Artipoint</th>
+                  <td class="benchmark-empty">1.057</td>
+                  <td class="benchmark-empty"><strong>0.346</strong></td>
+                  <td class="benchmark-empty"><strong>74.2</strong></td>
+                  <td class="benchmark-empty">46.4</td>
+                </tr>
+                <tr>
+                  <th>iTACO</th>
+                  <td class="benchmark-empty"><strong>1.022</strong></td>
+                  <td class="benchmark-empty">0.665</td>
+                  <td class="benchmark-empty">26.8</td>
+                  <td class="benchmark-empty"><strong>5.6</strong></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="content has-text-justified">
+              <p>
+Evaluating articulation parameters estimation. 
+We report the mean error across the videos that successfully go through the whole pipeline. 
+We find that Artipoint is more accurate than iTACO, but is less robust. 
+The overall performance for both methods is very low, indicating that articulation estimation is one of the bottlenecks.
+              </p>
+            </div>
+            <table class="benchmark-grid">
+              <tbody>
+                <tr>
+                  <td>
+                    <div class="benchmark-media-frame is-white">
+                      <img class="benchmark-media" src="static/images/articulation_gt_example1.png" alt="Articulation GT example 1" loading="lazy"/>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="benchmark-media-frame is-white">
+                      <img class="benchmark-media" src="static/images/articulation_artipoint_example1.png" alt="Articulation ArtiPoint example 1" loading="lazy"/>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="benchmark-media-frame is-white">
+                      <img class="benchmark-media" src="static/images/articulation_itaco_example1.png" alt="Articulation ItaCo example 1" loading="lazy"/>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <div class="benchmark-media-frame is-white">
+                      <img class="benchmark-media" src="static/images/articulation_gt_example2.png" alt="Articulation GT example 2" loading="lazy"/>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="benchmark-media-frame is-white">
+                      <img class="benchmark-media" src="static/images/articulation_artipoint_example2.png" alt="Articulation ArtiPoint example 2" loading="lazy"/>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="benchmark-media-frame is-white">
+                      <img class="benchmark-media" src="static/images/articulation_itaco_example2.png" alt="Articulation ItaCo example 2" loading="lazy"/>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="benchmark-method">Ground Truth</td>
+                  <td class="benchmark-method">ArtiPoint</td>
+                  <td class="benchmark-method">iTACO</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="content has-text-justified">
+              <p>
+Example results for articulation estimation. 
+Red arrows refer to revolute joints and green arrows refer to prismatic joints. 
+In the left example, iTACO predicts incorrect joint types, whereas Artipoint is correct. 
+However, both methods struggle with small parts such as the stove knob shown here.
+              </p>
+            </div>
+          </div>
+
+          <div class="benchmark-section">
+            <h3 class="title is-4">Function Prediction</h3>
+            <table class="benchmark-table">
+              <tbody>
+                <tr>
+                  <th>Method</th>
+                  <th>Physical Effect Acc. (%)</th>
+                  <th>Mapping Acc. (%)</th>
+                  <th>Overall Acc. (%)</th>
+                </tr>
+                <tr>
+                  <th>Gemini 3 Flash</th>
+                  <td class="benchmark-empty">95.2</td>
+                  <td class="benchmark-empty"><strong>97.6</strong></td>
+                  <td class="benchmark-empty"><strong>92.9</strong></td>
+                </tr>
+                <tr>
+                  <th>GPT-5 mini</th>
+                  <td class="benchmark-empty">88.1</td>
+                  <td class="benchmark-empty">90.5</td>
+                  <td class="benchmark-empty">83.3</td>
+                </tr>
+                <tr>
+                  <th>Molmo2 8B</th>
+                  <td class="benchmark-empty">90.5</td>
+                  <td class="benchmark-empty">31.0</td>
+                  <td class="benchmark-empty">28.6</td>
+                </tr>
+                <tr>
+                  <th>Qwen3-VL 8B</th>
+                  <td class="benchmark-empty"><strong>97.6</strong></td>
+                  <td class="benchmark-empty">76.2</td>
+                  <td class="benchmark-empty">76.2</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="content has-text-justified">
+              <p>
+Evaluation of function template inference accuracy. 
+We report prediction accuracy for physical effect, mapping, and overall accuracy. 
+A function template is correct if both effect and mapping are correct. 
+We only report accuracy across videos where both receptor and effector segmentation IoUs are larger than 0.5. 
+Among the four different VLMs we benchmarked on this task, Gemini-3-flash performs the best.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- End benchmark results -->
 
 
+<!-- Final Results Carousel -->
+<style>
+  #results-carousel .slider,
+  #results-carousel .slider-container,
+  #results-carousel .slider-item {
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  .final-carousel-pair {
+    margin: 0;
+  }
+
+  .final-carousel-video {
+    width: 100%;
+    display: block;
+    background: #000;
+    border-radius: 10px;
+  }
+
+  .final-carousel-caption {
+    margin-top: 0.65rem;
+    display: block;
+    text-align: center;
+    font-weight: 600;
+    color: #363636;
+  }
+</style>
+<section class="hero is-small">
+  <div class="hero-body">
+    <div class="container">
+      <h2 class="title is-3 has-text-centered">Final Interactive Object</h2>
+      <div id="results-carousel" class="carousel results-carousel">
+        <div class="item item-final1">
+          <div class="columns is-variable is-4 is-mobile">
+            <div class="column has-text-centered">
+              <figure class="final-carousel-pair">
+                <video class="final-carousel-video" id="final-gt-1" controls muted loop preload="metadata">
+                  <source src="static/videos/final_gt_example1.mp4" type="video/mp4">
+                </video>
+                <figcaption class="final-carousel-caption">Ground Truth</figcaption>
+              </figure>
+            </div>
+            <div class="column has-text-centered">
+              <figure class="final-carousel-pair">
+                <video class="final-carousel-video" id="final-pred-1" controls muted loop preload="metadata">
+                  <source src="static/videos/final_pred_example1.mp4" type="video/mp4">
+                </video>
+                <figcaption class="final-carousel-caption">Prediction</figcaption>
+              </figure>
+            </div>
+          </div>
+        </div>
+        <div class="item item-final2">
+          <div class="columns is-variable is-4 is-mobile">
+            <div class="column has-text-centered">
+              <figure class="final-carousel-pair">
+                <video class="final-carousel-video" id="final-gt-2" controls muted loop preload="metadata">
+                  <source src="static/videos/final_gt_example2.mp4" type="video/mp4">
+                </video>
+                <figcaption class="final-carousel-caption">Ground Truth</figcaption>
+              </figure>
+            </div>
+            <div class="column has-text-centered">
+              <figure class="final-carousel-pair">
+                <video class="final-carousel-video" id="final-pred-2" controls muted loop preload="metadata">
+                  <source src="static/videos/final_pred_example2.mp4" type="video/mp4">
+                </video>
+                <figcaption class="final-carousel-caption">Prediction</figcaption>
+              </figure>
+            </div>
+          </div>
+        </div>
+        <div class="item item-final3">
+          <div class="columns is-variable is-4 is-mobile">
+            <div class="column has-text-centered">
+              <figure class="final-carousel-pair">
+                <video class="final-carousel-video" id="final-gt-3" controls muted loop preload="metadata">
+                  <source src="static/videos/final_gt_example3.mp4" type="video/mp4">
+                </video>
+                <figcaption class="final-carousel-caption">Ground Truth</figcaption>
+              </figure>
+            </div>
+            <div class="column has-text-centered">
+              <figure class="final-carousel-pair">
+                <video class="final-carousel-video" id="final-pred-3" controls muted loop preload="metadata">
+                  <source src="static/videos/final_pred_example3.mp4" type="video/mp4">
+                </video>
+                <figcaption class="final-carousel-caption">Prediction</figcaption>
+              </figure>
+            </div>
+          </div>
+        </div>
+        <div class="item item-final4">
+          <div class="columns is-variable is-4 is-mobile">
+            <div class="column has-text-centered">
+              <figure class="final-carousel-pair">
+                <video class="final-carousel-video" id="final-gt-4" controls muted loop preload="metadata">
+                  <source src="static/videos/final_gt_example4.mp4" type="video/mp4">
+                </video>
+                <figcaption class="final-carousel-caption">Ground Truth</figcaption>
+              </figure>
+            </div>
+            <div class="column has-text-centered">
+              <figure class="final-carousel-pair">
+                <video class="final-carousel-video" id="final-pred-4" controls muted loop preload="metadata">
+                  <source src="static/videos/final_pred_example4.mp4" type="video/mp4">
+                </video>
+                <figcaption class="final-carousel-caption">Prediction</figcaption>
+              </figure>
+            </div>
+          </div>
+        </div>
+        <div class="item item-final5">
+          <div class="columns is-variable is-4 is-mobile">
+            <div class="column has-text-centered">
+              <figure class="final-carousel-pair">
+                <video class="final-carousel-video" id="final-gt-5" controls muted loop preload="metadata">
+                  <source src="static/videos/final_gt_example5.mp4" type="video/mp4">
+                </video>
+                <figcaption class="final-carousel-caption">Ground Truth</figcaption>
+              </figure>
+            </div>
+            <div class="column has-text-centered">
+              <figure class="final-carousel-pair">
+                <video class="final-carousel-video" id="final-pred-5" controls muted loop preload="metadata">
+                  <source src="static/videos/final_pred_example5.mp4" type="video/mp4">
+                </video>
+                <figcaption class="final-carousel-caption">Prediction</figcaption>
+              </figure>
+            </div>
+          </div>
+        </div>
+        <div class="item item-final6">
+          <div class="columns is-variable is-4 is-mobile">
+            <div class="column has-text-centered">
+              <figure class="final-carousel-pair">
+                <video class="final-carousel-video" id="final-gt-6" controls muted loop preload="metadata">
+                  <source src="static/videos/final_gt_example6.mp4" type="video/mp4">
+                </video>
+                <figcaption class="final-carousel-caption">Ground Truth</figcaption>
+              </figure>
+            </div>
+            <div class="column has-text-centered">
+              <figure class="final-carousel-pair">
+                <video class="final-carousel-video" id="final-pred-6" controls muted loop preload="metadata">
+                  <source src="static/videos/final_pred_example6.mp4" type="video/mp4">
+                </video>
+                <figcaption class="final-carousel-caption">Prediction</figcaption>
+              </figure>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="content has-text-justified">
+        <p>
+Qualitative results of the final outputs of our system. 
+For each pair of videos, the left video shows the ground truth and the right video shows the prediction.
+The faucet results are from Genesis, the stove and lamp results are from BEHAVIOR, and the fridge door result is from Isaac Sim.
+We use teal to indicate receptors and orange to indicate effectors. 
+          </p>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- End final results carousel -->
 
 
 <!-- Paper poster -->
 <section class="hero is-small is-light">
   <div class="hero-body">
     <div class="container">
-      <h2 class="title">Poster</h2>
-
-      <!-- TODO: Replace with your poster PDF -->
-      <iframe  src="static/pdfs/sample.pdf" width="100%" height="550">
-          </iframe>
-        
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <h2 class="title is-3">Acknowledgment</h2>
+          <div class="content has-text-justified">
+            <p>
+This work was funded in part by a Canada Research Chair, NSERC Discovery Grant, and enabled by support from the Digital Research Alliance of Canada. 
+The authors would like to thank Tianrun Hu from National University of Singapore for collecting data, Jiayi Liu, Xingguang Yan, Austin T. Wang, and Morteza Badali for valuable discussions and proofreading.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 <!--End paper poster -->
 
 
