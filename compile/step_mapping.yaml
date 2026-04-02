@@ -1,0 +1,11 @@
+type: step
+template: "def step_mapping(receptor_state):
+    if receptor_state < RECEPTOR_STATE:
+        effector_state = EFFECTOR_STATE1
+    else:
+        effector_state = EFFECTOR_STATE2
+    return effector_state"
+parameters:
+    - RECEPTOR_STATE
+    - EFFECTOR_STATE1
+    - EFFECTOR_STATE2

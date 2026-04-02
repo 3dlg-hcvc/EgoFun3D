@@ -1,0 +1,6 @@
+type: linear
+template: "def linear_mapping(receptor_state):
+    effector_state = COEFFICIENT * receptor_state
+    return effector_state"
+parameters:
+    - COEFFICIENT
