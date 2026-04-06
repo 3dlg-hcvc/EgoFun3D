@@ -1,12 +1,9 @@
-model: "SegZero"
-reasoning_model_path: "Ricky06662/VisionReasoner-7B"
-segmentation_model_path: "facebook/sam2.1-hiera-large"
+model: "XSam"
+reasoning_model_path: null
 device: "cuda"
 use_gt_depth: false
 save_results: true
-max_query: 10
-sam_backend: "sam2"
-sam3_confidence_threshold: 0.5
+max_query: 1
 frame_subsample: 20
 disable_vlm_judge: false
 propagate_with_sam3: true
@@ -16,6 +13,13 @@ sam3_propagation:
   checkpoint_path: null
   bpe_path: null
   offload_video_to_cpu: false
+xsam:
+  code_root: "third_party/X-SAM/xsam"
+  config_path: "xsam/configs/xsam/s3_mixed_finetune/xsam_qwen3_4b_instruct_siglip2_so400m_p14_384_sam_large_m2f_gpu16_mixed_finetune.py"
+  checkpoint_path: "third_party/X-SAM/inits/X-SAM/s3_mixed_finetune/xsam_qwen3_4b_instruct_siglip2_so400m_p14_384_sam_large_m2f_gpu16_mixed_finetune/pytorch_model.bin"
+  score_thr: 0.5
+  max_query: 1
+  prompt_template: "Can you segment <p>{PartDescription}</p> in this image? Please output the corresponding segmentation mask."
 vlm_judge:
   role: "segmentation_judge"
   vlm_model: "gemini-2.5-flash"

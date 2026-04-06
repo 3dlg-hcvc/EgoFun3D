@@ -9,8 +9,6 @@ import os
 from torch.utils.data import DataLoader
 import pickle
 
-from PIL import Image as PILImage
-
 from dataset.dataset import build_dataset
 from segmentation.ref_seg import RefSeg, build_refseg_model
 from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion, TrackingFusion
@@ -19,6 +17,8 @@ from fusion.evaluate_reconstruction import save_mesh, save_reconstruction_metric
 from articulation.base import build_articulation_estimation_model, ArticulationEstimation
 from articulation.evaluate_articulation import compute_joint_error, save_articulation_metrics, save_articulation_results
 from VLM.prompt_vlm import build_vlm_prompter, VLMPrompter
+from eval_segmentation import segment_scene
+from segmentation.workflow import align_masks_to_sampled_frames
 from function.evaluate_function import compute_function_error, save_function_results
 from utils.reconstruction_utils import refine_point_mask
 
@@ -63,6 +63,8 @@ def evaluate(
         print("Debug mode enabled: Limiting evaluation dataset to 1 sample.")
         max_dataset_size = 1
     data_count = 0
+    segmentation_vlm = None
+    sam3_tracker = None
 
     for data in eval_dataloader:
         print("Evaluating data:", data["video_name"])
@@ -71,8 +73,6 @@ def evaluate(
 
         video_name = data["video_name"]
         video_frame_list = data["rgb_list"]  # list of numpy arrays (H, W, 3)
-        pil_frame_list = [PILImage.fromarray(frame) for frame in video_frame_list]
-
         reconstruction_results = None
         tracks3d = None
         kptsA_origin_dict = {}
@@ -80,20 +80,34 @@ def evaluate(
         pred_masks_by_role = {}
         transformation_list_by_role = {}
 
+        scene_segmentation, refseg_model, segmentation_vlm, sam3_tracker = segment_scene(
+            data,
+            config,
+            save_dir,
+            refseg_model=refseg_model,
+            vlm_prompter=segmentation_vlm,
+            sam3_tracker=sam3_tracker,
+        )
+        if scene_segmentation is None:
+            print(f"Warning: segmentation failed for {video_name}. Skipping this sample.")
+            data_count += 1
+            continue
+        role_grouped_results = scene_segmentation.get("grouped_results", {})
+
         # ── Segmentation + Reconstruction + Fusion per role ────────────────
         for role in ["receptor", "effector"]:
-            part_description = data[f"{role}_name"]
+            if role not in scene_segmentation.get("roles", {}):
+                print(f"Warning: No segmentation outputs found for role '{role}'.")
+                continue
+            part_description = role_grouped_results.get(role, {}).get("description", data.get(f"{role}_name", role))
             print(f"Segmenting role '{role}': {part_description}")
 
-            pred_mask_list, answer_dict_list, valid_frame_ids = refseg_model.segment_video(
-                pil_frame_list, part_description
+            pred_masks_by_role[role] = align_masks_to_sampled_frames(
+                data,
+                scene_segmentation["roles"][role]["full_masks"],
             )
-            pred_masks_by_role[role] = np.stack(pred_mask_list, axis=0)  # (T, H, W)
-
-            save_seg_dir = os.path.join(save_dir, video_name, f"segmentation_{role}")
-            os.makedirs(save_seg_dir, exist_ok=True)
-            for i, mask in enumerate(pred_mask_list):
-                np.save(os.path.join(save_seg_dir, f"segmentation_mask_{i:04d}.npy"), mask)
+            pred_mask_list = pred_masks_by_role[role]
+            valid_frame_ids = [i for i, mask in enumerate(pred_mask_list) if mask.sum() > 0]
 
             if len(valid_frame_ids) == 0:
                 print(f"Warning: No valid frames for role '{role}'. Skipping reconstruction for this role.")

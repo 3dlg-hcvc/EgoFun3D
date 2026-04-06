@@ -1,12 +1,9 @@
-model: "SegZero"
-reasoning_model_path: "Ricky06662/VisionReasoner-7B"
-segmentation_model_path: "facebook/sam2.1-hiera-large"
+model: "Sa2VA"
+reasoning_model_path: null
 device: "cuda"
 use_gt_depth: false
 save_results: true
-max_query: 10
-sam_backend: "sam2"
-sam3_confidence_threshold: 0.5
+max_query: 1
 frame_subsample: 20
 disable_vlm_judge: false
 propagate_with_sam3: true
@@ -16,6 +13,14 @@ sam3_propagation:
   checkpoint_path: null
   bpe_path: null
   offload_video_to_cpu: false
+sa2va:
+  model_path: "ByteDance/Sa2VA-Qwen3-VL-4B"
+  torch_dtype: "bfloat16"
+  max_new_tokens: 1024
+  max_query: 1
+  union_multi_seg_tokens: true
+  prompt_template: "<image>Please segment the part in the following description: {PartDescription}."
+  use_custom_device_map: false
 vlm_judge:
   role: "segmentation_judge"
   vlm_model: "gemini-2.5-flash"

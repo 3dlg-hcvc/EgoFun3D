@@ -16,6 +16,7 @@ import loguru
 from dataset.dataset import Dataset, build_dataset
 from articulation.base import build_articulation_estimation_model, ArticulationEstimation
 from articulation.evaluate_articulation import compute_joint_error, save_articulation_metrics, save_articulation_results
+from segmentation.workflow import load_segmentation_masks_for_sample
 
 MAX_JOINT_ORI_ERROR = np.pi / 2
 MAX_JOINT_POS_ERROR = 1.0
@@ -39,8 +40,7 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
     if config.debug:
         loguru.logger.debug("Debug mode enabled: Limiting evaluation dataset to 1 sample.")
         max_dataset_size = 1
-    data_count = 0
-    for data in eval_dataloader:
+    for data_count, data in enumerate(eval_dataloader):
         # data = batch[0]  # batch size is 1
         loguru.logger.info(f"Evaluating data: {data['video_name']}")
         if config.debug and data_count >= max_dataset_size:
@@ -91,12 +91,7 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
                     }
                     save_articulation_metrics(articulation_metrics, f"{save_articulation_dir}/articulation_metrics_{role}_pred_mask.json")
                     continue
-                mask_list = []
-                for i in range(len(video_frame_list)):
-                    mask = np.load(f"{role_mask_dir}/segmentation_mask_{i:04d}.npy")
-                    mask_list.append(mask)
-                mask_list = np.stack(mask_list, axis=0)  # (T, H, W)
-                mask_list = mask_list[:, data["cropped_top_left"][1]:data["cropped_bottom_right"][1], data["cropped_top_left"][0]:data["cropped_bottom_right"][0]]
+                mask_list = load_segmentation_masks_for_sample(data, role_mask_dir)
                 valid_frame_ids = [i for i, mask in enumerate(mask_list) if mask.sum() > 0]
 
             # load reconstruction

@@ -14,6 +14,7 @@ import loguru
 from dataset.dataset import Dataset, build_dataset
 from VLM.prompt_vlm import build_vlm_prompter, VLMPrompter
 from function.evaluate_function import compute_function_error, save_function_results
+from segmentation.workflow import load_segmentation_masks_for_sample
 
 
 def set_seed(seed: int):
@@ -34,8 +35,7 @@ def evaluate(eval_dataloader: DataLoader, vlm: VLMPrompter, config: omegaconf.Di
     if config.debug:
         loguru.logger.debug("Debug mode enabled: Limiting evaluation dataset to 1 sample.")
         max_dataset_size = 1
-    data_count = 0
-    for data in eval_dataloader:
+    for data_count, data in enumerate(eval_dataloader):
         # data = batch[0]  # batch size is 1
         loguru.logger.info(f"Evaluating data: {data['video_name']}")
         if config.debug and data_count >= max_dataset_size:
@@ -81,18 +81,8 @@ def evaluate(eval_dataloader: DataLoader, vlm: VLMPrompter, config: omegaconf.Di
                 save_function_results(function_error_metrics, f"{save_function_dir}/function_metrics_pred_mask.json")
                 save_function_results(function_results, f"{save_function_dir}/function_results_pred_mask.json")
                 continue
-            receptor_mask_list = []
-            for i in range(len(video_frame_list)):
-                mask = np.load(f"{receptor_mask_dir}/segmentation_mask_{i:04d}.npy")
-                receptor_mask_list.append(mask)
-            receptor_mask_list = np.stack(receptor_mask_list, axis=0)
-            receptor_mask_list = receptor_mask_list[:, data["cropped_top_left"][1]:data["cropped_bottom_right"][1], data["cropped_top_left"][0]:data["cropped_bottom_right"][0]]
-            effector_mask_list = []
-            for i in range(len(video_frame_list)):
-                mask = np.load(f"{effector_mask_dir}/segmentation_mask_{i:04d}.npy")
-                effector_mask_list.append(mask)
-            effector_mask_list = np.stack(effector_mask_list, axis=0)
-            effector_mask_list = effector_mask_list[:, data["cropped_top_left"][1]:data["cropped_bottom_right"][1], data["cropped_top_left"][0]:data["cropped_bottom_right"][0]]
+            receptor_mask_list = load_segmentation_masks_for_sample(data, receptor_mask_dir)
+            effector_mask_list = load_segmentation_masks_for_sample(data, effector_mask_dir)
 
         # run articulation estimation
         function_results = vlm.prompt_function(video_frame_list, receptor_mask_list, effector_mask_list)

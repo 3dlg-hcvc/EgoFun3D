@@ -39,7 +39,8 @@ class UniformDataset(Dataset):
         # rgb
         # rgb_list, rgb_path_list = self.load_video(video_path)
         rgb_list, full_video_path = self.load_video(video_path)
-        sample_indices = self.get_sample_indices(len(rgb_list))
+        full_num_frames = len(rgb_list)
+        sample_indices = self.get_sample_indices(full_num_frames)
         rgb_list = [rgb_list[i] for i in sample_indices]
         # rgb_path_list = [rgb_path_list[i] for i in sample_indices]
 
@@ -77,6 +78,7 @@ class UniformDataset(Dataset):
         data_dict = {
             "video_name": video_name,
             "video_path": full_video_path,
+            "video_mask_path": os.path.join(self.root_path, video_dict["video_mask_path"]),
             "rgb_list": rgb_list,
             # "rgb_path_list": rgb_path_list,
             "camera_extrinsics": camera_extrinsics,
@@ -93,7 +95,8 @@ class UniformDataset(Dataset):
             "receptor_articulation": receptor_articulation,
             "effector_articulation": effector_articulation,
             "function_annotation": function_annotation,
-            "sample_indices": sample_indices
+            "sample_indices": sample_indices,
+            "num_total_frames": int(full_num_frames)
         }
         return data_dict
     
@@ -136,7 +139,7 @@ class UniformDataset(Dataset):
         else:
             camera_intrinsics = np.array(camera_intrinsics_data["undistorted_intrinsics"])
             cropped_top_left = [0, 0]
-            cropped_bottom_right = camera_intrinsics_data["origin_frame_size"]
+            cropped_bottom_right = camera_intrinsics_data["original_frame_size"]
         return camera_extrinsics, camera_intrinsics, cropped_top_left, cropped_bottom_right
     
     def load_2d_masks(self, mask_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, str, str, str]:

@@ -17,6 +17,7 @@ from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion,
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction
 from fusion.evaluate_reconstruction import save_mesh, save_reconstruction_metrics, evaluate_reconstruction, save_pcd, save_reconstruction_results
 from utils.reconstruction_utils import refine_point_mask, depth2xyz_world
+from segmentation.workflow import load_segmentation_masks_for_sample
 
 
 def set_seed(seed: int):
@@ -42,8 +43,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
     if config.debug:
         print("Debug mode enabled: Limiting evaluation dataset to 1 sample.")
         max_dataset_size = 1
-    data_count = 0
-    for data in eval_dataloader:
+    for data_count, data in enumerate(eval_dataloader):
         start_time = time.time()
         # data = batch[0]  # batch size is 1
         print("Evaluating data:", data["video_name"])
@@ -92,12 +92,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                     }
                     save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}_pred_mask.json")
                     continue
-                mask_list = []
-                for i in range(len(video_frame_list)):
-                    mask = np.load(f"{role_mask_dir}/segmentation_mask_{i:04d}.npy")
-                    mask_list.append(mask)
-                mask_list = np.stack(mask_list, axis=0)
-                mask_list = mask_list[:, data["cropped_top_left"][1]:data["cropped_bottom_right"][1], data["cropped_top_left"][0]:data["cropped_bottom_right"][0]]
+                mask_list = load_segmentation_masks_for_sample(data, role_mask_dir)
                 valid_frame_ids = [i for i, mask in enumerate(mask_list) if mask.sum() > 0]
 
             # run reconstruction

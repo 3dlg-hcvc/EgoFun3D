@@ -1,12 +1,10 @@
-model: "SegZero"
-reasoning_model_path: "Ricky06662/VisionReasoner-7B"
-segmentation_model_path: "facebook/sam2.1-hiera-large"
+model: "SAM3Agent"
+reasoning_model_path: null
+segmentation_model_path: "facebook/sam3"
 device: "cuda"
 use_gt_depth: false
 save_results: true
-max_query: 10
-sam_backend: "sam2"
-sam3_confidence_threshold: 0.5
+max_query: 1
 frame_subsample: 20
 disable_vlm_judge: false
 propagate_with_sam3: true
@@ -16,6 +14,13 @@ sam3_propagation:
   checkpoint_path: null
   bpe_path: null
   offload_video_to_cpu: false
+sam3:
+  llm_server_url: "http://0.0.0.0:8001/v1"
+  llm_model: "Qwen/Qwen3-VL-8B-Thinking"
+  llm_api_key: ""
+  confidence_threshold: 0.5
+  max_generations: 10
+  output_dir: "sam3_agent_out"
 vlm_judge:
   role: "segmentation_judge"
   vlm_model: "gemini-2.5-flash"

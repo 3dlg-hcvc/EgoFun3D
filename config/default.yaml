@@ -7,6 +7,13 @@ reconstruction_results_dir: ???
 debug: False
 pred_mask: False
 pred_mask_iou_threshold: 0.5
+gt_labels: false
+from_existing: false
+from_shared_vlm: false
+save_shared_vlm: false
+disable_vlm_calls: false
+vlm_only: false
+shared_vlm_root: null
 segmentation_results_dir: "/project/3dlg-hcvc/FunGraph3D/www/video_segmentation_results/sam3/full_dataset_gamini3_flash_labels"
 save_mesh: True
 
