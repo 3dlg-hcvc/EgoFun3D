@@ -8,6 +8,7 @@ debug: False
 pred_mask: False
 pred_mask_iou_threshold: 0.5
 segmentation_results_dir: "outputs/full_dataset_gamini3_flash_labels"
+save_mesh: False
 
 defaults:
   - dataset: dataset

@@ -15,7 +15,7 @@ import time
 from dataset.dataset import Dataset, build_dataset
 from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion, TrackingFusion
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction
-from fusion.evaluate_reconstruction import save_reconstruction_metrics, evaluate_reconstruction, save_pcd, save_reconstruction_results
+from fusion.evaluate_reconstruction import save_mesh, save_reconstruction_metrics, evaluate_reconstruction, save_pcd, save_reconstruction_results
 from utils.reconstruction_utils import refine_point_mask
 
 
@@ -30,6 +30,11 @@ def identity_collate(batch):
     # batch is a list of dataset items
     # with batch_size=1, just return the single element
     return batch[0]
+
+
+def _get_mesh_save_path(save_dir: str, role: str, pred_mask: bool, mesh_format: str = "glb") -> str:
+    suffix = "_pred_mask" if pred_mask else ""
+    return os.path.join(save_dir, f"{role}_mesh{suffix}.{mesh_format}")
 
 
 def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: BaseFusion, reconstruction_model: BaseReconstruction, config: DictConfig, save_dir: str):
@@ -48,6 +53,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         tracks3d = None
         kptsA_origin_dict = {}
         kptsB_origin_dict = {}
+        video_frame_list = data["rgb_list"]
         save_pcd_dir = os.path.join(save_dir, data["video_name"], "reconstruction")
         if os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz") and not config.pred_mask:
             print("Reconstruction results already exist, skipping reconstruction and evaluation for this sample.")
@@ -60,7 +66,6 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         project = False
         for role in ["receptor", "effector"]:
             role_start = time.time()
-            video_frame_list = data["rgb_list"]
             if not config.pred_mask:
                 mask_list = data[f"{role}_mask_list"]
                 valid_frame_ids = [i for i, mask in enumerate(mask_list) if mask.sum() > 0]
@@ -147,19 +152,19 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 points_mask = points_mask_list[i]
                 combined_mask = np.logical_and(points_mask, mask_list[i])
                 valid_mask_list.append(combined_mask)
-            # valid_image_path_list = [data["rgb_path_list"][i] for i in valid_frame_ids]
+            valid_video_frame_list = [video_frame_list[i] for i in valid_frame_ids]
             intrinsics = reconstruction_results["intrinsics"]
             valid_points_map_list = [reconstruction_results["points"][i] for i in valid_frame_ids]
             
             fuse_start = time.time()
             if isinstance(fusion_model, FeatureMatchingFusion):
-                fused_part_pcd, transformation_list, kptsA_origin_dict, kptsB_origin_dict = fusion_model.fuse_part_pcds(video_frame_list, valid_mask_list, valid_points_map_list, kptsA_origin_dict, kptsB_origin_dict)
+                fused_part_pcd, transformation_list, kptsA_origin_dict, kptsB_origin_dict = fusion_model.fuse_part_pcds(valid_video_frame_list, valid_mask_list, valid_points_map_list, kptsA_origin_dict, kptsB_origin_dict)
                 # print("kpts len:", len(kptsA_origin_dict), len(kptsB_origin_dict))
             elif isinstance(fusion_model, TrackingFusion):
                 if tracks3d is None:
                     tracks3d = fusion_model.tracking_video(video_frame_list, reconstruction_results["depth"], reconstruction_results["extrinsics"], intrinsics, reconstruction_results["points_mask"])
                 valid_tracks3d = [tracks3d[i] for i in valid_frame_ids]
-                fused_part_pcd, transformation_list = fusion_model.fuse_part_pcds(video_frame_list, valid_mask_list, valid_points_map_list, valid_tracks3d)
+                fused_part_pcd, transformation_list = fusion_model.fuse_part_pcds(valid_video_frame_list, valid_mask_list, valid_points_map_list, valid_tracks3d)
             fuse_end = time.time()
             print(f"Fusion time: {fuse_end - fuse_start:.2f} seconds")
             # Evaluate reconstruction
@@ -182,9 +187,49 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}.json")
             else:
                 save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}_pred_mask.json")
+            if config.save_mesh:
+                save_mesh(
+                    reconstruction_results=reconstruction_results,
+                    image_list=video_frame_list,
+                    mask_list=mask_list,
+                    transformation_list=transformation_list,
+                    save_path=_get_mesh_save_path(save_pcd_dir, role, config.pred_mask),
+                    observation_indices=np.asarray(valid_frame_ids, dtype=int),
+                )
             role_end = time.time()
             print(f"Total time for {role} (including fusion and evaluation): {role_end - role_start:.2f} seconds")
         if reconstruction_results is not None and not config.pred_mask:
+            if config.save_mesh:
+                base_mask_list = np.logical_and(
+                    data["object_mask_list"],
+                    np.logical_not(np.logical_or(data["receptor_mask_list"], data["effector_mask_list"]))
+                )
+                base_valid_frame_ids = [i for i, mask in enumerate(base_mask_list) if mask.sum() > 0]
+                if len(base_valid_frame_ids) > 0:
+                    base_valid_mask_list = []
+                    for i in base_valid_frame_ids:
+                        base_valid_mask_list.append(np.logical_and(reconstruction_results["points_mask"][i], base_mask_list[i]))
+                    base_valid_points_map_list = [reconstruction_results["points"][i] for i in base_valid_frame_ids]
+                    base_video_frame_list = [video_frame_list[i] for i in base_valid_frame_ids]
+                    if isinstance(fusion_model, FeatureMatchingFusion):
+                        base_feature_fusion_model = fusion_model
+                    else:
+                        base_feature_fusion_model = FeatureMatchingFusion(device=config.fusion.device)
+                    _, base_transformation_list, _, _ = base_feature_fusion_model.fuse_part_pcds(
+                        base_video_frame_list,
+                        base_valid_mask_list,
+                        base_valid_points_map_list,
+                        kptsA_origin_dict,
+                        kptsB_origin_dict,
+                    )
+                    save_mesh(
+                        reconstruction_results=reconstruction_results,
+                        image_list=video_frame_list,
+                        mask_list=base_mask_list,
+                        transformation_list=base_transformation_list,
+                        save_path=_get_mesh_save_path(save_pcd_dir, "base", False),
+                        observation_indices=np.asarray(base_valid_frame_ids, dtype=int),
+                    )
             save_reconstruction_results(reconstruction_results, f"{save_pcd_dir}/reconstruction_results.pkl.gz")
         data_count += 1
         end_time = time.time()
