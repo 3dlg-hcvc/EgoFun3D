@@ -1,11 +1,19 @@
+import json
 import yaml
 import os
+import open3d as o3d
+from build_urdf import generate_urdf_from_open3d_meshes
 
 
 dir_abs_path = os.path.dirname(os.path.abspath(__file__))
 
+PHYSICAL_EFFECT_MAP = {"a": "geometry", "b": "illumination", "c": "temperature", "d": "fluid"}
+NUMERICAL_FUNCTION_MAP = {"a": "binary", "b": "step", "c": "linear", "d": "cumulative"}
+
 def load_parameters(physical_effect: str) -> dict:
-    parameter_config_file = os.path.join(dir_abs_path, f"{physical_effect}_function.yaml")
+    parameter_config_file = os.path.join(dir_abs_path, f"{physical_effect}_parameters.yaml")
+    if not os.path.exists(parameter_config_file):
+        parameter_config_file = os.path.join(dir_abs_path, f"{physical_effect}_function.yaml")
     with open(parameter_config_file, 'r') as f:
         parameters = yaml.safe_load(f)
     return parameters
@@ -146,3 +154,252 @@ def build_geometry_function(physics_parameters: dict, mapping_config: dict, usd_
 
     with open(os.path.join(dir_abs_path, "geometry_function_instanced.py"), 'w') as f:
         f.write(geometry_function_code)
+
+
+def _normalize_physical_effect(physical_effect: str) -> str:
+    normalized_effect = physical_effect.strip().lower()
+    effect_aliases = {
+        "fluid": "fluid",
+        "geometry": "geometry",
+        "geometric": "geometry",
+    }
+    if normalized_effect not in effect_aliases:
+        supported_effects = ", ".join(sorted(effect_aliases))
+        raise ValueError(
+            f"Unsupported physical effect: {physical_effect}. Supported values: {supported_effects}"
+        )
+    return effect_aliases[normalized_effect]
+
+
+def build_function(
+    physical_effect: str,
+    mapping_config: dict,
+    receptor_state_min: float | bool,
+    receptor_state_max: float | bool,
+    effector_state_min: float | bool,
+    effector_state_max: float | bool,
+    delta: float = None,
+    **kwargs,
+):
+    normalized_effect = _normalize_physical_effect(physical_effect)
+    physics_parameters = load_parameters(normalized_effect)
+
+    if normalized_effect == "fluid":
+        required_keys = ("urdf_path", "emitter_position")
+        missing_keys = [key for key in required_keys if key not in kwargs]
+        if missing_keys:
+            raise ValueError(
+                f"Missing required arguments for fluid effect: {', '.join(missing_keys)}"
+            )
+        return build_fluid_function(
+            physics_parameters=physics_parameters,
+            mapping_config=mapping_config,
+            urdf_path=kwargs["urdf_path"],
+            emitter_position=kwargs["emitter_position"],
+            receptor_state_min=receptor_state_min,
+            receptor_state_max=receptor_state_max,
+            effector_state_min=effector_state_min,
+            effector_state_max=effector_state_max,
+            delta=delta,
+        )
+
+    required_keys = ("usd_path", "rigid_connected")
+    missing_keys = [key for key in required_keys if key not in kwargs]
+    if missing_keys:
+        raise ValueError(
+            f"Missing required arguments for geometry effect: {', '.join(missing_keys)}"
+        )
+    return build_geometry_function(
+        physics_parameters=physics_parameters,
+        mapping_config=mapping_config,
+        usd_path=kwargs["usd_path"],
+        rigid_connected=kwargs["rigid_connected"],
+        receptor_state_min=receptor_state_min,
+        receptor_state_max=receptor_state_max,
+        effector_state_min=effector_state_min,
+        effector_state_max=effector_state_max,
+        delta=delta,
+    )
+
+
+def build_urdf_from_reconstruction(
+    receptor_mesh_path: str,
+    effector_mesh_path: str,
+    base_mesh_path: str,
+    articulation_results: dict,
+    output_dir: str,
+    robot_name: str = "articulated_object",
+    urdf_filename: str = "object.urdf",
+) -> dict:
+    """Build a URDF from reconstructed part meshes and articulation estimation results.
+
+    Args:
+        receptor_mesh_path: Path to the receptor part mesh (e.g. receptor_mesh.glb).
+        effector_mesh_path: Path to the effector part mesh (e.g. effector_mesh.glb).
+        base_mesh_path: Path to the base mesh (e.g. base_mesh.glb).
+        articulation_results: Parsed articulation JSON dict with keys "receiver"/"effector".
+            Each value is either a skip-message string or a dict with keys:
+            "type", "axis", "origin", "state".
+        output_dir: Directory where the URDF and mesh files will be written.
+        robot_name: Name embedded in the URDF <robot> tag.
+        urdf_filename: Output URDF filename.
+
+    Returns:
+        Dict with keys "urdf_path", "root_link", "virtual_root_name",
+        "virtual_root_to_base_xyz" (from generate_urdf_from_open3d_meshes).
+    """
+
+    meshes = {
+        "base": o3d.io.read_triangle_mesh(base_mesh_path),
+        "receptor": o3d.io.read_triangle_mesh(receptor_mesh_path),
+        "effector": o3d.io.read_triangle_mesh(effector_mesh_path),
+    }
+
+    articulations = []
+    for role in ["receptor", "effector"]:
+        # Support both "receptor" (main.py) and "receiver" (pred_mask variant) keys.
+        result = articulation_results.get(role)
+        if result is None and role == "receptor":
+            result = articulation_results.get("receiver")
+        if isinstance(result, str) or result is None:
+            # Estimation was skipped or missing — treat as fixed joint.
+            articulation = {
+                "parent": "base",
+                "child": role,
+                "joint_type": "fixed",
+                "origin": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
+                "name": f"{role}_joint",
+            }
+        else:
+            joint_type = result["type"]
+            axis = result.get("axis", [0.0, 0.0, 1.0])
+            origin_xyz = result.get("origin", [0.0, 0.0, 0.0])
+            states = result.get("state", [0.0])
+            lower = float(min(states))
+            upper = float(max(states))
+            articulation = {
+                "parent": "base",
+                "child": role,
+                "joint_type": joint_type,
+                "axis": axis,
+                "origin": {"xyz": origin_xyz, "rpy": [0.0, 0.0, 0.0]},
+                "limit": {"lower": lower, "upper": upper, "effort": 1.0, "velocity": 1.0},
+                "name": f"{role}_joint",
+            }
+        articulations.append(articulation)
+
+    return generate_urdf_from_open3d_meshes(
+        meshes=meshes,
+        articulations=articulations,
+        output_dir=output_dir,
+        robot_name=robot_name,
+        root_link="base",
+        urdf_filename=urdf_filename,
+        insert_virtual_root=True,
+        recenter_by_base=True,
+    )
+
+
+def _get_articulation_state_range(articulation_results: dict, role: str) -> tuple:
+    """Return (min_state, max_state) for a role; (False, False) if skipped/unavailable."""
+    result = articulation_results.get(role)
+    if result is None and role == "receptor":
+        result = articulation_results.get("receiver")
+    if isinstance(result, str) or result is None:
+        return False, False
+    states = result.get("state", [0.0])
+    return float(min(states)), float(max(states))
+
+
+def compile_function_instance(
+    receptor_mesh_path: str,
+    effector_mesh_path: str,
+    base_mesh_path: str,
+    articulation_results_path: str,
+    function_results_path: str,
+    output_dir: str,
+    robot_name: str = "articulated_object",
+    delta: float = None,
+    **kwargs,
+) -> dict:
+    """Full compilation pipeline: meshes + articulation + function prediction → instanced script.
+
+    Reads articulation and function prediction results from disk, builds a URDF from the
+    reconstructed part meshes, then generates the physics function instance script.
+
+    Args:
+        receptor_mesh_path: Path to the receptor part mesh (e.g. receptor_mesh.glb).
+        effector_mesh_path: Path to the effector part mesh (e.g. effector_mesh.glb).
+        base_mesh_path: Path to the base mesh (e.g. base_mesh.glb).
+        articulation_results_path: Path to the articulation estimation JSON.
+            Keys are "receptor"/"effector" (main.py) or "receiver"/"effector" (pred_mask variant).
+        function_results_path: Path to the function prediction JSON.
+            Expected keys: "1" (physical effect letter), "2" (numerical function letter).
+        output_dir: Directory for URDF and mesh outputs.
+        robot_name: Robot name embedded in the URDF <robot> tag.
+        delta: Delta value for cumulative mapping (required only when mapping type is "cumulative").
+        **kwargs:
+            emitter_position (tuple): Emitter xyz for fluid effects.
+                Defaults to the effector mesh centroid if not provided.
+            usd_path (str): USD asset path; required for geometry effects.
+
+    Returns:
+        Dict with keys:
+            "urdf_result": output of generate_urdf_from_open3d_meshes (contains "urdf_path", etc.)
+            "function_script_path": absolute path to the generated instanced function script.
+            "physical_effect": resolved physical effect string (e.g. "fluid", "geometry").
+            "mapping_type": resolved mapping type string (e.g. "step", "linear").
+    """
+    with open(articulation_results_path, "r") as f:
+        articulation_results = json.load(f)
+    with open(function_results_path, "r") as f:
+        function_results = json.load(f)
+
+    physical_effect = PHYSICAL_EFFECT_MAP[function_results["1"]]
+    mapping_type = NUMERICAL_FUNCTION_MAP[function_results["2"]]
+
+    receptor_state_min, receptor_state_max = _get_articulation_state_range(articulation_results, "receptor")
+    effector_state_min, effector_state_max = _get_articulation_state_range(articulation_results, "effector")
+
+    os.makedirs(output_dir, exist_ok=True)
+    urdf_result = build_urdf_from_reconstruction(
+        receptor_mesh_path=receptor_mesh_path,
+        effector_mesh_path=effector_mesh_path,
+        base_mesh_path=base_mesh_path,
+        articulation_results=articulation_results,
+        output_dir=output_dir,
+        robot_name=robot_name,
+    )
+
+    mapping_config = load_mapping_template(mapping_type)
+
+    effect_kwargs = dict(kwargs)
+    if physical_effect == "fluid":
+        effect_kwargs["urdf_path"] = urdf_result["urdf_path"]
+        if "emitter_position" not in effect_kwargs:
+            effector_mesh = o3d.io.read_triangle_mesh(effector_mesh_path)
+            effect_kwargs["emitter_position"] = tuple(float(v) for v in effector_mesh.get_center())
+    elif physical_effect == "geometry":
+        if "usd_path" not in effect_kwargs:
+            raise ValueError("usd_path must be provided in kwargs for geometry physical effect.")
+        receptor_result = articulation_results.get("receptor") or articulation_results.get("receiver")
+        effect_kwargs["rigid_connected"] = isinstance(receptor_result, str) or receptor_result is None
+
+    build_function(
+        physical_effect=physical_effect,
+        mapping_config=mapping_config,
+        receptor_state_min=receptor_state_min,
+        receptor_state_max=receptor_state_max,
+        effector_state_min=effector_state_min,
+        effector_state_max=effector_state_max,
+        delta=delta,
+        **effect_kwargs,
+    )
+
+    function_script_path = os.path.join(dir_abs_path, f"{physical_effect}_function_instanced.py")
+    return {
+        "urdf_result": urdf_result,
+        "function_script_path": function_script_path,
+        "physical_effect": physical_effect,
+        "mapping_type": mapping_type,
+    }
