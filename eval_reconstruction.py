@@ -16,7 +16,7 @@ from dataset.dataset import Dataset, build_dataset
 from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion, TrackingFusion
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction
 from fusion.evaluate_reconstruction import save_mesh, save_reconstruction_metrics, evaluate_reconstruction, save_pcd, save_reconstruction_results
-from utils.reconstruction_utils import refine_point_mask
+from utils.reconstruction_utils import refine_point_mask, depth2xyz_world
 
 
 def set_seed(seed: int):
@@ -107,6 +107,15 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                     print("Existing reconstruction results found, loading for pred mask.")
                     with gzip.open(f"{save_pcd_dir}/reconstruction_results.pkl.gz", "rb") as f:
                         reconstruction_results = pickle.load(f)
+                    if "points" not in reconstruction_results.keys():
+                        full_points_list = []
+                        for i in range(len(reconstruction_results["depth"])):
+                            depth_i = reconstruction_results["depth"][i]
+                            intrinsics = reconstruction_results["intrinsics"]
+                            extrinsics_i = reconstruction_results["extrinsics"][i]
+                            base_pc_origin = depth2xyz_world(depth_i, intrinsics, extrinsics_i, cam_type="opencv")
+                            full_points_list.append(base_pc_origin)
+                        reconstruction_results["points"] = np.stack(full_points_list, axis=0)
                 else:
                     init_extrinsics = data["camera_extrinsics"][0]
                     if isinstance(reconstruction_model, ViPEReconstruction):
@@ -195,41 +204,43 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                     transformation_list=transformation_list,
                     save_path=_get_mesh_save_path(save_pcd_dir, role, config.pred_mask),
                     observation_indices=np.asarray(valid_frame_ids, dtype=int),
+                    num_observations=3
                 )
             role_end = time.time()
             print(f"Total time for {role} (including fusion and evaluation): {role_end - role_start:.2f} seconds")
-        if reconstruction_results is not None and not config.pred_mask:
-            if config.save_mesh:
-                base_mask_list = np.logical_and(
-                    data["object_mask_list"],
-                    np.logical_not(np.logical_or(data["receptor_mask_list"], data["effector_mask_list"]))
+        if config.save_mesh:
+            base_mask_list = np.logical_and(
+                data["object_mask_list"],
+                np.logical_not(np.logical_or(data["receptor_mask_list"], data["effector_mask_list"]))
+            )
+            base_valid_frame_ids = [i for i, mask in enumerate(base_mask_list) if mask.sum() > 0]
+            if len(base_valid_frame_ids) > 0:
+                base_valid_mask_list = []
+                for i in base_valid_frame_ids:
+                    base_valid_mask_list.append(np.logical_and(reconstruction_results["points_mask"][i], base_mask_list[i]))
+                base_valid_points_map_list = [reconstruction_results["points"][i] for i in base_valid_frame_ids]
+                base_video_frame_list = [video_frame_list[i] for i in base_valid_frame_ids]
+                if isinstance(fusion_model, FeatureMatchingFusion):
+                    base_feature_fusion_model = fusion_model
+                else:
+                    base_feature_fusion_model = FeatureMatchingFusion(device=config.fusion.device)
+                _, base_transformation_list, _, _ = base_feature_fusion_model.fuse_part_pcds(
+                    base_video_frame_list,
+                    base_valid_mask_list,
+                    base_valid_points_map_list,
+                    kptsA_origin_dict,
+                    kptsB_origin_dict,
                 )
-                base_valid_frame_ids = [i for i, mask in enumerate(base_mask_list) if mask.sum() > 0]
-                if len(base_valid_frame_ids) > 0:
-                    base_valid_mask_list = []
-                    for i in base_valid_frame_ids:
-                        base_valid_mask_list.append(np.logical_and(reconstruction_results["points_mask"][i], base_mask_list[i]))
-                    base_valid_points_map_list = [reconstruction_results["points"][i] for i in base_valid_frame_ids]
-                    base_video_frame_list = [video_frame_list[i] for i in base_valid_frame_ids]
-                    if isinstance(fusion_model, FeatureMatchingFusion):
-                        base_feature_fusion_model = fusion_model
-                    else:
-                        base_feature_fusion_model = FeatureMatchingFusion(device=config.fusion.device)
-                    _, base_transformation_list, _, _ = base_feature_fusion_model.fuse_part_pcds(
-                        base_video_frame_list,
-                        base_valid_mask_list,
-                        base_valid_points_map_list,
-                        kptsA_origin_dict,
-                        kptsB_origin_dict,
-                    )
-                    save_mesh(
-                        reconstruction_results=reconstruction_results,
-                        image_list=video_frame_list,
-                        mask_list=base_mask_list,
-                        transformation_list=base_transformation_list,
-                        save_path=_get_mesh_save_path(save_pcd_dir, "base", False),
-                        observation_indices=np.asarray(base_valid_frame_ids, dtype=int),
-                    )
+                save_mesh(
+                    reconstruction_results=reconstruction_results,
+                    image_list=video_frame_list,
+                    mask_list=base_mask_list,
+                    transformation_list=base_transformation_list,
+                    save_path=_get_mesh_save_path(save_pcd_dir, "base", False),
+                    observation_indices=np.asarray(base_valid_frame_ids, dtype=int),
+                    num_observations=3
+                )
+        if reconstruction_results is not None and not config.pred_mask:
             save_reconstruction_results(reconstruction_results, f"{save_pcd_dir}/reconstruction_results.pkl.gz")
         data_count += 1
         end_time = time.time()

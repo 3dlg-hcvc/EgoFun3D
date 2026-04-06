@@ -190,8 +190,6 @@ def save_mesh(
     }
 
     scene_mesh = predictions_to_glb(predictions, show_cam=False)
-    rot_matrix = transformations.rotation_matrix(-math.pi / 2, [1, 0, 0], [0, 0, 0])
-    scene_mesh.apply_transform(rot_matrix)
 
     if export_format == "obj":
         merged_mesh = scene_mesh.dump(concatenate=True)
