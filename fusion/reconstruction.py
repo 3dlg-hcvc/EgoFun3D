@@ -167,7 +167,8 @@ class ViPEReconstruction(BaseReconstruction):
             else:
                 video_path_escaped = video_path
             # os.system(f"vipe infer --image-dir {video_dir_escaped} --output {tmp_dir} --pipeline dav3")
-            os.system(f"python third_party/vipe/run.py pipeline=dav3 streams=raw_mp4_stream streams.base_path='{video_path_escaped}' pipeline.output.path={tmp_dir} pipeline.output.save_artifacts=true")
+            os.system(f"vipe infer {video_path_escaped} --output {tmp_dir} --pipeline dav3")
+            # os.system(f"python third_party/vipe/run.py pipeline=dav3 streams=raw_mp4_stream streams.base_path='{video_path_escaped}' pipeline.output.path={tmp_dir} pipeline.output.save_artifacts=true")
         except Exception as e:
             print(f"Error during vipe inference: {e}")
             return None
