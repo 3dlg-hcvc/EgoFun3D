@@ -1,12 +1,9 @@
 import json
+import h5py
 import numpy as np
 import os
 import point_cloud_utils as pcu
 import open3d as o3d
-from PIL import Image as PILImage
-import gzip
-import pickle
-import glob
 from torch.utils.data import Dataset
 import imageio
 
@@ -142,11 +139,22 @@ class UniformDataset(Dataset):
             cropped_bottom_right = camera_intrinsics_data["original_frame_size"]
         return camera_extrinsics, camera_intrinsics, cropped_top_left, cropped_bottom_right
     
+    def load_from_hdf5(filepath: str) -> dict:
+        """Load the HDF5 file back into the original dict format."""
+        data = {}
+        with h5py.File(filepath, 'r') as f:
+            for name in f:
+                grp = f[name]
+                data[name] = {
+                    'mask_idx': int(grp.attrs['mask_idx']),
+                    'masks': grp['masks'][:]
+                }
+        return data
+    
     def load_2d_masks(self, mask_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, str, str, str]:
         # 2d masks
         mask_path = os.path.join(self.root_path, mask_path)
-        with gzip.open(mask_path, "rb") as f:
-            mask_data = pickle.load(f)
+        mask_data = self.load_from_hdf5(mask_path)
         receptor_mask = None
         effector_mask = None
         object_mask = None
