@@ -17,6 +17,7 @@ from dataset.dataset import Dataset, build_dataset
 from articulation.base import build_articulation_estimation_model, ArticulationEstimation
 from articulation.evaluate_articulation import compute_joint_error, save_articulation_metrics, save_articulation_results
 from segmentation.workflow import load_segmentation_masks_for_sample
+from fusion.evaluate_reconstruction import load_reconstruction_results_from_hdf5
 
 MAX_JOINT_ORI_ERROR = np.pi / 2
 MAX_JOINT_POS_ERROR = 1.0
@@ -96,11 +97,10 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
 
             # load reconstruction
             if reconstruction_results is None:
-                reconstruction_results_path = os.path.join(config.reconstruction_results_dir, data["video_name"], "reconstruction/reconstruction_results.pkl.gz")
+                reconstruction_results_path = os.path.join(config.reconstruction_results_dir, data["video_name"], "reconstruction/reconstruction_results.h5")
                 if os.path.exists(reconstruction_results_path):
                     loguru.logger.info(f"Loading existing reconstruction results from: {reconstruction_results_path}")
-                    with gzip.open(reconstruction_results_path, "rb") as f:
-                        reconstruction_results = pickle.load(f)
+                    reconstruction_results = load_reconstruction_results_from_hdf5(reconstruction_results_path)
             if reconstruction_results is None:
                 loguru.logger.info("Reconstruction failed, skipping this sample.")
                 articulation_results["receptor"] = "Reconstruction failed, skipping this sample."

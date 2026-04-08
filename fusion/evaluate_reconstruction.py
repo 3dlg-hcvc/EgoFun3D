@@ -1,3 +1,4 @@
+import h5py
 import numpy as np
 import open3d as o3d
 import torch
@@ -7,7 +8,6 @@ import pickle
 import gzip
 import math
 import os
-from trimesh import transformations
 
 from mapanything.utils.hf_utils.viz import predictions_to_glb
 from mapanything.utils.geometry import depthmap_to_world_frame
@@ -273,3 +273,25 @@ def save_reconstruction_results(reconstruction_results: Dict[str, np.ndarray], s
     output_path = save_path.replace(".pkl.gz", ".npz")
     # 3️⃣ Save as npz
     np.savez_compressed(output_path, **flat_dict)
+
+
+def save_reconstruction_results_to_hdf5(data: dict, filepath: str):
+    """
+    Save a dict of {key: numpy array} to HDF5.
+
+    Each key becomes a dataset at the root level.
+    """
+    data.pop("rgb", None)
+    data.pop("points", None)
+    with h5py.File(filepath, 'w') as f:
+        for key, arr in data.items():
+            f.create_dataset(key, data=arr, compression='gzip')
+
+
+def load_reconstruction_results_from_hdf5(filepath: str) -> dict:
+    """Load the HDF5 file back into a dict of {key: numpy array}."""
+    data = {}
+    with h5py.File(filepath, 'r') as f:
+        for key in f:
+            data[key] = f[key][:]
+    return data

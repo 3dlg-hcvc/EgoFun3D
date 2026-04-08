@@ -15,7 +15,7 @@ import time
 from dataset.dataset import Dataset, build_dataset
 from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion, TrackingFusion
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction
-from fusion.evaluate_reconstruction import save_mesh, save_reconstruction_metrics, evaluate_reconstruction, save_pcd, save_reconstruction_results
+from fusion.evaluate_reconstruction import save_mesh, save_reconstruction_metrics, evaluate_reconstruction, save_pcd, save_reconstruction_results_to_hdf5, load_reconstruction_results_from_hdf5
 from utils.reconstruction_utils import refine_point_mask, depth2xyz_world
 from segmentation.workflow import load_segmentation_masks_for_sample
 
@@ -55,7 +55,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         kptsB_origin_dict = {}
         video_frame_list = data["rgb_list"]
         save_pcd_dir = os.path.join(save_dir, data["video_name"], "reconstruction")
-        if os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz") and not config.pred_mask:
+        if os.path.exists(f"{save_pcd_dir}/reconstruction_results.h5") and not config.pred_mask:
             print("Reconstruction results already exist, skipping reconstruction and evaluation for this sample.")
             continue
         if config.pred_mask and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_receptor_pred_mask.json") and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_effector_pred_mask.json"):
@@ -98,10 +98,9 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             # run reconstruction
             load_results_start = time.time()
             if reconstruction_results is None:
-                if config.pred_mask and os.path.exists(f"{save_pcd_dir}/reconstruction_results.pkl.gz"):
+                if config.pred_mask and os.path.exists(f"{save_pcd_dir}/reconstruction_results.h5"):
                     print("Existing reconstruction results found, loading for pred mask.")
-                    with gzip.open(f"{save_pcd_dir}/reconstruction_results.pkl.gz", "rb") as f:
-                        reconstruction_results = pickle.load(f)
+                    reconstruction_results = load_reconstruction_results_from_hdf5(f"{save_pcd_dir}/reconstruction_results.h5")
                     if "points" not in reconstruction_results.keys():
                         full_points_list = []
                         for i in range(len(reconstruction_results["depth"])):
@@ -236,7 +235,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                     num_observations=3
                 )
         if reconstruction_results is not None and not config.pred_mask:
-            save_reconstruction_results(reconstruction_results, f"{save_pcd_dir}/reconstruction_results.pkl.gz")
+            save_reconstruction_results_to_hdf5(reconstruction_results, f"{save_pcd_dir}/reconstruction_results.h5")
         data_count += 1
         end_time = time.time()
         print(f"Total evaluation time for this sample: {end_time - start_time:.2f} seconds")
