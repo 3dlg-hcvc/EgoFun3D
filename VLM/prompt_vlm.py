@@ -12,6 +12,7 @@ from PIL import Image as PILImage
 import base64
 import os
 import shutil
+import tempfile
 try:
     # MoviePy >=2
     from moviepy import ImageSequenceClip
@@ -22,7 +23,9 @@ except ImportError:
     except ImportError:
         ImageSequenceClip = None
 
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
+
+from omegaconf import OmegaConf
 
 
 def compose_video_from_numpy_frames(
@@ -640,6 +643,116 @@ class MolmovllmVideoNarrator(VLMPrompter):
         return grouped_results
 
 
+class QwenTransformersVideoNarrator(VLMPrompter):
+    """Qwen3-VL (or compatible) function prediction via Hugging Face Transformers only (no vLLM)."""
+
+    def __init__(
+        self,
+        vlm_model: str = "Qwen/Qwen3-VL-8B-Instruct",
+        prompt_template: str = "",
+        max_query: int = 10,
+        device: Optional[str] = None,
+    ):
+        super().__init__(vlm_model, prompt_template, max_query)
+        dev = (device or "").strip() or ("cuda" if torch.cuda.is_available() else "cpu")
+        self._torch_device = torch.device(dev)
+        self.processor = AutoProcessor.from_pretrained(vlm_model, trust_remote_code=True)
+        if dev == "cpu":
+            self.model = AutoModelForImageTextToText.from_pretrained(
+                vlm_model,
+                trust_remote_code=True,
+                torch_dtype=torch.float32,
+            )
+            self.model.to(self._torch_device)
+        else:
+            self.model = AutoModelForImageTextToText.from_pretrained(
+                vlm_model,
+                trust_remote_code=True,
+                dtype="auto",
+                device_map="auto",
+            )
+
+    def _infer_device(self):
+        return next(self.model.parameters()).device
+
+    def prompt_function(
+        self,
+        rgb_frame_list: List[np.ndarray],
+        receptor_part_masks: np.ndarray,
+        effector_part_masks: np.ndarray,
+    ) -> Dict[str, str]:
+        rendered_frames: list[np.ndarray] = []
+        for i in range(len(rgb_frame_list)):
+            rgb_frame = rgb_frame_list[i]
+            receptor_mask = receptor_part_masks[i]
+            effector_mask = effector_part_masks[i]
+            receptor_color_mask = np.zeros_like(rgb_frame)
+            receptor_color_mask[:, :, 1] = receptor_mask * 255
+            effector_color_mask = np.zeros_like(rgb_frame)
+            effector_color_mask[:, :, 0] = effector_mask * 255
+            alpha = 0.5
+            blended_frame = cv2.addWeighted(rgb_frame, 1 - alpha, receptor_color_mask, alpha, 0)
+            blended_frame = cv2.addWeighted(blended_frame, 1 - alpha, effector_color_mask, alpha, 0)
+            rendered_frames.append(blended_frame.astype(np.uint8))
+
+        if len(rendered_frames) < 600:
+            rendered_frames = rendered_frames[::2]
+        elif len(rendered_frames) < 900:
+            rendered_frames = rendered_frames[::3]
+        else:
+            rendered_frames = rendered_frames[::4]
+
+        td = tempfile.mkdtemp(prefix="qwen_tf_masked_")
+        video_path = os.path.join(td, "rendered_video.mp4")
+        try:
+            compose_video_from_numpy_frames(
+                frames=rendered_frames,
+                output_path=video_path,
+                fps=15,
+                codec="libx264",
+            )
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        dict(type="text", text=self.prompt_template),
+                        dict(type="video", video=video_path),
+                    ],
+                }
+            ]
+            inputs = self.processor.apply_chat_template(
+                messages,
+                tokenize=True,
+                add_generation_prompt=True,
+                return_tensors="pt",
+                return_dict=True,
+            )
+            dev = self._infer_device()
+            inputs = {k: v.to(dev) if hasattr(v, "to") else v for k, v in inputs.items()}
+            grouped_results: dict = {}
+            query_count = 0
+            while len(grouped_results.keys()) != 3 and query_count < self.max_query:
+                with torch.inference_mode():
+                    generated_ids = self.model.generate(**inputs, max_new_tokens=2048)
+                generated_tokens = generated_ids[0, inputs["input_ids"].size(1) :]
+                generated_text = self.processor.tokenizer.decode(
+                    generated_tokens, skip_special_tokens=True
+                )
+                query_count += 1
+                grouped_results = self.post_process_function_output(generated_text)
+            return grouped_results
+        finally:
+            shutil.rmtree(td, ignore_errors=True)
+
+    def post_process_function_output(self, output_text: str) -> dict:
+        try:
+            grouped_results = eval(output_text)
+        except (SyntaxError, NameError):
+            print(f"Failed to evaluate output text: {output_text}")
+            grouped_results = {}
+        return grouped_results
+
+
 class QwenVideoNarrator(VLMPrompter):
     def __init__(self, vlm_model = "Qwen/Qwen3-VL-8B-Instruct", prompt_template = "", max_query = 10):
         super().__init__(vlm_model, prompt_template, max_query)
@@ -824,6 +937,14 @@ def build_vlm_prompter(vlm_config: dict) -> VLMPrompter:
                 vlm_model=vlm_config.vlm_model,
                 prompt_template=vlm_config.prompt_template,
                 max_query=vlm_config.max_query
+            )
+        elif vlm_config["vlm_type"] == "qwen_transformers":
+            dev = OmegaConf.select(vlm_config, "device", default=None)
+            return QwenTransformersVideoNarrator(
+                vlm_model=vlm_config.vlm_model,
+                prompt_template=vlm_config.prompt_template,
+                max_query=vlm_config.max_query,
+                device=dev,
             )
         else:
             raise ValueError(f"Unknown VLM type: {vlm_config['vlm_type']}")
