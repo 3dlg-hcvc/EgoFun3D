@@ -6,14 +6,20 @@ import tempfile
 from contextlib import contextmanager
 from typing import Any
 
+import h5py
 import imageio
 import numpy as np
 import torch
 from PIL import Image as PILImage
 
 
-MASK_ARCHIVE_NAME = "segmentation_masks.npz"
+MASK_ARCHIVE_NAME = "segmentation_masks.h5"
 ANSWER_ARCHIVE_NAME = "segmentation_answers.json"
+ROLE_MASK_INDICES = {
+    "receptor": 3,
+    "effector": 4,
+    "object": 5,
+}
 
 
 def evenly_spaced_indices(total_frames: int, num_samples: int | None) -> list[int]:
@@ -66,11 +72,46 @@ def segmentation_answers_path(role_dir: str) -> str:
     return os.path.join(role_dir, ANSWER_ARCHIVE_NAME)
 
 
+def _infer_role_from_role_dir(role_dir: str) -> str | None:
+    base = os.path.basename(os.path.normpath(role_dir))
+    if base.startswith("segmentation_"):
+        role = base[len("segmentation_"):]
+        return role if role in ROLE_MASK_INDICES else None
+    if base in ROLE_MASK_INDICES:
+        return base
+    return None
+
+
+def _load_hdf5_mask_archive(archive_path: str, role: str | None = None) -> np.ndarray | None:
+    with h5py.File(archive_path, "r") as f:
+        if role is not None and role in f:
+            group = f[role]
+            if isinstance(group, h5py.Group) and "masks" in group:
+                return np.asarray(group["masks"][:]).astype(bool)
+
+        expected_mask_idx = ROLE_MASK_INDICES.get(role) if role is not None else None
+        first_masks = None
+        for group_name in f:
+            group = f[group_name]
+            if not isinstance(group, h5py.Group) or "masks" not in group:
+                continue
+            masks = np.asarray(group["masks"][:]).astype(bool)
+            if first_masks is None:
+                first_masks = masks
+            if expected_mask_idx is not None and int(group.attrs.get("mask_idx", -1)) == expected_mask_idx:
+                return masks
+        return first_masks
+
+
 def save_segmentation_mask_archive(mask_list: list[np.ndarray], role_dir: str) -> str:
     os.makedirs(role_dir, exist_ok=True)
     masks = np.stack([np.asarray(mask).astype(bool) for mask in mask_list], axis=0)
     archive_path = segmentation_mask_archive_path(role_dir)
-    np.savez_compressed(archive_path, masks=masks.astype(np.uint8))
+    role = _infer_role_from_role_dir(role_dir) or "mask"
+    with h5py.File(archive_path, "w") as f:
+        group = f.create_group(role)
+        group.attrs["mask_idx"] = ROLE_MASK_INDICES.get(role, -1)
+        group.create_dataset("masks", data=masks.astype(np.uint8), compression="gzip")
     return archive_path
 
 
@@ -86,15 +127,8 @@ def load_segmentation_mask_archive(role_dir: str) -> np.ndarray | None:
     archive_path = segmentation_mask_archive_path(role_dir)
     if not os.path.exists(archive_path):
         return None
-    archive = np.load(archive_path)
-    if "masks" in archive:
-        masks = archive["masks"]
-    else:
-        first_key = next(iter(archive.files), None)
-        if first_key is None:
-            return None
-        masks = archive[first_key]
-    return np.asarray(masks).astype(bool)
+    role = _infer_role_from_role_dir(role_dir)
+    return _load_hdf5_mask_archive(archive_path, role=role)
 
 
 def load_segmentation_answers(role_dir: str, total_frames: int | None = None) -> list[dict]:
@@ -127,16 +161,6 @@ def load_segmentation_answers(role_dir: str, total_frames: int | None = None) ->
             answer.setdefault("frame_id", frame_id)
         answers.append(answer)
     return answers
-
-
-def _load_legacy_mask_frames(role_dir: str, num_frames: int) -> np.ndarray:
-    masks = []
-    for frame_id in range(num_frames):
-        mask_path = os.path.join(role_dir, f"segmentation_mask_{frame_id:04d}.npy")
-        if not os.path.exists(mask_path):
-            raise FileNotFoundError(f"Missing legacy segmentation mask: {mask_path}")
-        masks.append(np.load(mask_path).astype(bool))
-    return np.stack(masks, axis=0)
 
 
 def align_masks_to_sampled_frames(data: dict, masks: np.ndarray) -> np.ndarray:
@@ -178,15 +202,7 @@ def align_masks_to_sampled_frames(data: dict, masks: np.ndarray) -> np.ndarray:
 def load_segmentation_masks_for_sample(data: dict, role_dir: str) -> np.ndarray:
     masks = load_segmentation_mask_archive(role_dir)
     if masks is None:
-        sampled_num_frames = len(data["rgb_list"])
-        sample_indices = [int(i) for i in data.get("sample_indices", list(range(sampled_num_frames)))]
-        try:
-            masks = _load_legacy_mask_frames(role_dir, sampled_num_frames)
-        except FileNotFoundError:
-            if len(sample_indices) > 0:
-                masks = _load_legacy_mask_frames(role_dir, max(sample_indices) + 1)
-            else:
-                raise
+        raise FileNotFoundError(f"Missing segmentation archive: {segmentation_mask_archive_path(role_dir)}")
     return align_masks_to_sampled_frames(data, masks)
 
 

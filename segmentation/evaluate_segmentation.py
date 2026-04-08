@@ -119,7 +119,7 @@ def save_segmentation_metrics(
         'valid_frame_ids': [int(i) for i in valid_frame_ids],
         'per_frame_iou': [float(x) if x is not None else None for x in original_iou_list],
         'per_frame_filtered_iou': [float(x) for x in filtered_iou_list],
-        'mask_archive': 'segmentation_masks.npz',
+        'mask_archive': 'segmentation_masks.h5',
         'answers_archive': 'segmentation_answers.json',
     }
     if runtime_info is not None:

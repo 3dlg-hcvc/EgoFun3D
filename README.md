@@ -29,7 +29,7 @@
 The segmentation flow is:
 1. Run the selected segmentation model on 20 seed frames.
 2. Propagate those masks to all frames with SAM3.
-3. Save one mask archive per role in `segmentation_masks.npz`.
+3. Save one mask archive per role in `segmentation_masks.h5`.
 4. Use those saved results in the downstream evaluation scripts.
 
 Use `eval_segmentation.py` for the staged release workflow. By default the release segmentation configs use `segmentation.frame_subsample=20` and `segmentation.propagate_with_sam3=true`.
