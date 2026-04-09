@@ -855,6 +855,7 @@ class QwenVideoNarrator(VLMPrompter):
 class VLMSegJudge(VLMPrompter):
     def __init__(self, vlm_model: str = "gemini-2.5-flash", prompt_template: str = "", max_query: int = 10):
         super().__init__(vlm_model, prompt_template, max_query)
+        self.client = genai.Client()
 
     def overlay_mask(self, image: PILImage.Image, mask: np.ndarray) -> np.ndarray:
         image = np.array(image)
