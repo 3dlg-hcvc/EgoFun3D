@@ -27,26 +27,11 @@ scene = gs.Scene(
         visualize_sph_boundary=True,
         ambient_light=(0.3, 0.3, 0.3),
     ),
-    show_viewer = False,
-    renderer=gs.renderers.RayTracer(  # type: ignore
-        env_surface=gs.surfaces.Emission(
-            # emissive_texture=gs.textures.ImageTexture(
-            #     image_path="textures/indoor_bright.png",
-            # ),
-            emissive=(0.4, 0.4, 0.4)
-        ),
-        env_radius=15.0,
-        env_euler=(0, 0, 180),
-        # lights=[
-        #     {"pos": (0.0, 0.0, 10.0), "radius": 3.0, "color": (1.0, 1.0, 1.0), "intensity": 7.0},
-        # ],
-    ),
-    # # coupler_options=gs.options.BaseCouplerOptions()
+    show_viewer = True,
 )
 
 ########################## entities ##########################
-# plane = scene.add_entity(gs.morphs.URDF(file="urdf/plane/plane_light.urdf", fixed=True))
-plane = scene.add_entity(gs.morphs.Plane(pos=(0, 0, 0), normal=(0, 0, 1), fixed=True), surface=gs.surfaces.Smooth(diffuse_texture=gs.textures.ImageTexture(image_path="light_wood_planks.png")))
+plane = scene.add_entity(gs.morphs.URDF(file="urdf/plane/plane_light.urdf", fixed=True))
 
 # when loading an entity, you can specify its pose in the morph.
 faucet = scene.add_entity(
@@ -69,10 +54,10 @@ emitter = scene.add_emitter(
 scene.build()
 
 jnt_names = [
-    'receiver_joint',
+    'receptor_joint',
 ]
 dofs_idx = [faucet.get_joint(name).dof_idx_local for name in jnt_names]
-joint = faucet.get_joint('receiver_joint')
+joint = faucet.get_joint('receptor_joint')
 joint_limits = joint.dofs_limit
 print("Joint limits:", joint_limits)
 joint_step = (joint_limits[dofs_idx[0], 1] - joint_limits[dofs_idx[0], 0]) / 1000

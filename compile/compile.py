@@ -2,6 +2,7 @@ import json
 import yaml
 import os
 import open3d as o3d
+import argparse
 from build_urdf import generate_urdf_from_open3d_meshes
 
 
@@ -9,6 +10,20 @@ dir_abs_path = os.path.dirname(os.path.abspath(__file__))
 
 PHYSICAL_EFFECT_MAP = {"a": "geometry", "b": "illumination", "c": "temperature", "d": "fluid"}
 NUMERICAL_FUNCTION_MAP = {"a": "binary", "b": "step", "c": "linear", "d": "cumulative"}
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Compile function instance from reconstruction and prediction results.")
+    parser.add_argument("--receptor_mesh_path", type=str, required=True, help="Path to the receptor part mesh (e.g. receptor_mesh.glb).")
+    parser.add_argument("--effector_mesh_path", type=str, required=True, help="Path to the effector part mesh (e.g. effector_mesh.glb).")
+    parser.add_argument("--base_mesh_path", type=str, required=True, help="Path to the base mesh (e.g. base_mesh.glb).")
+    parser.add_argument("--articulation_results_path", type=str, required=True, help="Path to the articulation estimation JSON.")
+    parser.add_argument("--function_results_path", type=str, required=True, help="Path to the function prediction JSON.")
+    parser.add_argument("--output_dir", type=str, required=True, help="Directory for URDF and mesh outputs.")
+    parser.add_argument("--robot_name", type=str, default="articulated_object", help="Robot name embedded in the URDF <robot> tag.")
+    parser.add_argument("--delta", type=float, default=None, help="Delta value for cumulative mapping (required only when mapping type is 'cumulative').")
+    parser.add_argument("--usd_path", type=str, default=None, help="USD asset path; required for geometry effects.")
+    return parser.parse_args()
+
 
 def load_parameters(physical_effect: str) -> dict:
     parameter_config_file = os.path.join(dir_abs_path, f"{physical_effect}_parameters.yaml")
@@ -78,13 +93,13 @@ def generate_definition(parameters_dict: dict) -> str:
 
 def generate_function_call(mapping: str, receptor_state_name: str, effector_state_name: str) -> str:
     if mapping == "binary":
-        function_call = f"binary_mapping({receptor_state_name})"
+        function_call = f"binary_mapping({receptor_state_name})\n"
     elif mapping == "linear":
-        function_call = f"linear_mapping({receptor_state_name})"
+        function_call = f"linear_mapping({receptor_state_name})\n"
     elif mapping == "step":
-        function_call = f"step_mapping({receptor_state_name})"
+        function_call = f"step_mapping({receptor_state_name})\n"
     elif mapping == "cumulative":
-        function_call = f"cumulative_mapping({receptor_state_name}, {effector_state_name})"
+        function_call = f"cumulative_mapping({receptor_state_name}, {effector_state_name})\n"
     else:
         raise ValueError(f"Unsupported mapping type: {mapping}")
     return function_call
@@ -98,7 +113,7 @@ def build_fluid_function(physics_parameters: dict, mapping_config: dict, urdf_pa
                        "URDF_PATH": urdf_path,
                        "EMITTER_POSITION": emitter_position}
     
-    mapping_instance = instantiate_mapping_function(mapping_config, receptor_state_min, receptor_state_max, effector_state_min, effector_state_max, delta)
+    mapping_instance = instantiate_mapping_function(mapping_config, receptor_state_min, receptor_state_max, physics_parameters["MIN_DROPLET_SIZE"], physics_parameters["MAX_DROPLET_SIZE"], delta)
     parameters_dict["MAPPING_FUNCTION"] = mapping_instance
 
     with open(os.path.join(dir_abs_path, "fluid_function.py"), 'r') as f:
@@ -106,7 +121,7 @@ def build_fluid_function(physics_parameters: dict, mapping_config: dict, urdf_pa
     
     definitions = generate_definition(parameters_dict)
     function_call = generate_function_call(mapping_config["type"], physics_parameters["RECETPOR_STATE_NAME"], physics_parameters["EFFECTOR_STATE_NAME"])
-    fluid_function_code = fluid_function_template.replace("INSERT_DEFINITION", definitions).replace("MAPPING_FUNCTION", function_call)
+    fluid_function_code = fluid_function_template.replace("INSERT_DEFINITIONS_HERE", definitions).replace("MAPPING_FUNCTION", function_call)
 
     with open(os.path.join(dir_abs_path, "fluid_function_instanced.py"), 'w') as f:
         f.write(fluid_function_code)
@@ -300,6 +315,10 @@ def build_urdf_from_reconstruction(
     )
 
 
+def convert_urdf_to_usd(urdf_path: str, output_usd_path: str):
+    os.system(f"urdf_usd_converter {urdf_path} {output_usd_path}")
+
+
 def _get_articulation_state_range(articulation_results: dict, role: str) -> tuple:
     """Return (min_state, max_state) for a role; (False, False) if skipped/unavailable."""
     result = articulation_results.get(role)
@@ -370,6 +389,13 @@ def compile_function_instance(
         output_dir=output_dir,
         robot_name=robot_name,
     )
+    if physical_effect == "geometry":
+        usd_path = kwargs.get("usd_path")
+        if usd_path is None:
+            raise ValueError("usd_path must be provided in kwargs for geometry physical effect.")
+        output_usd_path = os.path.join(output_dir, "object.usd")
+        convert_urdf_to_usd(urdf_result["urdf_path"], output_usd_path)
+        kwargs["usd_path"] = output_usd_path
 
     mapping_config = load_mapping_template(mapping_type)
 
@@ -403,3 +429,19 @@ def compile_function_instance(
         "physical_effect": physical_effect,
         "mapping_type": mapping_type,
     }
+
+
+if __name__ == "__main__":
+    args = parse_arguments()
+    result = compile_function_instance(
+        receptor_mesh_path=args.receptor_mesh_path,
+        effector_mesh_path=args.effector_mesh_path,
+        base_mesh_path=args.base_mesh_path,
+        articulation_results_path=args.articulation_results_path,
+        function_results_path=args.function_results_path,
+        output_dir=args.output_dir,
+        robot_name=args.robot_name,
+        delta=args.delta,
+    )
+    print("Compilation complete. Results:")
+    print(json.dumps(result, indent=2))

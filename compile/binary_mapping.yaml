@@ -1,11 +1,6 @@
 type: binary
-template: "def binary_mapping(receptor_state):
-    if receptor_state == RECEPTOR_STATE:
-        effector_state = EFFECTOR_STATE1
-    else:
-        effector_state = EFFECTOR_STATE2
-    return effector_state"
+template: "def binary_mapping(receptor_state):\n\tif receptor_state == RECEPTOR_STATE:\n\t\teffector_state = EFFECTOR_STATE1\n\telse:\n\t\teffector_state = EFFECTOR_STATE2\n\treturn effector_state\n"
 parameters:
-    - RECETPRO_STATE
+    - RECEPTOR_STATE
     - EFFECTOR_STATE1
     - EFFECTOR_STATE2

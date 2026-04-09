@@ -1,8 +1,5 @@
 type: cumulative
-template: "def cumulative_mapping(receptor_state, effector_state):
-    if receptor_state == RECEPTOR_STATE:
-        effector_state = effector_state + DELTA
-    return effector_state"
+template: "def cumulative_mapping(receptor_state, effector_state):\n\tif receptor_state == RECEPTOR_STATE:\n\t\teffector_state = effector_state + DELTA\n\treturn effector_state\n"
 parameters:
     - RECEPTOR_STATE
     - DELTA
