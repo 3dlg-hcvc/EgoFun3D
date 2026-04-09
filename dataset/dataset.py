@@ -139,7 +139,7 @@ class UniformDataset(Dataset):
             cropped_bottom_right = camera_intrinsics_data["original_frame_size"]
         return camera_extrinsics, camera_intrinsics, cropped_top_left, cropped_bottom_right
     
-    def load_from_hdf5(filepath: str) -> dict:
+    def load_from_hdf5(self, filepath: str) -> dict:
         """Load the HDF5 file back into the original dict format."""
         data = {}
         with h5py.File(filepath, 'r') as f:
