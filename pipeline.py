@@ -15,6 +15,7 @@ areas outside both masks darkened; mask boundaries outlined in light gray. Requi
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import gc
 import json
@@ -24,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
+from io import BytesIO
 from typing import Any
 
 import cv2
@@ -897,10 +899,569 @@ def _export_recon_articulation_glb(
     return out_path, scene_center
 
 
+def _resolve_uploaded_video_path(video_file: Any) -> str | None:
+    if not video_file:
+        return None
+    if isinstance(video_file, str):
+        path = video_file
+    elif isinstance(video_file, dict):
+        path = video_file.get("path") or video_file.get("name")
+    else:
+        path = getattr(video_file, "name", None)
+    return path or None
+
+
+INTERACTIVE_MIN_SEED_FRAMES = 1
+
+
+def _is_interactive_mode(segmentation_mode: str | None) -> bool:
+    return str(segmentation_mode or "").strip().lower().startswith("interactive")
+
+
+def _empty_interactive_seg_state() -> dict[str, Any]:
+    return {
+        "video_path": None,
+        "frames": [],
+        "fps": float(SEGMENTATION_OVERLAY_FALLBACK_FPS),
+        "active_frame": 0,
+        "active_role": "receptor",
+        "active_click_label": 1,
+        "annotations": {"receptor": {}, "effector": {}},
+    }
+
+
+def _interactive_role_color(role: str) -> tuple[int, int, int]:
+    palette = sns.color_palette("Set2")
+    idx = 0 if role == "receptor" else 1
+    return tuple(int(round(v * 255.0)) for v in palette[idx])
+
+
+def _interactive_button_updates(active_role: str, active_click_label: int = 1):
+    return (
+        gr.update(value="Receptor", variant="primary" if active_role == "receptor" else "secondary"),
+        gr.update(value="Effector", variant="primary" if active_role == "effector" else "secondary"),
+        gr.update(value="Positive clicks (+)", variant="primary" if int(active_click_label) == 1 else "secondary"),
+        gr.update(value="Negative clicks (-)", variant="primary" if int(active_click_label) == 0 else "secondary"),
+    )
+
+
+def _interactive_entry(
+    state: dict[str, Any], role: str, frame_idx: int, create: bool = False
+) -> dict[str, Any] | None:
+    annotations = state.setdefault("annotations", {})
+    role_map = annotations.setdefault(role, {})
+    key = int(frame_idx)
+    entry = role_map.get(key)
+    if entry is None and create:
+        entry = {"points": [], "mask": None}
+        role_map[key] = entry
+    return entry
+
+
+def _interactive_points_for_frame(state: dict[str, Any], role: str, frame_idx: int) -> list[dict[str, int]]:
+    entry = _interactive_entry(state, role, frame_idx, create=False)
+    if not entry:
+        return []
+    out: list[dict[str, int]] = []
+    for point in entry.get("points", []):
+        if isinstance(point, dict):
+            x = point.get("x")
+            y = point.get("y")
+            label = point.get("label", 1)
+        elif isinstance(point, (list, tuple)) and len(point) >= 2:
+            x, y = point[0], point[1]
+            label = 1
+        else:
+            continue
+        if x is None or y is None:
+            continue
+        out.append({"x": int(x), "y": int(y), "label": 1 if int(label) != 0 else 0})
+    return out
+
+
+def _interactive_mask_for_frame(state: dict[str, Any], role: str, frame_idx: int) -> np.ndarray | None:
+    entry = _interactive_entry(state, role, frame_idx, create=False)
+    if not entry or entry.get("mask") is None:
+        return None
+    return np.asarray(entry["mask"]).astype(bool)
+
+
+def _interactive_seed_frame_ids(state: dict[str, Any], role: str) -> list[int]:
+    out: list[int] = []
+    for frame_idx, entry in state.get("annotations", {}).get(role, {}).items():
+        mask = entry.get("mask")
+        if mask is not None and int(np.asarray(mask).astype(bool).sum()) > 0:
+            out.append(int(frame_idx))
+    return sorted(set(out))
+
+
+def _interactive_union_seed_frame_ids(state: dict[str, Any]) -> list[int]:
+    return sorted(
+        set(_interactive_seed_frame_ids(state, "receptor"))
+        | set(_interactive_seed_frame_ids(state, "effector"))
+    )
+
+
+def _interactive_status_html(state: dict[str, Any]) -> str:
+    base_style = (
+        "<style>"
+        ".egofun-interactive-status, .egofun-interactive-status * { color: #243035 !important; }"
+        ".egofun-interactive-status .muted { color: #5a6c72 !important; }"
+        ".egofun-interactive-status .counts { color: #44535a !important; }"
+        "</style>"
+    )
+    frames = state.get("frames", [])
+    if not frames:
+        return (
+            base_style
+            + '<div class="egofun-interactive-status" style="padding:12px 14px;border:1px solid #d9e3e3;border-radius:10px;background:#fbfdfd;font-size:0.95rem;font-family:system-ui,sans-serif;">'
+            'Choose <b>Interactive SAM3</b> and upload a video to start annotating.</div>'
+        )
+
+    active_role = str(state.get("active_role", "receptor"))
+    active_click_label = 1 if int(state.get("active_click_label", 1)) != 0 else 0
+    frame_idx = int(state.get("active_frame", 0))
+    receptor_ids = _interactive_seed_frame_ids(state, "receptor")
+    effector_ids = _interactive_seed_frame_ids(state, "effector")
+    union_ids = _interactive_union_seed_frame_ids(state)
+    current_points = _interactive_points_for_frame(state, active_role, frame_idx)
+    pos_count = sum(1 for point in current_points if int(point.get("label", 1)) == 1)
+    neg_count = sum(1 for point in current_points if int(point.get("label", 1)) == 0)
+
+    def _fmt(ids: list[int]) -> str:
+        if not ids:
+            return "none"
+        shown = ", ".join(str(i) for i in ids[:8])
+        if len(ids) > 8:
+            shown += ", ..."
+        return shown
+
+    active_color = "rgb(102,194,165)" if active_role == "receptor" else "rgb(252,141,98)"
+    click_mode = "positive (+)" if active_click_label == 1 else "negative (-)"
+    return (
+        base_style
+        + '<div class="egofun-interactive-status" style="padding:12px 14px;border:1px solid #d9e3e3;border-radius:10px;background:#fbfdfd;font-family:system-ui,sans-serif;">'
+        f'<div style="font-size:0.95rem;margin-bottom:8px;">Current frame: <b>{frame_idx}</b> / {max(len(frames) - 1, 0)} '
+        f'&nbsp; <span style="color:{active_color} !important;font-weight:700;">Active part: {active_role}</span> '
+        f'&nbsp; <span class="counts">Click mode: <b>{click_mode}</b></span> '
+        f'&nbsp; <span class="counts">Frame clicks for active part: {len(current_points)} total, {pos_count} positive, {neg_count} negative</span></div>'
+        '<div style="font-size:0.9rem;line-height:1.45;">'
+        f'<b>Receptor seeds:</b> {len(receptor_ids)} frame(s) [{_fmt(receptor_ids)}]<br>'
+        f'<b>Effector seeds:</b> {len(effector_ids)} frame(s) [{_fmt(effector_ids)}]<br>'
+        f'<b>Frames annotated overall:</b> {len(union_ids)} frame(s) [{_fmt(union_ids)}]<br>'
+        f'<span class="muted">Use positive clicks to grow the mask and negative clicks to suppress spill. You can use the same frame for both parts by switching the Receptor/Effector button before clicking.</span>'
+        '</div></div>'
+    )
+
+def _render_interactive_frame(state: dict[str, Any]) -> np.ndarray | None:
+    frames = state.get("frames", [])
+    if not frames:
+        return None
+    frame_idx = int(np.clip(state.get("active_frame", 0), 0, len(frames) - 1))
+    state["active_frame"] = frame_idx
+    active_role = str(state.get("active_role", "receptor"))
+
+    rgb = np.asarray(frames[frame_idx], dtype=np.uint8)
+    recv_mask = _interactive_mask_for_frame(state, "receptor", frame_idx)
+    eff_mask = _interactive_mask_for_frame(state, "effector", frame_idx)
+    overlay = overlay_masks_pop(
+        rgb,
+        recv_mask,
+        eff_mask,
+        alpha=0.55,
+        darken=0.82,
+        outline_thickness=4,
+    )
+
+    for role in ("receptor", "effector"):
+        color = _interactive_role_color(role)
+        radius = 7 if role == active_role else 5
+        for point_idx, point in enumerate(_interactive_points_for_frame(state, role, frame_idx), start=1):
+            x = int(point["x"])
+            y = int(point["y"])
+            label = 1 if int(point.get("label", 1)) != 0 else 0
+            marker_text = "+" if label == 1 else "-"
+            cv2.circle(overlay, (x, y), radius + 3, (245, 245, 245), 2, lineType=cv2.LINE_AA)
+            if label == 1:
+                cv2.circle(overlay, (x, y), radius, color, -1, lineType=cv2.LINE_AA)
+            else:
+                cv2.circle(overlay, (x, y), radius, color, 2, lineType=cv2.LINE_AA)
+                cv2.circle(overlay, (x, y), max(radius - 2, 1), (22, 26, 29), -1, lineType=cv2.LINE_AA)
+            cv2.putText(
+                overlay,
+                marker_text,
+                (x - 5, y + 5),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (245, 245, 245),
+                2,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                overlay,
+                str(point_idx),
+                (x + 10, y - 8),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.42,
+                color,
+                1,
+                cv2.LINE_AA,
+            )
+
+    cv2.putText(
+        overlay,
+        f"Frame {frame_idx + 1}/{len(frames)}",
+        (16, 28),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.72,
+        (245, 245, 245),
+        2,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        overlay,
+        f"Active: {active_role}",
+        (16, 56),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.62,
+        _interactive_role_color(active_role),
+        2,
+        cv2.LINE_AA,
+    )
+    return overlay
+
+def _sam3_bpe_path() -> str:
+    candidate = os.path.join(_ROOT, "bpe_simple_vocab_16e6.txt.gz")
+    if not os.path.exists(candidate):
+        raise FileNotFoundError(
+            f"SAM3 BPE vocab not found at {candidate}. Download it from "
+            "https://github.com/facebookresearch/sam3/raw/main/sam3/assets/bpe_simple_vocab_16e6.txt.gz"
+        )
+    return candidate
+
+
+def get_sam3_image_processor(
+    device: str,
+    checkpoint_path: str | None = None,
+    bpe_path: str | None = None,
+    confidence_threshold: float = 0.5,
+):
+    ck = checkpoint_path or ""
+    bp = bpe_path or ""
+    key = f"sam3_img|{device}|{ck}|{bp}|{float(confidence_threshold):.4f}"
+    if key not in _MODEL_CACHE:
+        from sam3 import build_sam3_image_model
+        from sam3.model.sam3_image_processor import Sam3Processor
+
+        resolved_bpe_path = bpe_path or _sam3_bpe_path()
+        model = build_sam3_image_model(
+            bpe_path=resolved_bpe_path,
+            device=device,
+            checkpoint_path=checkpoint_path,
+            load_from_HF=checkpoint_path is None,
+            # Enable the SAM2-style interactive predictor so that click-based
+            # segmentation in _sam3_mask_from_points works correctly.
+            enable_inst_interactivity=True,
+        )
+        _MODEL_CACHE[key] = Sam3Processor(
+            model,
+            confidence_threshold=float(confidence_threshold),
+            device=device,
+        )
+    return _MODEL_CACHE[key]
+
+
+def _sam3_mask_from_points(
+    image: np.ndarray,
+    points: list[dict[str, int]],
+    device: str,
+    checkpoint_path: str | None = None,
+    bpe_path: str | None = None,
+    confidence_threshold: float = 0.5,
+) -> np.ndarray:
+    height, width = image.shape[:2]
+    if len(points) == 0:
+        return np.zeros((height, width), dtype=bool)
+
+    point_labels = [1 if int(p.get("label", 1)) != 0 else 0 for p in points]
+    if not any(lbl == 1 for lbl in point_labels):
+        return np.zeros((height, width), dtype=bool)
+
+    processor = get_sam3_image_processor(
+        device=device,
+        checkpoint_path=checkpoint_path,
+        bpe_path=bpe_path,
+        confidence_threshold=confidence_threshold,
+    )
+
+    # Use SAM3's SAM2-style interactive predictor (inst_interactive_predictor).
+    # The grounding API (geometric_prompt.append_points + _forward_grounding) is a
+    # detector that ignores click positions; the interactive predictor is specifically
+    # trained for click-based interactive segmentation.
+    #
+    # The tracker backbone is None — it shares image features with the main SAM3
+    # backbone. processor.set_image() extracts "sam2_backbone_out" from the main
+    # backbone and applies conv_s0/conv_s1 to adapt the FPN features for the
+    # interactive predictor's SAM2 decoder. We then manually populate the predictor's
+    # _features from those adapted features, bypassing its standalone set_image().
+    interactive_pred = processor.model.inst_interactive_predictor
+    if interactive_pred is None:
+        return np.zeros((height, width), dtype=bool)
+
+    image_pil = to_pil_rgb(image)
+    state = processor.set_image(image_pil)
+
+    sam2_out = state["backbone_out"].get("sam2_backbone_out")
+    if sam2_out is None:
+        return np.zeros((height, width), dtype=bool)
+
+    # Mirror SAM3InteractiveImagePredictor.set_image() but using the pre-computed
+    # (and already conv_s0/conv_s1-adapted) FPN features from processor.set_image().
+    _, vision_feats, _, _ = interactive_pred.model._prepare_backbone_features(sam2_out)
+    vision_feats[-1] = vision_feats[-1] + interactive_pred.model.no_mem_embed
+    feats = [
+        feat.permute(1, 2, 0).view(1, -1, *feat_size)
+        for feat, feat_size in zip(vision_feats[::-1], interactive_pred._bb_feat_sizes[::-1])
+    ][::-1]
+    interactive_pred._features = {"image_embed": feats[-1], "high_res_feats": feats[:-1]}
+    interactive_pred._orig_hw = [(height, width)]
+    interactive_pred._is_image_set = True
+    interactive_pred._is_batch = False
+
+    point_coords = np.array(
+        [[int(p["x"]), int(p["y"])] for p in points], dtype=np.float32
+    )
+    point_labels_arr = np.array(point_labels, dtype=np.int32)
+
+    # multimask_output=True for a single ambiguous click (returns 3 candidates
+    # and picks the best by IOU score). False for multiple clicks.
+    multimask_output = len(points) == 1
+
+    masks_np, iou_predictions_np, _ = interactive_pred.predict(
+        point_coords=point_coords,
+        point_labels=point_labels_arr,
+        multimask_output=multimask_output,
+        normalize_coords=True,  # point_coords are in pixel space
+    )
+    # masks_np: (C, H, W) float binary (thresholded at mask_threshold=0.0)
+    best_idx = int(np.argmax(iou_predictions_np))
+    return (masks_np[best_idx] > 0.5).astype(bool)
+
+def _prepare_interactive_state(video_file: Any, state: dict[str, Any] | None) -> dict[str, Any]:
+    path = _resolve_uploaded_video_path(video_file)
+    if not path or not os.path.isfile(path):
+        return _empty_interactive_seg_state()
+
+    prepared = state if isinstance(state, dict) else _empty_interactive_seg_state()
+    if prepared.get("video_path") != path or not prepared.get("frames"):
+        _pil_frames_unused, rgb_np, fps = load_full_video(path)
+        prepared = _empty_interactive_seg_state()
+        prepared["video_path"] = path
+        prepared["frames"] = rgb_np
+        prepared["fps"] = float(fps)
+
+    if prepared.get("active_role") not in {"receptor", "effector"}:
+        prepared["active_role"] = "receptor"
+    prepared["active_click_label"] = 1 if int(prepared.get("active_click_label", 1)) != 0 else 0
+    num_frames = len(prepared.get("frames", []))
+    prepared["active_frame"] = int(np.clip(prepared.get("active_frame", 0), 0, max(num_frames - 1, 0)))
+    return prepared
+
+
+def _interactive_ui_updates(segmentation_mode: str, video_file: Any, state: dict[str, Any] | None):
+    if not _is_interactive_mode(segmentation_mode):
+        receptor_btn, effector_btn, positive_btn, negative_btn = _interactive_button_updates("receptor", 1)
+        return (
+            gr.update(visible=False),
+            state if isinstance(state, dict) else _empty_interactive_seg_state(),
+            gr.update(value=None),
+            gr.update(minimum=0, maximum=0, value=0),
+            _interactive_status_html(_empty_interactive_seg_state()),
+            receptor_btn,
+            effector_btn,
+            positive_btn,
+            negative_btn,
+        )
+
+    prepared = _prepare_interactive_state(video_file, state)
+    receptor_btn, effector_btn, positive_btn, negative_btn = _interactive_button_updates(
+        prepared.get("active_role", "receptor"), prepared.get("active_click_label", 1)
+    )
+    max_frame = max(len(prepared.get("frames", [])) - 1, 0)
+    return (
+        gr.update(visible=True),
+        prepared,
+        gr.update(value=_render_interactive_frame(prepared)),
+        gr.update(minimum=0, maximum=max_frame, value=int(prepared.get("active_frame", 0))),
+        _interactive_status_html(prepared),
+        receptor_btn,
+        effector_btn,
+        positive_btn,
+        negative_btn,
+    )
+
+def _interactive_refresh_outputs(state: dict[str, Any]):
+    receptor_btn, effector_btn, positive_btn, negative_btn = _interactive_button_updates(
+        state.get("active_role", "receptor"), state.get("active_click_label", 1)
+    )
+    return (
+        state,
+        gr.update(value=_render_interactive_frame(state)),
+        _interactive_status_html(state),
+        receptor_btn,
+        effector_btn,
+        positive_btn,
+        negative_btn,
+    )
+
+def _interactive_set_active_role(state: dict[str, Any] | None, role: str):
+    prepared = state if isinstance(state, dict) else _empty_interactive_seg_state()
+    prepared["active_role"] = role if role in {"receptor", "effector"} else "receptor"
+    return _interactive_refresh_outputs(prepared)
+
+
+def _interactive_set_frame(state: dict[str, Any] | None, frame_idx: float | int):
+    prepared = state if isinstance(state, dict) else _empty_interactive_seg_state()
+    num_frames = len(prepared.get("frames", []))
+    prepared["active_frame"] = int(np.clip(int(frame_idx), 0, max(num_frames - 1, 0))) if num_frames > 0 else 0
+    return _interactive_refresh_outputs(prepared)
+
+
+def _interactive_set_click_label(state: dict[str, Any] | None, label: int):
+    prepared = state if isinstance(state, dict) else _empty_interactive_seg_state()
+    prepared["active_click_label"] = 1 if int(label) != 0 else 0
+    return _interactive_refresh_outputs(prepared)
+
+
+def _interactive_recompute_mask(state: dict[str, Any], role: str, frame_idx: int) -> None:
+    entry = _interactive_entry(state, role, frame_idx, create=False)
+    if entry is None:
+        return
+    points = _interactive_points_for_frame(state, role, frame_idx)
+    role_map = state.setdefault("annotations", {}).setdefault(role, {})
+    if len(points) == 0:
+        role_map.pop(int(frame_idx), None)
+        return
+    frame = np.asarray(state["frames"][int(frame_idx)], dtype=np.uint8)
+    entry["points"] = points
+    entry["mask"] = _sam3_mask_from_points(frame, points, _DEVICE)
+
+
+def _interactive_add_click(state: dict[str, Any] | None, evt: gr.SelectData):
+    prepared = state if isinstance(state, dict) else _empty_interactive_seg_state()
+    frames = prepared.get("frames", [])
+    if not frames:
+        return _interactive_refresh_outputs(prepared)
+
+    idx = getattr(evt, "index", None)
+    if isinstance(idx, (list, tuple)) and len(idx) >= 2:
+        x, y = idx[0], idx[1]
+    elif isinstance(idx, dict):
+        x, y = idx.get("x"), idx.get("y")
+    else:
+        return _interactive_refresh_outputs(prepared)
+    if x is None or y is None:
+        return _interactive_refresh_outputs(prepared)
+
+    frame_idx = int(prepared.get("active_frame", 0))
+    h, w = np.asarray(frames[frame_idx]).shape[:2]
+    x_i = int(np.clip(int(round(float(x))), 0, w - 1))
+    y_i = int(np.clip(int(round(float(y))), 0, h - 1))
+    role = str(prepared.get("active_role", "receptor"))
+    label = 1 if int(prepared.get("active_click_label", 1)) != 0 else 0
+    entry = _interactive_entry(prepared, role, frame_idx, create=True)
+    entry.setdefault("points", []).append({"x": x_i, "y": y_i, "label": label})
+    _interactive_recompute_mask(prepared, role, frame_idx)
+    return _interactive_refresh_outputs(prepared)
+
+
+def _interactive_undo_click(state: dict[str, Any] | None):
+    prepared = state if isinstance(state, dict) else _empty_interactive_seg_state()
+    frame_idx = int(prepared.get("active_frame", 0))
+    role = str(prepared.get("active_role", "receptor"))
+    entry = _interactive_entry(prepared, role, frame_idx, create=False)
+    if entry and entry.get("points"):
+        entry["points"].pop()
+        _interactive_recompute_mask(prepared, role, frame_idx)
+    return _interactive_refresh_outputs(prepared)
+
+
+def _interactive_clear_current_role(state: dict[str, Any] | None):
+    prepared = state if isinstance(state, dict) else _empty_interactive_seg_state()
+    frame_idx = int(prepared.get("active_frame", 0))
+    role = str(prepared.get("active_role", "receptor"))
+    prepared.setdefault("annotations", {}).setdefault(role, {}).pop(frame_idx, None)
+    return _interactive_refresh_outputs(prepared)
+
+
+def _interactive_clear_all(state: dict[str, Any] | None):
+    prepared = state if isinstance(state, dict) else _empty_interactive_seg_state()
+    prepared["annotations"] = {"receptor": {}, "effector": {}}
+    return _interactive_refresh_outputs(prepared)
+
+
+def _segment_one_role_interactive(
+    interactive_state: dict[str, Any],
+    full_rgb_np: list[np.ndarray],
+    role: str,
+    sam3_tracker,
+    log,
+) -> tuple[list[np.ndarray], list[int], list[int]]:
+    seed_frame_ids = _interactive_seed_frame_ids(interactive_state, role)
+    seed_pred_masks = [
+        np.asarray(_interactive_mask_for_frame(interactive_state, role, frame_id)).astype(bool)
+        for frame_id in seed_frame_ids
+    ]
+    seed_answer_dicts = []
+    seed_valid_frame_ids = []
+    for local_idx, frame_id in enumerate(seed_frame_ids):
+        points = _interactive_points_for_frame(interactive_state, role, frame_id)
+        mask = seed_pred_masks[local_idx]
+        seed_answer_dicts.append(
+            {
+                "frame_id": int(frame_id),
+                "seed_frame": True,
+                "propagated": False,
+                "annotation_source": "interactive_sam3_clicks",
+                "num_clicks": len(points),
+            }
+        )
+        if int(mask.sum()) > 0:
+            seed_valid_frame_ids.append(local_idx)
+
+    total = len(full_rgb_np)
+    log(
+        f"  User-provided {role} seed frames ({len(seed_frame_ids)}): "
+        f"{seed_frame_ids[:8]}{'...' if len(seed_frame_ids) > 8 else ''}"
+    )
+    if len(seed_frame_ids) < total:
+        masks, _answers, valid_ids = _propagate_seed_masks_to_full_video(
+            full_rgb_np,
+            seed_frame_ids,
+            seed_pred_masks,
+            seed_answer_dicts,
+            seed_valid_frame_ids,
+            sam3_tracker,
+        )
+        log(f"  SAM3 propagation applied ({total} frames); non-empty mask frames: {len(valid_ids)}.")
+    else:
+        masks, _answers, valid_ids = _expand_seed_outputs_to_full_video(
+            full_rgb_np,
+            seed_frame_ids,
+            seed_pred_masks,
+            seed_answer_dicts,
+            seed_valid_frame_ids,
+        )
+        log(f"  No SAM3 propagation needed; non-empty mask frames: {len(valid_ids)}.")
+    return masks, valid_ids, seed_frame_ids
+
+
 def run_pipeline(
     video_file: str | None,
     receptor_label: str,
     effector_label: str,
+    segmentation_mode: str,
+    interactive_state: dict[str, Any] | None,
     progress=gr.Progress(track_tqdm=True),
 ):
     device = _DEVICE
@@ -937,17 +1498,7 @@ def run_pipeline(
         )
 
     try:
-        if not video_file:
-            log("Error: upload a video.")
-            yield emit(recon_3d=gr.update(value=None), articulation_val="", function_val="", summary_val="")
-            return
-
-        if isinstance(video_file, str):
-            path = video_file
-        elif isinstance(video_file, dict):
-            path = video_file.get("path") or video_file.get("name")
-        else:
-            path = getattr(video_file, "name", None)
+        path = _resolve_uploaded_video_path(video_file)
         if not path or not os.path.isfile(path):
             log("Error: invalid upload.")
             yield emit(recon_3d=gr.update(value=None), articulation_val="", function_val="", summary_val="")
@@ -960,60 +1511,112 @@ def run_pipeline(
             yield emit(recon_3d=gr.update(value=None), articulation_val="", function_val="", summary_val="")
             return
 
-        log("Loading full video (every frame, in order)…")
-        pil_frames, _rgb_unused, input_video_fps = load_full_video(path)
-        rgb_np = video_frames_as_numpy_hwc_uint8(pil_frames)
-        total_f = len(pil_frames)
-        log(f"Loaded {total_f} frames. Segmentation: {SEGMENTATION_SEED_FRAMES} evenly spaced seeds, SAM3 propagates to all frames when N > seeds.")
+        interactive_mode = _is_interactive_mode(segmentation_mode)
+        if interactive_mode:
+            log("Interactive SAM3 segmentation selected.")
+            interactive_state = _prepare_interactive_state(video_file, interactive_state)
+            rgb_np = [np.asarray(frame, dtype=np.uint8) for frame in interactive_state.get("frames", [])]
+            if not rgb_np:
+                log("Error: upload a video before annotating interactive masks.")
+                yield emit(recon_3d=gr.update(value=None), articulation_val="", function_val="", summary_val="")
+                return
+            input_video_fps = float(interactive_state.get("fps", SEGMENTATION_OVERLAY_FALLBACK_FPS))
+            total_f = len(rgb_np)
+            r_seed_ids = _interactive_seed_frame_ids(interactive_state, "receptor")
+            e_seed_ids = _interactive_seed_frame_ids(interactive_state, "effector")
+            if len(r_seed_ids) < INTERACTIVE_MIN_SEED_FRAMES or len(e_seed_ids) < INTERACTIVE_MIN_SEED_FRAMES:
+                log(
+                    f"Error: interactive mode needs at least {INTERACTIVE_MIN_SEED_FRAMES} annotated frames per part. "
+                    f"Current counts - receptor: {len(r_seed_ids)}, effector: {len(e_seed_ids)}."
+                )
+                yield emit(recon_3d=gr.update(value=None), articulation_val="", function_val="", summary_val="")
+                return
+            log(
+                f"Loaded {total_f} frames from interactive cache. "
+                f"Receptor seeds: {len(r_seed_ids)}. Effector seeds: {len(e_seed_ids)}."
+            )
+        else:
+            log("Loading full video (every frame, in order)...")
+            _pil_frames, _rgb_unused, input_video_fps = load_full_video(path)
+            rgb_np = video_frames_as_numpy_hwc_uint8(_pil_frames)
+            total_f = len(rgb_np)
+            log(
+                f"Loaded {total_f} frames. Segmentation: {SEGMENTATION_SEED_FRAMES} evenly spaced seeds, "
+                "SAM3 propagates to all frames when N > seeds."
+            )
 
         init_extrinsic = np.eye(4, dtype=np.float64)
 
-        log("Loading / caching SegZero (VisionReasoner)…")
-        refseg = get_seg_model(device, reasoning_model_path, segmentation_model_path, sam_backend)
+        if interactive_mode:
+            should_propagate = (
+                len(_interactive_seed_frame_ids(interactive_state, "receptor")) < total_f
+                or len(_interactive_seed_frame_ids(interactive_state, "effector")) < total_f
+            )
+            sam3_tracker = None
+            if should_propagate:
+                log("Loading / caching SAM3 video tracker (propagation from user-annotated frames)...")
+                sam3_tracker = get_sam3_tracker(device, sam3_checkpoint_path, sam3_bpe_path)
 
-        seed_ids_preview = evenly_spaced_indices(total_f, SEGMENTATION_SEED_FRAMES)
-        should_propagate = len(seed_ids_preview) < total_f
-        sam3_tracker = None
-        if should_propagate:
-            log("Loading / caching SAM3 video tracker (mask propagation)…")
-            sam3_tracker = get_sam3_tracker(device, sam3_checkpoint_path, sam3_bpe_path)
+            log("Propagating receptor masks from interactive SAM3 clicks...")
+            r_masks, r_valid, _r_seeds = _segment_one_role_interactive(
+                interactive_state,
+                rgb_np,
+                "receptor",
+                sam3_tracker,
+                log,
+            )
+            log(f"Receptor: {len(r_valid)} frames with non-empty mask after propagation.")
 
-        receptor_desc = f"{receptor_label}. {receptor_label}"
-        effector_desc = f"{effector_label}. {effector_label}"
+            log("Propagating effector masks from interactive SAM3 clicks...")
+            e_masks, e_valid, _e_seeds = _segment_one_role_interactive(
+                interactive_state,
+                rgb_np,
+                "effector",
+                sam3_tracker,
+                log,
+            )
+            log(f"Effector: {len(e_valid)} frames with non-empty mask after propagation.")
+        else:
+            log("Loading / caching SegZero (VisionReasoner)...")
+            refseg = get_seg_model(device, reasoning_model_path, segmentation_model_path, sam_backend)
 
-        log("Segmenting receptor (SegZero on seed frames; SAM3 to full video when N > seeds)…")
-        r_masks, r_valid, _r_seeds = _segment_one_role(
-            refseg,
-            rgb_np,
-            receptor_desc,
-            sam3_tracker,
-            log,
-        )
-        log(f"Receptor: {len(r_valid)} frames with non-empty mask after propagation.")
+            seed_ids_preview = evenly_spaced_indices(total_f, SEGMENTATION_SEED_FRAMES)
+            should_propagate = len(seed_ids_preview) < total_f
+            sam3_tracker = None
+            if should_propagate:
+                log("Loading / caching SAM3 video tracker (mask propagation)...")
+                sam3_tracker = get_sam3_tracker(device, sam3_checkpoint_path, sam3_bpe_path)
 
-        log("Segmenting effector…")
-        e_masks, e_valid, _e_seeds = _segment_one_role(
-            refseg,
-            rgb_np,
-            effector_desc,
-            sam3_tracker,
-            log,
-        )
-        log(f"Effector: {len(e_valid)} frames with non-empty mask after propagation.")
+            receptor_desc = f"{receptor_label}. {receptor_label}"
+            effector_desc = f"{effector_label}. {effector_label}"
+
+            log("Segmenting receptor (SegZero on seed frames; SAM3 to full video when N > seeds)...")
+            r_masks, r_valid, _r_seeds = _segment_one_role(
+                refseg,
+                rgb_np,
+                receptor_desc,
+                sam3_tracker,
+                log,
+            )
+            log(f"Receptor: {len(r_valid)} frames with non-empty mask after propagation.")
+
+            log("Segmenting effector...")
+            e_masks, e_valid, _e_seeds = _segment_one_role(
+                refseg,
+                rgb_np,
+                effector_desc,
+                sam3_tracker,
+                log,
+            )
+            log(f"Effector: {len(e_valid)} frames with non-empty mask after propagation.")
 
         r_stack = np.stack([m.astype(bool) for m in r_masks], axis=0)
         e_stack = np.stack([m.astype(bool) for m in e_masks], axis=0)
 
         fd_mp4, seg_video_path = tempfile.mkstemp(suffix="_segmentation_overlay.mp4", prefix="pfr_demo_")
         os.close(fd_mp4)
-        log(f"Rendering segmentation overlay video ({input_video_fps:g} fps, same as input)…")
-        if frames_to_overlay_mp4(
-            rgb_np,
-            r_masks,
-            e_masks,
-            seg_video_path,
-            fps=input_video_fps,
-        ):
+        log(f"Rendering segmentation overlay video ({input_video_fps:g} fps, same as input)...")
+        if frames_to_overlay_mp4(rgb_np, r_masks, e_masks, seg_video_path, fps=input_video_fps):
             log(f"Segmentation overlay video: {seg_video_path}")
         else:
             log("Warning: ffmpeg failed or missing; segmentation video not created. Install ffmpeg and retry.")
@@ -1023,11 +1626,11 @@ def run_pipeline(
                 pass
             seg_video_path = None
 
-        # Stream segmentation output immediately; later stages continue and will send a final update.
         yield emit(recon_3d=gr.update(), articulation_val="", function_val="", summary_val="")
 
-        log("Unloading SegZero / SAM3 from GPU cache before DA3 (frees VRAM for depth + RoMa)…")
-        refseg = None
+        log("Unloading segmentation models from GPU cache before DA3 (frees VRAM for depth + RoMa)...")
+        if not interactive_mode:
+            refseg = None
         sam3_tracker = None
         _release_seg_sam3_from_cache(
             device,
@@ -1037,8 +1640,12 @@ def run_pipeline(
             sam3_checkpoint_path or "",
             sam3_bpe_path or "",
         )
+        _MODEL_CACHE.pop(f"sam3_img|{device}|||0.5000", None)
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-        log("Depth Anything 3 reconstruction (HxWx3 uint8 numpy; required by fusion/reconstruction.py DA3)…")
+        log("Depth Anything 3 reconstruction (HxWx3 uint8 numpy; required by fusion/reconstruction.py DA3)...")
         recon = get_recon_model(device, da3_model_path)
         recon_results = recon.reconstruct(rgb_np, init_extrinsic, None, None, None)
         if recon_results is None:
@@ -1046,25 +1653,21 @@ def run_pipeline(
             yield emit(recon_3d=gr.update(value=None), articulation_val="", function_val="", summary_val="")
             return
 
-        log("Unloading DA3 from GPU cache before RoMa fusion…")
+        log("Unloading DA3 from GPU cache before RoMa fusion...")
         recon = None
         _release_da3_from_cache(device, da3_model_path)
 
-        log("Feature-matching fusion (per part)…")
+        log("Feature-matching fusion (per part)...")
         fusion = get_fusion_model(device)
         fused_by_role: dict[str, np.ndarray | None] = {"receptor": None, "effector": None}
 
-        # RoMa (romatch) fails with BFloat16 vs Float in cholesky_solve if CUDA autocast is on; fusion.py must stay untouched.
         _fusion_no_amp = (
             torch.autocast(device_type="cuda", enabled=False)
             if device == "cuda" and torch.cuda.is_available()
             else contextlib.nullcontext()
         )
         with _fusion_no_amp:
-            for role, masks, label in (
-                ("receptor", r_masks, receptor_label),
-                ("effector", e_masks, effector_label),
-            ):
+            for role, masks, label in (("receptor", r_masks, receptor_label), ("effector", e_masks, effector_label)):
                 valid_ids = [i for i, m in enumerate(masks) if np.asarray(m).sum() > 0]
                 if not valid_ids:
                     log(f"[{role}] no non-empty masks; skip fusion.")
@@ -1075,17 +1678,15 @@ def run_pipeline(
                 frames_hwc = [rgb_np[i] for i in valid_ids]
                 kpts_a: dict[str, np.ndarray] = {}
                 kpts_b: dict[str, np.ndarray] = {}
-                fused_pcd, _trans, kpts_a, kpts_b = fusion.fuse_part_pcds(
-                    frames_hwc, vm, pts, kpts_a, kpts_b
-                )
+                fused_pcd, _trans, kpts_a, kpts_b = fusion.fuse_part_pcds(frames_hwc, vm, pts, kpts_a, kpts_b)
                 fused_by_role[role] = np.asarray(fused_pcd, dtype=np.float64).reshape(-1, 3)
                 log(f"[{role}] fused PCD points: {int(fused_pcd.shape[0])} ({label})")
 
-        log("Unloading RoMa fusion from GPU cache before iTACO…")
+        log("Unloading RoMa fusion from GPU cache before iTACO...")
         fusion = None
         _release_fusion_from_cache(device)
 
-        log("iTACO articulation (receptor, then effector)…")
+        log("iTACO articulation (receptor, then effector)...")
         itaco = get_itaco(device)
         itaco_samp = _itaco_yaml_cfg()
         recon_for_itaco = {
@@ -1094,7 +1695,6 @@ def run_pipeline(
             "points": recon_results["points"],
         }
         art_out: dict[str, Any] = {}
-        # PyTorch3D chamfer/kNN requires matching dtypes; CUDA autocast can mix BF16 (xyz) with FP32 (surface_xyz).
         _itaco_no_amp = (
             torch.autocast(device_type="cuda", enabled=False)
             if device == "cuda" and torch.cuda.is_available()
@@ -1106,7 +1706,7 @@ def run_pipeline(
                 est = itaco.articulation_estimation(rgb_s, recon_s, masks_s)
                 art_out[role] = est
         log(
-            "3D scene: RoMa fused part clouds when available, else DA3 points under each mask; iTACO joint arrows (shared world frame)…"
+            "3D scene: RoMa fused part clouds when available, else DA3 points under each mask; iTACO joint arrows (shared world frame)..."
         )
         recon_scene_glb_path, _scene_center = _export_recon_articulation_glb(
             recon_results,
@@ -1119,19 +1719,13 @@ def run_pipeline(
         recon_3d_update = gr.update(value=recon_scene_glb_path)
         articulation_text = json.dumps(art_out, indent=2, default=_numpy_json_default)
 
-        log(
-            "Releasing SegZero / SAM3 / DA3 / fusion / iTACO from memory before loading Qwen (Transformers)…"
-        )
-        refseg = None
-        sam3_tracker = None
+        log("Releasing segmentation / DA3 / fusion / iTACO from memory before loading Qwen (Transformers)...")
         recon = None
         fusion = None
         itaco = None
         _clear_model_cache_and_empty_cuda()
-        log("Qwen function VLM (Hugging Face Transformers, local weights)…")
-        vlm_cfg = omegaconf.OmegaConf.load(
-            _config_path("vlm_function", "qwen_function_transformers.yaml")
-        )
+        log("Qwen function VLM (Hugging Face Transformers, local weights)...")
+        vlm_cfg = omegaconf.OmegaConf.load(_config_path("vlm_function", "qwen_function_transformers.yaml"))
         vlm_cfg.vlm_model = _QWEN_VLM_MODEL
         vlm_cfg.device = device
         fn_vlm = build_vlm_prompter(vlm_cfg)
@@ -1149,11 +1743,7 @@ def run_pipeline(
 
     except Exception:
         log(traceback.format_exc())
-        err_3d = (
-            gr.update(value=recon_scene_glb_path)
-            if recon_scene_glb_path
-            else gr.update(value=None)
-        )
+        err_3d = gr.update(value=recon_scene_glb_path) if recon_scene_glb_path else gr.update(value=None)
         yield emit(
             recon_3d=err_3d,
             articulation_val=articulation_text,
@@ -1165,19 +1755,99 @@ def run_pipeline(
 def build_ui():
     with gr.Blocks(
         title="EgoFun3D",
-        theme=gr.themes.Soft(primary_hue="teal", secondary_hue="orange"),
+        theme=gr.themes.Soft(primary_hue="slate", secondary_hue="slate"),
         css="""
             .egofun-header { margin-bottom: 0 !important; }
             .egofun-header h1 { margin: 0 !important; }
             .egofun-subtitle { margin-top: 6px !important; padding-top: 0 !important; }
+            /* Receptor button: teal — CSS vars control fill/text per variant;
+               direct border override ensures the outline is always visible. */
+            #sam3-receptor-btn {
+                --button-primary-background-fill: #3d9e7d;
+                --button-primary-background-fill-hover: #2d8e6d;
+                --button-primary-text-color: white;
+                --button-primary-border-color: #3d9e7d;
+                --button-secondary-background-fill: rgba(61,158,125,0.07);
+                --button-secondary-background-fill-hover: rgba(61,158,125,0.15);
+                --button-secondary-text-color: #3d9e7d;
+                --button-secondary-border-color: #3d9e7d;
+            }
+            #sam3-receptor-btn button { border: 2px solid #3d9e7d !important; color: #3d9e7d !important; }
+            #sam3-receptor-btn button.primary { background: #3d9e7d !important; color: white !important; }
+            /* Effector button: always orange. */
+            #sam3-effector-btn {
+                --button-primary-background-fill: #d46a2a;
+                --button-primary-background-fill-hover: #c45a1a;
+                --button-primary-text-color: white;
+                --button-primary-border-color: #d46a2a;
+                --button-secondary-background-fill: rgba(212,106,42,0.07);
+                --button-secondary-background-fill-hover: rgba(212,106,42,0.15);
+                --button-secondary-text-color: #d46a2a;
+                --button-secondary-border-color: #d46a2a;
+            }
+            #sam3-effector-btn button { border: 2px solid #d46a2a !important; color: #d46a2a !important; }
+            #sam3-effector-btn button.primary { background: #d46a2a !important; color: white !important; }
+            /* Positive clicks button: green. */
+            #sam3-positive-btn {
+                --button-primary-background-fill: #2e7d32;
+                --button-primary-background-fill-hover: #1b5e20;
+                --button-primary-text-color: white;
+                --button-secondary-background-fill: rgba(46,125,50,0.07);
+                --button-secondary-background-fill-hover: rgba(46,125,50,0.15);
+                --button-secondary-text-color: #2e7d32;
+                --button-secondary-border-color: #2e7d32;
+            }
+            #sam3-positive-btn button { border: 2px solid #2e7d32 !important; color: #2e7d32 !important; }
+            #sam3-positive-btn button.primary { background: #2e7d32 !important; color: white !important; }
+            /* Negative clicks button: red. */
+            #sam3-negative-btn {
+                --button-primary-background-fill: #c62828;
+                --button-primary-background-fill-hover: #b71c1c;
+                --button-primary-text-color: white;
+                --button-secondary-background-fill: rgba(198,40,40,0.07);
+                --button-secondary-background-fill-hover: rgba(198,40,40,0.15);
+                --button-secondary-text-color: #c62828;
+                --button-secondary-border-color: #c62828;
+            }
+            #sam3-negative-btn button { border: 2px solid #c62828 !important; color: #c62828 !important; }
+            #sam3-negative-btn button.primary { background: #c62828 !important; color: white !important; }
+            .egofun-interactive-note {
+                border: 1px solid #d9e3e3;
+                border-radius: 12px;
+                padding: 14px 16px;
+                background: #f7f9fb;
+                color: #2d3748 !important;
+            }
+            .egofun-interactive-note p,
+            .egofun-interactive-note li,
+            .egofun-interactive-note strong {
+                color: #2d3748 !important;
+            }
+            #interactive-sam3-image .image-frame {
+                height: 72vh !important;
+                max-height: 720px !important;
+                min-height: 320px !important;
+                display: flex !important;
+                justify-content: center !important;
+                align-items: center !important;
+                overflow: hidden !important;
+            }
+            #interactive-sam3-image .image-frame img {
+                width: auto !important;
+                height: auto !important;
+                max-width: 100% !important;
+                max-height: 100% !important;
+                object-fit: contain !important;
+                display: block !important;
+            }
             footer { display: none !important; }
         """,
     ) as demo:
         gr.Markdown("# EgoFun3D", elem_classes=["egofun-header"])
         gr.Markdown(
             "Upload a short video and label the **receptor** and **effector** parts in natural language. "
-            "The pipeline segments both parts, reconstructs the 3-D scene (DA3 + RoMa fusion), "
-            "estimates articulation axes (iTACO), and predicts part function with Qwen-3-VL 8B.",
+            "The pipeline can segment automatically with Vision Reasoner + SAM3, or let you annotate SAM3 seed masks interactively; "
+            "then it reconstructs the 3-D scene (DA3 + RoMa fusion), estimates articulation axes (iTACO), and predicts part function with Qwen-3-VL 8B.",
             elem_classes=["egofun-subtitle"],
         )
 
@@ -1186,45 +1856,66 @@ def build_ui():
                 vid = gr.Video(label="Input video", format="mp4")
             with gr.Column(scale=1):
                 seg_out = gr.Video(
-                    label="Segmentation preview  ·  receptor: green-teal  ·  effector: orange",
+                    label="Segmentation preview",
                     format="mp4",
                     interactive=False,
                 )
 
         with gr.Row():
-            receptor = gr.Textbox(
-                label="Receptor part",
-                placeholder="e.g. faucet switch",
-                scale=1,
+            receptor = gr.Textbox(label="Receptor part", placeholder="e.g. faucet switch", scale=1)
+            effector = gr.Textbox(label="Effector part", placeholder="e.g. faucet spout", scale=1)
+
+        segmentation_mode = gr.Radio(
+            choices=["Vision Reasoner", "Interactive SAM3"],
+            value="Vision Reasoner",
+            label="Segmentation mode",
+            info=None,
+        )
+
+        interactive_state = gr.State(value=_empty_interactive_seg_state())
+
+        with gr.Column(visible=False) as interactive_panel:
+            gr.Markdown(
+                "**Interactive SAM3 annotation**  \n"
+                "1. Pick the **Receptor** or **Effector** button to set which part you are annotating.  \n"
+                "2. Move to a frame with the slider and click on the preview image. Use positive clicks to include the part and negative clicks to suppress spill.  \n"
+                "3. The SAM3 mask updates immediately on that frame. You can annotate both parts on the same frame by switching between the Receptor/Effector buttons before clicking.  \n"
+                "4. When you run the pipeline, the seed masks are propagated to the full clip with SAM3.",
+                elem_classes=["egofun-interactive-note"],
             )
-            effector = gr.Textbox(
-                label="Effector part",
-                placeholder="e.g. faucet spout",
-                scale=1,
+            with gr.Row():
+                receptor_btn = gr.Button("Receptor", variant="primary", elem_id="sam3-receptor-btn")
+                effector_btn = gr.Button("Effector", variant="secondary", elem_id="sam3-effector-btn")
+                positive_btn = gr.Button("Positive clicks (+)", variant="primary", elem_id="sam3-positive-btn")
+                negative_btn = gr.Button("Negative clicks (-)", variant="secondary", elem_id="sam3-negative-btn")
+                undo_btn = gr.Button("Undo last click")
+                clear_role_btn = gr.Button("Clear current part on this frame")
+                clear_all_btn = gr.Button("Clear all interactive masks")
+            frame_slider = gr.Slider(minimum=0, maximum=0, value=0, step=1, label="Annotation frame")
+            interactive_img = gr.Image(
+                label="Click to add annotation points",
+                format="png",
+                type="numpy",
+                interactive=False,
+                show_download_button=False,
+                elem_id="interactive-sam3-image",
             )
+            interactive_status = gr.HTML(value=_interactive_status_html(_empty_interactive_seg_state()))
 
         btn = gr.Button("Run pipeline", variant="primary")
 
-        # Intermediate state for the segmentation video path.  seg_out is NOT in the main
-        # generator's outputs, so Gradio never shows its "still running" loading overlay on
-        # the video player between the first yield (seg ready) and the final yield (all done).
-        # Instead, when _seg_path_state changes the tiny .change() handler immediately paints
-        # the video with no further spinner.
         _seg_path_state = gr.State(value=None)
-        _seg_path_state.change(
-            fn=lambda p: p,
-            inputs=[_seg_path_state],
-            outputs=[seg_out],
-            queue=False,
-        )
+        _seg_path_state.change(fn=lambda p: p, inputs=[_seg_path_state], outputs=[seg_out], queue=False)
 
         recon_3d = gr.Model3D(
-            label="3D reconstruction  ·  receptor: green-teal  ·  effector: orange  ·  iTACO joint axes",
+            label="3D reconstruction + articulation axes",
             height=540,
             clear_color=[0.06, 0.06, 0.08, 1.0],
         )
 
         function_summary = gr.HTML(label="Function prediction", value="")
+        _fn_summary_state = gr.State(value="")
+        _fn_summary_state.change(fn=lambda h: h, inputs=[_fn_summary_state], outputs=[function_summary], queue=False)
 
         with gr.Row():
             with gr.Column(scale=1):
@@ -1232,16 +1923,79 @@ def build_ui():
             with gr.Column(scale=1):
                 art_box = gr.Textbox(label="Articulation (JSON)", lines=12, max_lines=40)
 
-        fn_box = gr.Textbox(
-            label="Function VLM — full output (JSON)",
-            lines=8,
-            max_lines=30,
+        fn_box = gr.Textbox(label="Function VLM — full output (JSON)", lines=8, max_lines=30)
+
+        segmentation_mode.change(
+            _interactive_ui_updates,
+            inputs=[segmentation_mode, vid, interactive_state],
+            outputs=[interactive_panel, interactive_state, interactive_img, frame_slider, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
+            queue=False,
+        )
+        vid.change(
+            _interactive_ui_updates,
+            inputs=[segmentation_mode, vid, interactive_state],
+            outputs=[interactive_panel, interactive_state, interactive_img, frame_slider, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
+            queue=False,
+        )
+        receptor_btn.click(
+            lambda state: _interactive_set_active_role(state, "receptor"),
+            inputs=[interactive_state],
+            outputs=[interactive_state, interactive_img, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
+            queue=False,
+        )
+        effector_btn.click(
+            lambda state: _interactive_set_active_role(state, "effector"),
+            inputs=[interactive_state],
+            outputs=[interactive_state, interactive_img, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
+            queue=False,
+        )
+        positive_btn.click(
+            lambda state: _interactive_set_click_label(state, 1),
+            inputs=[interactive_state],
+            outputs=[interactive_state, interactive_img, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
+            queue=False,
+        )
+        negative_btn.click(
+            lambda state: _interactive_set_click_label(state, 0),
+            inputs=[interactive_state],
+            outputs=[interactive_state, interactive_img, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
+            queue=False,
+        )
+        frame_slider.change(
+            _interactive_set_frame,
+            inputs=[interactive_state, frame_slider],
+            outputs=[interactive_state, interactive_img, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
+            queue=False,
+        )
+        interactive_img.select(
+            _interactive_add_click,
+            inputs=[interactive_state],
+            outputs=[interactive_state, interactive_img, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
+            queue=False,
+        )
+        undo_btn.click(
+            _interactive_undo_click,
+            inputs=[interactive_state],
+            outputs=[interactive_state, interactive_img, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
+            queue=False,
+        )
+        clear_role_btn.click(
+            _interactive_clear_current_role,
+            inputs=[interactive_state],
+            outputs=[interactive_state, interactive_img, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
+            queue=False,
+        )
+        clear_all_btn.click(
+            _interactive_clear_all,
+            inputs=[interactive_state],
+            outputs=[interactive_state, interactive_img, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
+            queue=False,
         )
 
         btn.click(
             run_pipeline,
-            inputs=[vid, receptor, effector],
-            outputs=[log_box, _seg_path_state, recon_3d, function_summary, art_box, fn_box],
+            inputs=[vid, receptor, effector, segmentation_mode, interactive_state],
+            outputs=[log_box, _seg_path_state, recon_3d, _fn_summary_state, art_box, fn_box],
             queue=True,
         )
     return demo
