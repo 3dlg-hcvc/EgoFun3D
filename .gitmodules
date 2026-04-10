@@ -13,3 +13,6 @@
 [submodule "third_party/artipoint"]
 	path = third_party/artipoint
 	url = git@github.com:willipwk/artipoint.git
+[submodule "third_party/X-SAM"]
+	path = third_party/X-SAM
+	url = https://github.com/diliash/X-SAM.git
