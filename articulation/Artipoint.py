@@ -18,6 +18,9 @@ from third_party.artipoint.artipoint.track.arti_estimator import ArtiEstimator
 from third_party.artipoint.artipoint.segmentor.articulated_object_segmentor import ArticulatedObjectSegmentor
 from third_party.artipoint.artipoint.track.arti_estimator import smooth_trajectory_optimization
 from third_party.artipoint.artipoint.utils.articulation_helper import estimate_motion_point_bisectors
+from third_party.artipoint.artipoint.utils.visualization import plot_3d_tracks
+
+from cotracker.utils.visualizer import Visualizer
 
 from articulation.base import ArticulationEstimation
 from typing import List, Tuple, Dict
@@ -139,21 +142,23 @@ class Artipoint(ArticulationEstimation):
                     query if queries is None else torch.cat((queries, query), dim=0)
                 )
                 queries = queries[: self.cfg.queries.max_queries]
-                # # Visualize results
-                # if self.cfg.visualization.show_segmented_image:
-                #     masks = arti_results.get("filtered_masks")
-                #     rgb_vis = self.arti_segmentor.sam_segmenter.visualize_segmentation(
-                #         rgb, masks
-                #     )
-                #     all_points = arti_results.get("orb_points", [])
-                #     if all_points:
-                #         rgb_vis = self.arti_segmentor.sam_segmenter.draw_points(
-                #             rgb_vis, all_points, [1] * len(all_points)
-                #         )
-                #     cv2.imshow(
-                #         "Segmented Image", cv2.cvtColor(rgb_vis, cv2.COLOR_RGB2BGR)
-                #     )
-                #     cv2.waitKey(1)
+                # Visualize results
+            #     print(part_mask.shape)
+            #     if self.cfg.visualization.show_segmented_image:
+            #         # masks = arti_results.get("filtered_masks")
+            #         rgb_vis = self.arti_segmentor.sam_segmenter.visualize_segmentation(
+            #             np.array(rgb_frame_list[j + seg_start]), [part_mask]
+            #         )
+            #         # all_points = arti_results.get("orb_points", [])
+            #         if orb_points:
+            #             rgb_vis = self.arti_segmentor.sam_segmenter.draw_points(
+            #                 rgb_vis, orb_points, [1] * len(orb_points)
+            #             )
+            #         cv2.imshow(
+            #             "Segmented Image", cv2.cvtColor(rgb_vis, cv2.COLOR_RGB2BGR)
+            #         )
+            #         cv2.imwrite(f"segment_{seg_idx}_frame_{j}_segmented.png", cv2.cvtColor(rgb_vis, cv2.COLOR_RGB2BGR))
+            #         cv2.waitKey(1)
 
             # cv2.destroyAllWindows()
             if queries is not None:
@@ -172,7 +177,7 @@ class Artipoint(ArticulationEstimation):
         intrinsics: np.ndarray,
         segments: List[Tuple[int, int]],
         queries_segments: List[torch.Tensor],
-        human_masks_per_segment: List[List[np.ndarray]],
+        # human_masks_per_segment: List[List[np.ndarray]],
     ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
         """
         For each segment:
@@ -198,7 +203,7 @@ class Artipoint(ArticulationEstimation):
             loguru.logger.info(
                 f"Tracking for segment {idx} with {seg_end - seg_start} frames took {time.time() - st} seconds."
             )
-            # window_frames = self.rgb_frames[seg_start:seg_end]
+            # window_frames = rgb_frame_list_np[seg_start:seg_end]
             # video = (
             #     torch.tensor(np.stack(window_frames))
             #     .permute(0, 3, 1, 2)[None]
@@ -219,19 +224,21 @@ class Artipoint(ArticulationEstimation):
                     depths[seg_start:seg_end], intrinsics, pred_2d_tracks
                 )
             )
-            # Filter out trackers falling on human regions
-            human_masks_stack = np.stack(human_masks_per_segment[idx]).astype(bool)
-            x_loc = np.clip(
-                pred_2d_tracks[:, :, 0], 0, human_masks_stack.shape[2] - 1
-            ).astype(int)
-            y_loc = np.clip(
-                pred_2d_tracks[:, :, 1], 0, human_masks_stack.shape[1] - 1
-            ).astype(int)
-            pred_visibility &= ~human_masks_stack[
-                np.arange(human_masks_stack.shape[0])[:, None], y_loc, x_loc
-            ]
+            # print("pred visibility before filtering:", pred_visibility)
+            # # Filter out trackers falling on human regions
+            # human_masks_stack = np.stack(human_masks_per_segment[idx]).astype(bool)
+            # x_loc = np.clip(
+            #     pred_2d_tracks[:, :, 0], 0, human_masks_stack.shape[2] - 1
+            # ).astype(int)
+            # y_loc = np.clip(
+            #     pred_2d_tracks[:, :, 1], 0, human_masks_stack.shape[1] - 1
+            # ).astype(int)
+            # pred_visibility &= ~human_masks_stack[
+            #     np.arange(human_masks_stack.shape[0])[:, None], y_loc, x_loc
+            # ]
             # Combine with valid depth masks
-            pred_visibility &= valid_depth_masks
+            # pred_visibility &= valid_depth_masks
+            # print("pred visibility after filtering:", pred_visibility)
             pred_3d_tracks_segments.append(pred_3d_tracks)
             pred_visibility_segments.append(pred_visibility)
         loguru.logger.info(
@@ -273,6 +280,8 @@ class Artipoint(ArticulationEstimation):
                     thrsh=self.cfg.filtering.smoothness_threshold,
                 )
             )
+            if pred_3d_tracks_segments[i].shape[1] == 0:
+                continue
             pred_3d_tracks_segments[i], pred_visibility_segments[i] = (
                 self.arti_estimator.median_filter(
                     pred_3d_tracks_segments[i],
@@ -493,23 +502,40 @@ class Artipoint(ArticulationEstimation):
             return None, None, None
 
     def articulation_estimation(self, rgb_frame_list: List[np.ndarray], reconstruction_results: Dict, part_masks: np.ndarray) -> Dict[str, np.ndarray | str]:
-        segments = self.extract_hand_segments(rgb_frame_list)
-
+        # segments = self.extract_hand_segments(rgb_frame_list)
+        segments = [(0, len(rgb_frame_list))]
         # Extract query points per segment
         segments, queries_segments = self.extract_queries_per_segment(rgb_frame_list, part_masks, segments)
         # Compute human masks per segment
-        human_masks_per_segment = self.compute_human_masks(rgb_frame_list, segments)
+        # human_masks_per_segment = self.compute_human_masks(rgb_frame_list, segments)
 
         pred_3d_tracks_segments, pred_visibility_segments = (
             self.track_and_project_queries(
-                rgb_frame_list, reconstruction_results["depth"], reconstruction_results["intrinsics"], segments, queries_segments, human_masks_per_segment
+                rgb_frame_list, reconstruction_results["depth"], reconstruction_results["intrinsics"], segments, queries_segments
             )
         )
+        # seg_start, seg_end = segments[0]
+        # rgb_frame_list_np = [np.array(frame) for frame in rgb_frame_list]
+        # if self.cfg.visualization.show_3d_tracks:
 
         # Compensate for camera motion
         pred_3d_tracks_segments = self.compensate_cam_motion(
             reconstruction_results["extrinsics"], segments, pred_3d_tracks_segments
         )
+        # print("Visualizing 3D tracks for the first segment...")
+        # plot_3d_tracks(
+        #     pred_3d_tracks_segments[0],
+        #     pred_visibility_segments[0],
+        #     rgb_frame_list_np[seg_start:seg_end],
+        #     reconstruction_results["depth"][seg_start:seg_end],
+        #     azure_dataset=None,
+        #     tracks_leave_trace=self.cfg.visualization.tracks_leave_trace,
+        #     camera_poses=reconstruction_results["extrinsics"][seg_start:seg_end],
+        #     save_frames=True,
+        #     save_video=True,
+        #     output_dir="3d_video",
+        #     output_prefix=f"segment_{0}_",
+        # )
 
         # Filter out static and jerky points
         pred_3d_tracks_segments, pred_visibility_segments = self.filter(
@@ -541,7 +567,30 @@ class Artipoint(ArticulationEstimation):
             )
             pred_3d_tracks_segments_smooth.append(track)
         pred_3d_tracks_segments = pred_3d_tracks_segments_smooth
-        # Estimate motion for each segment
+        # print("Finished filtering and smoothing tracks.")
+        # # print("pred_3d_tracks_segments:", pred_3d_tracks_segments)
+        # track_pcd = o3d.geometry.PointCloud()
+        # colors_list = []
+        # points_list = []
+        # print("frame length:", len(rgb_frame_list))
+        # for i in range(len(pred_3d_tracks_segments)):
+        #     track3d = pred_3d_tracks_segments[i]
+        #     print(f"Segment {i} track shape:", track3d.shape)
+        #     all_track_points = o3d.geometry.PointCloud()
+        #     o3d_points = track3d.reshape(-1, 3)
+        #     all_track_points.points = o3d.utility.Vector3dVector(o3d_points)
+        #     o3d.io.write_point_cloud(f"segment_{i}_tracks.ply", all_track_points)
+        #     for track_idx in range(track3d.shape[1]):
+        #         color = [np.random.rand(3)] * track3d.shape[0]
+        #         colors_list.append(np.array(color))
+        #         points_list.append(track3d[:, track_idx, :])
+        #     track_pcd.points = o3d.utility.Vector3dVector(np.vstack(points_list))
+        #     track_pcd.colors = o3d.utility.Vector3dVector(np.vstack(colors_list))
+        #     o3d.io.write_point_cloud(f"segment_{i}_colored_tracks.ply", track_pcd)
+        # # track_pcd.points = o3d.utility.Vector3dVector(np.vstack(points_list))
+        # # track_pcd.colors = o3d.utility.Vector3dVector(np.vstack(colors_list))
+        # # o3d.io.write_point_cloud("artipoint_tracks.ply", track_pcd)
+        # # Estimate motion for each segment
         (
             traj_segments,
             free_traj_segments,

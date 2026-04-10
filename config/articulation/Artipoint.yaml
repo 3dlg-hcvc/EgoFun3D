@@ -36,10 +36,20 @@ filtering:
   percentile: 80
   smoothness_threshold: 0.2
   filter_unreliable_tracks: true # Enable filtering of unreliable tracks (tracks with low visibility)
-  occlusion_threshold: 0.5  # Threshold do discard occluded tracks
+  occlusion_threshold: 0.1  # Threshold do discard occluded tracks
   smooth_tracks: true # Enable smoothing of tracks with sparse optimization
   lambda_vel: 0.5 # Weight for velocity term in smoothing loss
   lambda_jerk: 5.0 # Weight for jerk term in smoothing loss
   filter_outlier_tracks: true # Enable filtering of outlier tracks with DBSCAN
   eps: 0.1 # Threshold for DBSCAN clustering to remove outliers
   min_samples: 5 # Minimum number of samples for DBSCAN clustering
+
+visualization:
+  show_hand_segments: false
+  show_segmented_image: true 
+  show_3d_tracks: false
+  show_trajectory: false
+  tracks_leave_trace: 15
+
+motion_estimation:
+  theta_prior: null # 1e-6
