@@ -6,11 +6,11 @@ import os
 import shutil
 from scipy.ndimage import zoom
 import skimage.transform as st
-from moge.model.v2 import MoGeModel # Let's try MoGe-2
+# from moge.model.v2 import MoGeModel # Let's try MoGe-2
 import sys
-sys.path.append("third_party/SpaTrackerV2/")
-from third_party.SpaTrackerV2.models.SpaTrackV2.models.vggt4track.utils.load_fn import preprocess_image
-from third_party.SpaTrackerV2.models.SpaTrackV2.models.vggt4track.models.vggt_moe import VGGT4Track
+# sys.path.append("third_party/SpaTrackerV2/")
+# from third_party.SpaTrackerV2.models.SpaTrackV2.models.vggt4track.utils.load_fn import preprocess_image
+# from third_party.SpaTrackerV2.models.SpaTrackV2.models.vggt4track.models.vggt_moe import VGGT4Track
 sys.path.append("third_party/vipe/")
 from third_party.vipe.vipe.utils.io import read_depth_artifacts, read_intrinsics_artifacts, read_pose_artifacts
 from third_party.vipe.vipe.utils.depth import reliable_depth_mask_range
@@ -62,98 +62,98 @@ class NaiveReconstruction(BaseReconstruction):
                 "points_mask": np.stack(valid_mask_list)}
     
 
-class MoGeReconstruction(BaseReconstruction):
-    def __init__(self, model_path: str = "Ruicheng/moge-2-vitl-normal", device: str = "cuda"):
-        self.model = MoGeModel.from_pretrained(model_path).to(device)
-        self.device = device
+# class MoGeReconstruction(BaseReconstruction):
+#     def __init__(self, model_path: str = "Ruicheng/moge-2-vitl-normal", device: str = "cuda"):
+#         self.model = MoGeModel.from_pretrained(model_path).to(device)
+#         self.device = device
 
-    def reconstruct(self, video_frame_list: List[np.ndarray], init_extrinsics: np.ndarray, intrinsics: np.ndarray, cam_pose_list: np.ndarray, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
-        w = video_frame_list[0].shape[1]
-        fov_x = 2 * np.arctan(w / (2 * intrinsics[0, 0]))
-        point_map_list = []
-        valid_mask_list = []
-        cam2init = init_extrinsics @ np.linalg.inv(cam_pose_list[0])
-        for frame_idx, video_frame in enumerate(video_frame_list):
-            if depth_frame_list is not None:
-                depth_frame = depth_frame_list[frame_idx]
-                points_map = depth2xyz(depth_frame, intrinsics, cam_type="opencv")
-                valid_mask = np.ones_like(depth_frame, dtype=bool)
-            else:
-                video_frame_tensor = pil_to_tensor(video_frame).to(self.device).to(torch.float32) / 255.0  # (3, H, W)
-                output = self.model.infer(video_frame_tensor, fov_x=fov_x)
-                points_map = output["points"].cpu().numpy() # H, W, 3
-                valid_mask = output["mask"].cpu().numpy().astype(bool)
-            cam_pose = cam2init @ cam_pose_list[frame_idx]
-            ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
-            points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
-            points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
-            point_map_list.append(points_map)
-            valid_mask_list.append(valid_mask)
-        return {"rgb": video_frame_list, 
-                "intrinsics": intrinsics, 
-                "extrinsics": cam_pose_list, 
-                "depth": depth_frame_list, 
-                "points": point_map_list, 
-                "points_mask": valid_mask_list}
+#     def reconstruct(self, video_frame_list: List[np.ndarray], init_extrinsics: np.ndarray, intrinsics: np.ndarray, cam_pose_list: np.ndarray, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
+#         w = video_frame_list[0].shape[1]
+#         fov_x = 2 * np.arctan(w / (2 * intrinsics[0, 0]))
+#         point_map_list = []
+#         valid_mask_list = []
+#         cam2init = init_extrinsics @ np.linalg.inv(cam_pose_list[0])
+#         for frame_idx, video_frame in enumerate(video_frame_list):
+#             if depth_frame_list is not None:
+#                 depth_frame = depth_frame_list[frame_idx]
+#                 points_map = depth2xyz(depth_frame, intrinsics, cam_type="opencv")
+#                 valid_mask = np.ones_like(depth_frame, dtype=bool)
+#             else:
+#                 video_frame_tensor = pil_to_tensor(video_frame).to(self.device).to(torch.float32) / 255.0  # (3, H, W)
+#                 output = self.model.infer(video_frame_tensor, fov_x=fov_x)
+#                 points_map = output["points"].cpu().numpy() # H, W, 3
+#                 valid_mask = output["mask"].cpu().numpy().astype(bool)
+#             cam_pose = cam2init @ cam_pose_list[frame_idx]
+#             ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
+#             points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
+#             points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
+#             point_map_list.append(points_map)
+#             valid_mask_list.append(valid_mask)
+#         return {"rgb": video_frame_list, 
+#                 "intrinsics": intrinsics, 
+#                 "extrinsics": cam_pose_list, 
+#                 "depth": depth_frame_list, 
+#                 "points": point_map_list, 
+#                 "points_mask": valid_mask_list}
     
 
-class SpatrackerReconstruction(BaseReconstruction):
-    def __init__(self, model_path: str, device: str = "cuda"):
-        self.model = VGGT4Track.from_pretrained(model_path)
-        self.model.eval()
-        self.model = self.model.to(device)
-        self.device = device
+# class SpatrackerReconstruction(BaseReconstruction):
+#     def __init__(self, model_path: str, device: str = "cuda"):
+#         self.model = VGGT4Track.from_pretrained(model_path)
+#         self.model.eval()
+#         self.model = self.model.to(device)
+#         self.device = device
 
-    def reconstruct(self, video_frame_list: List[np.ndarray], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: np.ndarray = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
-        video_tensor_list = []
-        for video_frame in video_frame_list:
-            video_tensor = pil_to_tensor(video_frame).to(torch.float32).to(self.device)
-            video_tensor_list.append(video_tensor)
-        video_tensor = torch.stack(video_tensor_list) # N, C, H, W
+#     def reconstruct(self, video_frame_list: List[np.ndarray], init_extrinsics: np.ndarray, intrinsics: np.ndarray = None, cam_pose_list: np.ndarray = None, depth_frame_list: List[np.ndarray] = None) -> Dict[str, np.ndarray]:
+#         video_tensor_list = []
+#         for video_frame in video_frame_list:
+#             video_tensor = pil_to_tensor(video_frame).to(torch.float32).to(self.device)
+#             video_tensor_list.append(video_tensor)
+#         video_tensor = torch.stack(video_tensor_list) # N, C, H, W
 
-        if depth_frame_list is None or cam_pose_list is None or intrinsics is None:
-             # process the image tensor
-            video_tensor = preprocess_image(video_tensor)[None]
-            with torch.no_grad():
-                with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
-                    # Predict attributes including cameras, depth maps, and point maps.
-                    predictions = self.model(video_tensor / 255)
-            if depth_frame_list is None:
-                depth_map, depth_conf = predictions["points_map"][..., 2], predictions["unc_metric"]
-                depth_tensor = depth_map.squeeze().cpu().numpy()
-                unc_metric = depth_conf.squeeze().cpu().numpy() > 0.5
-            else:
-                depth_tensor = np.stack(depth_frame_list)
-                unc_metric = np.ones_like(depth_tensor, dtype=bool)
+#         if depth_frame_list is None or cam_pose_list is None or intrinsics is None:
+#              # process the image tensor
+#             video_tensor = preprocess_image(video_tensor)[None]
+#             with torch.no_grad():
+#                 with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+#                     # Predict attributes including cameras, depth maps, and point maps.
+#                     predictions = self.model(video_tensor / 255)
+#             if depth_frame_list is None:
+#                 depth_map, depth_conf = predictions["points_map"][..., 2], predictions["unc_metric"]
+#                 depth_tensor = depth_map.squeeze().cpu().numpy()
+#                 unc_metric = depth_conf.squeeze().cpu().numpy() > 0.5
+#             else:
+#                 depth_tensor = np.stack(depth_frame_list)
+#                 unc_metric = np.ones_like(depth_tensor, dtype=bool)
                 
-            if cam_pose_list is None:
-                extrinsic = predictions["poses_pred"]
-                extrs = extrinsic.squeeze().cpu().numpy()
-            else:
-                extrs = np.stack(cam_pose_list)
-            if intrinsics is None:
-                intrinsic = predictions["intrs"]
-                intrs = intrinsic.squeeze().cpu().numpy()
-            else:
-                intrs = intrinsics.copy()
-                intrs = np.repeat(intrs[None, :, :], len(video_frame_list), axis=0)
-            video_tensor = video_tensor.squeeze()
-        cam2init = init_extrinsics @ np.linalg.inv(extrs[0])
-        point_map_list = []
-        for frame_idx in range(len(depth_tensor)):
-            depth = depth_tensor[frame_idx]
-            points_map = depth2xyz(depth, intrs[frame_idx], cam_type="opencv")
-            cam_pose = cam2init @ extrs[frame_idx]
-            ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
-            points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
-            points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
-            point_map_list.append(points_map)
-        return {"rgb": video_frame_list, 
-                "intrinsics": intrs[0], 
-                "extrinsics": extrs, 
-                "depth": depth_tensor, 
-                "points": np.stack(point_map_list), 
-                "points_mask": unc_metric}
+#             if cam_pose_list is None:
+#                 extrinsic = predictions["poses_pred"]
+#                 extrs = extrinsic.squeeze().cpu().numpy()
+#             else:
+#                 extrs = np.stack(cam_pose_list)
+#             if intrinsics is None:
+#                 intrinsic = predictions["intrs"]
+#                 intrs = intrinsic.squeeze().cpu().numpy()
+#             else:
+#                 intrs = intrinsics.copy()
+#                 intrs = np.repeat(intrs[None, :, :], len(video_frame_list), axis=0)
+#             video_tensor = video_tensor.squeeze()
+#         cam2init = init_extrinsics @ np.linalg.inv(extrs[0])
+#         point_map_list = []
+#         for frame_idx in range(len(depth_tensor)):
+#             depth = depth_tensor[frame_idx]
+#             points_map = depth2xyz(depth, intrs[frame_idx], cam_type="opencv")
+#             cam_pose = cam2init @ extrs[frame_idx]
+#             ones = np.ones((points_map.shape[0], points_map.shape[1], 1))
+#             points_map_homogeneous = np.concatenate([points_map, ones], axis=-1)
+#             points_map = (cam_pose @ points_map_homogeneous.reshape(-1, 4).T).T[:, :3].reshape(points_map.shape)
+#             point_map_list.append(points_map)
+#         return {"rgb": video_frame_list, 
+#                 "intrinsics": intrs[0], 
+#                 "extrinsics": extrs, 
+#                 "depth": depth_tensor, 
+#                 "points": np.stack(point_map_list), 
+#                 "points_mask": unc_metric}
     
 
 class ViPEReconstruction(BaseReconstruction):
@@ -452,11 +452,11 @@ def build_reconstruction_model(input_modality: str, recon_method: str, model_pat
     if recon_method == "naive":
         assert input_modality == "rgb+extrinsics+intrinsics+depth", "Naive reconstruction requires depth input."
         recon_model = NaiveReconstruction()
-    elif recon_method == "moge":
-        assert input_modality in ["rgb+extrinsics+intrinsics", "rgb+extrinsics+intrinsics+depth"], "MoGe reconstruction requires at least rgb, intrinsics and extrinsics input."
-        recon_model = MoGeReconstruction(model_path=model_path, device=device)
-    elif recon_method == "spatracker":
-        recon_model = SpatrackerReconstruction(model_path=model_path, device=device)
+    # elif recon_method == "moge":
+    #     assert input_modality in ["rgb+extrinsics+intrinsics", "rgb+extrinsics+intrinsics+depth"], "MoGe reconstruction requires at least rgb, intrinsics and extrinsics input."
+    #     recon_model = MoGeReconstruction(model_path=model_path, device=device)
+    # elif recon_method == "spatracker":
+    #     recon_model = SpatrackerReconstruction(model_path=model_path, device=device)
     elif recon_method == "vipe":
         recon_model = ViPEReconstruction()
     elif recon_method == "da3":

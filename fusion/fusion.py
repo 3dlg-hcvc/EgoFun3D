@@ -4,9 +4,9 @@ from torchvision.transforms.functional import pil_to_tensor
 import torch
 from romatch import roma_indoor
 import sys
-sys.path.append("third_party/SpaTrackerV2/")
-from third_party.SpaTrackerV2.models.SpaTrackV2.models.predictor import Predictor
-from third_party.SpaTrackerV2.models.SpaTrackV2.models.utils import get_points_on_a_grid
+# sys.path.append("third_party/SpaTrackerV2/")
+# from third_party.SpaTrackerV2.models.SpaTrackV2.models.predictor import Predictor
+# from third_party.SpaTrackerV2.models.SpaTrackV2.models.utils import get_points_on_a_grid
 
 from utils.reconstruction_utils import estimate_se3_transformation
 
@@ -113,103 +113,103 @@ class FeatureMatchingFusion(BaseFusion):
         return fused_part_pcd, transformation_list, kptsA_origin_dict, kptsB_origin_dict
         
 
-class TrackingFusion(BaseFusion):
-    def __init__(self, model_path: str = "Yuxihenry/SpatialTrackerV2-Offline", vo_points: int = 756, grid_size: int = 10, device: str = "cuda"):
-        self.model = Predictor.from_pretrained(model_path)
+# class TrackingFusion(BaseFusion):
+#     def __init__(self, model_path: str = "Yuxihenry/SpatialTrackerV2-Offline", vo_points: int = 756, grid_size: int = 10, device: str = "cuda"):
+#         self.model = Predictor.from_pretrained(model_path)
 
-        # config the model; the track_num is the number of points in the grid
-        self.model.spatrack.track_num = vo_points
+#         # config the model; the track_num is the number of points in the grid
+#         self.model.spatrack.track_num = vo_points
         
-        self.model.eval()
-        self.model.to(device)
+#         self.model.eval()
+#         self.model.to(device)
 
-        self.grid_size = grid_size
-        self.device = device
+#         self.grid_size = grid_size
+#         self.device = device
 
-    def tracking_video(self, video_frame_list: List[np.ndarray], depth_frame_list: List[np.ndarray], cam_pose_list: List[np.ndarray], intrinsics: np.ndarray, depth_mask_list: List[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
-        video_tensor_list = []
-        for video_frame in video_frame_list:
-            # video_tensor = pil_to_tensor(video_frame).to(torch.float32).to(self.device)
-            video_tensor = torch.from_numpy(video_frame).permute(2,0,1).float().to(self.device)
-            video_tensor_list.append(video_tensor)
-        video_tensor = torch.stack(video_tensor_list) # N, C, H, W
+#     def tracking_video(self, video_frame_list: List[np.ndarray], depth_frame_list: List[np.ndarray], cam_pose_list: List[np.ndarray], intrinsics: np.ndarray, depth_mask_list: List[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
+#         video_tensor_list = []
+#         for video_frame in video_frame_list:
+#             # video_tensor = pil_to_tensor(video_frame).to(torch.float32).to(self.device)
+#             video_tensor = torch.from_numpy(video_frame).permute(2,0,1).float().to(self.device)
+#             video_tensor_list.append(video_tensor)
+#         video_tensor = torch.stack(video_tensor_list) # N, C, H, W
         
-        if type(depth_mask_list) is list:
-            unc_metric = np.stack(depth_mask_list)
-        else:
-            unc_metric = depth_mask_list
-        if type(depth_frame_list) is list:
-            depth_tensor = np.stack(depth_frame_list)
-        else:
-            depth_tensor = depth_frame_list
-        if type(cam_pose_list) is list:
-            extrs = np.stack(cam_pose_list)
-        else:
-            extrs = cam_pose_list
+#         if type(depth_mask_list) is list:
+#             unc_metric = np.stack(depth_mask_list)
+#         else:
+#             unc_metric = depth_mask_list
+#         if type(depth_frame_list) is list:
+#             depth_tensor = np.stack(depth_frame_list)
+#         else:
+#             depth_tensor = depth_frame_list
+#         if type(cam_pose_list) is list:
+#             extrs = np.stack(cam_pose_list)
+#         else:
+#             extrs = cam_pose_list
         
-        mask = np.ones_like(video_tensor[0,0].cpu().numpy(), dtype=bool)
-        # get frame H W
-        frame_H, frame_W = video_tensor.shape[2:]
-        grid_pts = get_points_on_a_grid(self.grid_size, (frame_H, frame_W), device="cpu")
-        # Sample mask values at grid points and filter out points where mask=0
-        grid_pts_int = grid_pts[0].long()
-        mask_values = mask[grid_pts_int[...,1], grid_pts_int[...,0]]
-        grid_pts = grid_pts[:, mask_values]
-        query_xyt = torch.cat([torch.zeros_like(grid_pts[:, :, :1]), grid_pts], dim=2)[0].numpy()
+#         mask = np.ones_like(video_tensor[0,0].cpu().numpy(), dtype=bool)
+#         # get frame H W
+#         frame_H, frame_W = video_tensor.shape[2:]
+#         grid_pts = get_points_on_a_grid(self.grid_size, (frame_H, frame_W), device="cpu")
+#         # Sample mask values at grid points and filter out points where mask=0
+#         grid_pts_int = grid_pts[0].long()
+#         mask_values = mask[grid_pts_int[...,1], grid_pts_int[...,0]]
+#         grid_pts = grid_pts[:, mask_values]
+#         query_xyt = torch.cat([torch.zeros_like(grid_pts[:, :, :1]), grid_pts], dim=2)[0].numpy()
 
-        # Run model inference
-        with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
-            (
-                c2w_traj, intrs, point_map, conf_depth,
-                track3d_pred, track2d_pred, vis_pred, conf_pred, video
-            ) = self.model.forward(video_tensor, depth=depth_tensor,
-                                   intrs=intrinsics, extrs=extrs, 
-                                   queries=query_xyt,
-                                   fps=1, full_point=False, iters_track=4,
-                                   query_no_BA=True, fixed_cam=False, stage=1, unc_metric=unc_metric,
-                                   support_frame=len(video_tensor)-1, replace_ratio=0.2) 
-        tracks3d = (torch.einsum("tij,tnj->tni", c2w_traj[:,:3,:3], track3d_pred[:,:,:3].cpu()) + c2w_traj[:,:3,3][:,None,:]).numpy()
-        tracks2d = track2d_pred.cpu().numpy()
-        return tracks3d, tracks2d
+#         # Run model inference
+#         with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+#             (
+#                 c2w_traj, intrs, point_map, conf_depth,
+#                 track3d_pred, track2d_pred, vis_pred, conf_pred, video
+#             ) = self.model.forward(video_tensor, depth=depth_tensor,
+#                                    intrs=intrinsics, extrs=extrs, 
+#                                    queries=query_xyt,
+#                                    fps=1, full_point=False, iters_track=4,
+#                                    query_no_BA=True, fixed_cam=False, stage=1, unc_metric=unc_metric,
+#                                    support_frame=len(video_tensor)-1, replace_ratio=0.2) 
+#         tracks3d = (torch.einsum("tij,tnj->tni", c2w_traj[:,:3,:3], track3d_pred[:,:,:3].cpu()) + c2w_traj[:,:3,3][:,None,:]).numpy()
+#         tracks2d = track2d_pred.cpu().numpy()
+#         return tracks3d, tracks2d
     
-    def fuse_part_pcds(self, video_frame_list: List[np.ndarray], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray], tracks3d_list: List[np.ndarray], tracks2d_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
-        # tracks3d = self.tracking_video(video_frame_list, depth_frame_list, cam_pose_list, intrinsics, depth_mask_list)
-        fused_part_pcd = []
-        transformation_list = []
-        anchor_track_points = None
-        anchor_track_index = None
-        for frame_id in range(len(video_frame_list)):
-            part_mask = part_mask_list[frame_id]
-            tracks2d = tracks2d_list[frame_id]
-            part_track_index = np.nonzero(part_mask[tracks2d[:, 1], tracks2d[:, 0]])[0]
-            tracks3d = tracks3d_list[frame_id]
-            tracks3d = tracks3d[part_track_index]
-            if frame_id == 0:
-                anchor_track_points = tracks3d
-                anchor_track_index = part_track_index
-                transformation = np.eye(4)
-            else:
-                current_track_points = tracks3d
-                both_indices = np.intersect1d(anchor_track_index, part_track_index, return_indices=False)
-                if anchor_track_points[both_indices].shape[0] < 10 or current_track_points[both_indices].shape[0] < 10:
-                    print("Not enough keypoints for transformation estimation.")
-                    transformation = np.eye(4)
-                else:
-                    transformation = estimate_se3_transformation(current_track_points[both_indices], anchor_track_points[both_indices])
-            transformation_list.append(transformation)
-            points_map = points_map_list[frame_id]
-            part_pcd = points_map[part_mask]
-            part_pcd = part_pcd @ transformation[:3, :3].T + transformation[:3, 3:].T
-            fused_part_pcd.append(part_pcd)
-        fused_part_pcd = np.concatenate(fused_part_pcd, axis=0)
-        return fused_part_pcd, transformation_list
+#     def fuse_part_pcds(self, video_frame_list: List[np.ndarray], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray], tracks3d_list: List[np.ndarray], tracks2d_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
+#         # tracks3d = self.tracking_video(video_frame_list, depth_frame_list, cam_pose_list, intrinsics, depth_mask_list)
+#         fused_part_pcd = []
+#         transformation_list = []
+#         anchor_track_points = None
+#         anchor_track_index = None
+#         for frame_id in range(len(video_frame_list)):
+#             part_mask = part_mask_list[frame_id]
+#             tracks2d = tracks2d_list[frame_id]
+#             part_track_index = np.nonzero(part_mask[tracks2d[:, 1], tracks2d[:, 0]])[0]
+#             tracks3d = tracks3d_list[frame_id]
+#             tracks3d = tracks3d[part_track_index]
+#             if frame_id == 0:
+#                 anchor_track_points = tracks3d
+#                 anchor_track_index = part_track_index
+#                 transformation = np.eye(4)
+#             else:
+#                 current_track_points = tracks3d
+#                 both_indices = np.intersect1d(anchor_track_index, part_track_index, return_indices=False)
+#                 if anchor_track_points[both_indices].shape[0] < 10 or current_track_points[both_indices].shape[0] < 10:
+#                     print("Not enough keypoints for transformation estimation.")
+#                     transformation = np.eye(4)
+#                 else:
+#                     transformation = estimate_se3_transformation(current_track_points[both_indices], anchor_track_points[both_indices])
+#             transformation_list.append(transformation)
+#             points_map = points_map_list[frame_id]
+#             part_pcd = points_map[part_mask]
+#             part_pcd = part_pcd @ transformation[:3, :3].T + transformation[:3, 3:].T
+#             fused_part_pcd.append(part_pcd)
+#         fused_part_pcd = np.concatenate(fused_part_pcd, axis=0)
+#         return fused_part_pcd, transformation_list
     
 
 def build_fusion_model(config) -> BaseFusion:
     if config.fusion_method == "feature_matching":
         fusion_model = FeatureMatchingFusion(device=config.device)
-    elif config.fusion_method == "tracking":
-        fusion_model = TrackingFusion(model_path=config.model_path, vo_points=config.vo_points, grid_size=config.grid_size, device=config.device)
+    # elif config.fusion_method == "tracking":
+    #     fusion_model = TrackingFusion(model_path=config.model_path, vo_points=config.vo_points, grid_size=config.grid_size, device=config.device)
     else:
         raise NotImplementedError(f"Fusion method {config.fusion_method} not implemented.")
     return fusion_model
