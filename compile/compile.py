@@ -1,6 +1,7 @@
 import json
 import yaml
 import os
+import numpy as np
 import open3d as o3d
 import argparse
 from build_urdf import generate_urdf_from_open3d_meshes
@@ -290,8 +291,8 @@ def build_urdf_from_reconstruction(
             axis = result.get("axis", [0.0, 0.0, 1.0])
             origin_xyz = result.get("origin", [0.0, 0.0, 0.0])
             states = result.get("state", [0.0])
-            lower = float(min(states))
-            upper = float(max(states))
+            lower = float(max(min(states), 0.0))
+            upper = float(max(max(states), 0.0))
             articulation = {
                 "parent": "base",
                 "child": role,
@@ -330,6 +331,36 @@ def _get_articulation_state_range(articulation_results: dict, role: str) -> tupl
     return float(min(states)), float(max(states))
 
 
+def compute_emitter_position(receptor_mesh_path: str, effector_mesh_path: str) -> tuple:
+    receptor_mesh = o3d.io.read_triangle_mesh(receptor_mesh_path)
+    effector_mesh = o3d.io.read_triangle_mesh(effector_mesh_path)
+    receptor_center = np.asarray(receptor_mesh.get_center(), dtype=float)
+
+    effector_obb = effector_mesh.get_oriented_bounding_box()
+    effector_vertices = np.asarray(effector_obb.get_box_points(), dtype=float)
+
+    if effector_vertices.shape != (8, 3):
+        raise ValueError(
+            f"Expected 8 oriented bounding box vertices, got shape {effector_vertices.shape}."
+        )
+
+    lower_vertex_indices = np.argsort(effector_vertices[:, 2])[:4]
+    lower_vertices = effector_vertices[lower_vertex_indices]
+
+    distances_to_receptor = np.linalg.norm(lower_vertices - receptor_center, axis=1)
+    farthest_vertex_indices = np.argsort(distances_to_receptor)[-2:]
+    farthest_vertices = lower_vertices[farthest_vertex_indices]
+
+    emitter_position = farthest_vertices.mean(axis=0)
+    return tuple(float(v) for v in emitter_position)
+
+
+def translate_position(position: tuple | list, translation: tuple | list) -> tuple:
+    position_np = np.asarray(position, dtype=float)
+    translation_np = np.asarray(translation, dtype=float)
+    return tuple(float(v) for v in position_np + translation_np)
+
+
 def compile_function_instance(
     receptor_mesh_path: str,
     effector_mesh_path: str,
@@ -359,7 +390,7 @@ def compile_function_instance(
         delta: Delta value for cumulative mapping (required only when mapping type is "cumulative").
         **kwargs:
             emitter_position (tuple): Emitter xyz for fluid effects.
-                Defaults to the effector mesh centroid if not provided.
+                Defaults to the OBB-based faucet emitter estimate if not provided.
             usd_path (str): USD asset path; required for geometry effects.
 
     Returns:
@@ -378,7 +409,11 @@ def compile_function_instance(
     mapping_type = NUMERICAL_FUNCTION_MAP[function_results["2"]]
 
     receptor_state_min, receptor_state_max = _get_articulation_state_range(articulation_results, "receptor")
+    receptor_state_min = max(receptor_state_min, 0.0) if isinstance(receptor_state_min, float) else receptor_state_min
+    receptor_state_max = max(receptor_state_max, 0.0) if isinstance(receptor_state_max, float) else receptor_state_max
     effector_state_min, effector_state_max = _get_articulation_state_range(articulation_results, "effector")
+    effector_state_min = max(effector_state_min, 0.0) if isinstance(effector_state_min, float) else effector_state_min
+    effector_state_max = max(effector_state_max, 0.0) if isinstance(effector_state_max, float) else effector_state_max
 
     os.makedirs(output_dir, exist_ok=True)
     urdf_result = build_urdf_from_reconstruction(
@@ -403,8 +438,14 @@ def compile_function_instance(
     if physical_effect == "fluid":
         effect_kwargs["urdf_path"] = urdf_result["urdf_path"]
         if "emitter_position" not in effect_kwargs:
-            effector_mesh = o3d.io.read_triangle_mesh(effector_mesh_path)
-            effect_kwargs["emitter_position"] = tuple(float(v) for v in effector_mesh.get_center())
+            effect_kwargs["emitter_position"] = compute_emitter_position(
+                receptor_mesh_path=receptor_mesh_path,
+                effector_mesh_path=effector_mesh_path,
+            )
+        effect_kwargs["emitter_position"] = translate_position(
+            effect_kwargs["emitter_position"],
+            urdf_result["virtual_root_to_base_xyz"],
+        )
     elif physical_effect == "geometry":
         if "usd_path" not in effect_kwargs:
             raise ValueError("usd_path must be provided in kwargs for geometry physical effect.")

@@ -46,7 +46,7 @@ faucet = scene.add_entity(
 
 emitter = scene.add_emitter(
     material=gs.materials.SPH.Liquid(),
-    surface=gs.surfaces.Water(vis_mode="recon"),
+    surface=gs.surfaces.Water(),
     max_particles=50000,
 )
 
@@ -75,3 +75,5 @@ for i in range(200):
         droplet_shape="circle",
         droplet_size=droplet_size,
     )
+
+    scene.step()
