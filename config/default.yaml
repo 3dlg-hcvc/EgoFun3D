@@ -1,4 +1,4 @@
-name: "test-build-mesh"
+name: "test-benchmark"
 seed: 42
 save_root_dir: "./outputs"
 input_modality: "rgb"
@@ -14,7 +14,7 @@ save_shared_vlm: false
 disable_vlm_calls: false
 vlm_only: false
 shared_vlm_root: null
-segmentation_results_dir: "/project/3dlg-hcvc/FunGraph3D/www/video_segmentation_results/sam3/full_dataset_gamini3_flash_labels"
+segmentation_results_dir: ???
 save_mesh: True
 
 defaults:
