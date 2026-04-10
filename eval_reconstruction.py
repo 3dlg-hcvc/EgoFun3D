@@ -13,7 +13,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 import time
 from dataset.dataset import Dataset, build_dataset
-from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion, TrackingFusion
+from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction
 from fusion.evaluate_reconstruction import save_mesh, save_reconstruction_metrics, evaluate_reconstruction, save_pcd, save_reconstruction_results_to_hdf5, load_reconstruction_results_from_hdf5
 from utils.reconstruction_utils import refine_point_mask, depth2xyz_world
@@ -163,11 +163,11 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             if isinstance(fusion_model, FeatureMatchingFusion):
                 fused_part_pcd, transformation_list, kptsA_origin_dict, kptsB_origin_dict = fusion_model.fuse_part_pcds(valid_video_frame_list, valid_mask_list, valid_points_map_list, kptsA_origin_dict, kptsB_origin_dict)
                 # print("kpts len:", len(kptsA_origin_dict), len(kptsB_origin_dict))
-            elif isinstance(fusion_model, TrackingFusion):
-                if tracks3d is None:
-                    tracks3d = fusion_model.tracking_video(video_frame_list, reconstruction_results["depth"], reconstruction_results["extrinsics"], intrinsics, reconstruction_results["points_mask"])
-                valid_tracks3d = [tracks3d[i] for i in valid_frame_ids]
-                fused_part_pcd, transformation_list = fusion_model.fuse_part_pcds(valid_video_frame_list, valid_mask_list, valid_points_map_list, valid_tracks3d)
+            # elif isinstance(fusion_model, TrackingFusion):
+            #     if tracks3d is None:
+            #         tracks3d = fusion_model.tracking_video(video_frame_list, reconstruction_results["depth"], reconstruction_results["extrinsics"], intrinsics, reconstruction_results["points_mask"])
+            #     valid_tracks3d = [tracks3d[i] for i in valid_frame_ids]
+            #     fused_part_pcd, transformation_list = fusion_model.fuse_part_pcds(valid_video_frame_list, valid_mask_list, valid_points_map_list, valid_tracks3d)
             fuse_end = time.time()
             print(f"Fusion time: {fuse_end - fuse_start:.2f} seconds")
             # Evaluate reconstruction
