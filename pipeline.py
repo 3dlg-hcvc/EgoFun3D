@@ -1273,6 +1273,7 @@ def _interactive_ui_updates(segmentation_mode: str, video_file: Any, state: dict
         receptor_btn, effector_btn, positive_btn, negative_btn = _interactive_button_updates("receptor", 1)
         return (
             gr.update(visible=False),
+            gr.update(visible=True),
             state if isinstance(state, dict) else _empty_interactive_seg_state(),
             gr.update(value=None),
             gr.update(minimum=0, maximum=0, value=0),
@@ -1290,6 +1291,7 @@ def _interactive_ui_updates(segmentation_mode: str, video_file: Any, state: dict
     max_frame = max(len(prepared.get("frames", [])) - 1, 0)
     return (
         gr.update(visible=True),
+        gr.update(visible=False),
         prepared,
         gr.update(value=_render_interactive_frame(prepared)),
         gr.update(minimum=0, maximum=max_frame, value=int(prepared.get("active_frame", 0))),
@@ -1506,12 +1508,15 @@ def run_pipeline(
 
         receptor_label = (receptor_label or "").strip()
         effector_label = (effector_label or "").strip()
-        if not receptor_label or not effector_label:
+
+        interactive_mode = _is_interactive_mode(segmentation_mode)
+        if not interactive_mode and (not receptor_label or not effector_label):
             log("Error: provide receptor and effector part descriptions.")
             yield emit(recon_3d=gr.update(value=None), articulation_val="", function_val="", summary_val="")
             return
-
-        interactive_mode = _is_interactive_mode(segmentation_mode)
+        if interactive_mode:
+            receptor_label = receptor_label or "receptor"
+            effector_label = effector_label or "effector"
         if interactive_mode:
             log("Interactive SAM3 segmentation selected.")
             interactive_state = _prepare_interactive_state(video_file, interactive_state)
@@ -1861,7 +1866,7 @@ def build_ui():
                     interactive=False,
                 )
 
-        with gr.Row():
+        with gr.Row() as part_label_row:
             receptor = gr.Textbox(label="Receptor part", placeholder="e.g. faucet switch", scale=1)
             effector = gr.Textbox(label="Effector part", placeholder="e.g. faucet spout", scale=1)
 
@@ -1928,13 +1933,13 @@ def build_ui():
         segmentation_mode.change(
             _interactive_ui_updates,
             inputs=[segmentation_mode, vid, interactive_state],
-            outputs=[interactive_panel, interactive_state, interactive_img, frame_slider, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
+            outputs=[interactive_panel, part_label_row, interactive_state, interactive_img, frame_slider, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
             queue=False,
         )
         vid.change(
             _interactive_ui_updates,
             inputs=[segmentation_mode, vid, interactive_state],
-            outputs=[interactive_panel, interactive_state, interactive_img, frame_slider, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
+            outputs=[interactive_panel, part_label_row, interactive_state, interactive_img, frame_slider, interactive_status, receptor_btn, effector_btn, positive_btn, negative_btn],
             queue=False,
         )
         receptor_btn.click(
