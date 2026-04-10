@@ -1460,7 +1460,7 @@ class MolmoSAM(RefSeg):
             "sam3_pred_boxes": state["boxes"].detach().cpu().numpy().tolist()
             if "boxes" in state
             else [],
-            "sam3_pred_scores": state["scores"].detach().cpu().numpy().tolist()
+            "sam3_pred_scores": state["scores"].detach().to(torch.float32).cpu().numpy().tolist()
             if "scores" in state
             else [],
         }
