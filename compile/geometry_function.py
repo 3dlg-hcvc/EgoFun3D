@@ -37,17 +37,17 @@ from isaaclab.sensors.camera.utils import create_pointcloud_from_depth
 from isaaclab.utils import convert_dict_to_backend
 import os
 
+abs_dir = os.path.dirname(os.path.realpath(__file__))
 
 INSERT_DEFINITIONS_HERE
 
 OBJECT_CONFIG = ArticulationCfg(
-    spawn=sim_utils.UsdFileCfg(usd_path=USD_PATH),
+    spawn=sim_utils.UsdFileCfg(usd_path=USD_PATH, articulation_props=sim_utils.ArticulationRootPropertiesCfg(fix_root_link=True,),),
     init_state=ArticulationCfg.InitialStateCfg(
         joint_pos={
             INITIALIZE_JOINT
         },
     ),
-    # actuators={"door_acts": ImplicitActuatorCfg(joint_names_expr=["effector_joint"], damping=5, stiffness=20)},
     actuators=ACTUATORS_CONFIG,
 )
 
@@ -169,6 +169,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                 receptor_target_state = RECEPTOR_STATE_MAX
             else:
                 receptor_target_state = RECEPTOR_STATE_MIN
+        receptor_state = joint_state[0][0]
         effector_target_state = MAPPING_FUNCTION
         # if joint_state[0][0] > 0.015:
         #     scene["Object"].set_joint_position_target(torch.Tensor([[np.pi / 2, receiver_target]]))

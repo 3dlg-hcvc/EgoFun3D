@@ -14,22 +14,22 @@ NUMERICAL_FUNCTION_MAP = {"a": "binary", "b": "step", "c": "linear", "d": "cumul
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Compile function instance from reconstruction and prediction results.")
-    parser.add_argument("--receptor_mesh_path", type=str, required=True, help="Path to the receptor part mesh (e.g. receptor_mesh.glb).")
-    parser.add_argument("--effector_mesh_path", type=str, required=True, help="Path to the effector part mesh (e.g. effector_mesh.glb).")
-    parser.add_argument("--base_mesh_path", type=str, required=True, help="Path to the base mesh (e.g. base_mesh.glb).")
-    parser.add_argument("--articulation_results_path", type=str, required=True, help="Path to the articulation estimation JSON.")
-    parser.add_argument("--function_results_path", type=str, required=True, help="Path to the function prediction JSON.")
+    parser.add_argument("--reconstruction_dir", type=str, required=True, help="Path to the reconstruction results folder.")
+    parser.add_argument("--articulation_dir", type=str, required=True, help="Path to the articulation estimation results folder.")
+    parser.add_argument("--function_dir", type=str, required=True, help="Path to the function prediction results folder.")
     parser.add_argument("--output_dir", type=str, required=True, help="Directory for URDF and mesh outputs.")
     parser.add_argument("--robot_name", type=str, default="articulated_object", help="Robot name embedded in the URDF <robot> tag.")
+    # Delta is only required for cumulative mapping, but we accept it as an optional argument here and will raise an error if it's missing when needed.
     parser.add_argument("--delta", type=float, default=None, help="Delta value for cumulative mapping (required only when mapping type is 'cumulative').")
-    parser.add_argument("--usd_path", type=str, default=None, help="USD asset path; required for geometry effects.")
+    # emitter_position is only relevant for fluid effects, but we accept it as an optional argument here and will compute a default OBB-based estimate if it's missing when needed.
+    parser.add_argument("--emitter_position", type=float, nargs=3, default=None, help="Emitter xyz for fluid effects; defaults to OBB-based estimate if not provided.")
+    # rigid_connected is only relevant for geometry effects, but we accept it as an optional argument here and will default to False when needed.
+    parser.add_argument("--rigid_connected", action="store_true", help="Whether the receptor and effector are rigidly connected (only relevant for geometry effects).")
     return parser.parse_args()
 
 
 def load_parameters(physical_effect: str) -> dict:
     parameter_config_file = os.path.join(dir_abs_path, f"{physical_effect}_parameters.yaml")
-    if not os.path.exists(parameter_config_file):
-        parameter_config_file = os.path.join(dir_abs_path, f"{physical_effect}_function.yaml")
     with open(parameter_config_file, 'r') as f:
         parameters = yaml.safe_load(f)
     return parameters
@@ -85,10 +85,7 @@ def generate_definition(parameters_dict: dict) -> str:
         if key == "MAPPING_FUNCTION":
             definition_list.append(value + "\n")
         else:
-            if isinstance(value, str):
-                definition_list.append(f'{key} = "{value}"\n')
-            else:
-                definition_list.append(f"{key} = {value}\n")
+            definition_list.append(f"{key} = {value}\n")
     return ''.join(definition_list)
 
 
@@ -107,7 +104,7 @@ def generate_function_call(mapping: str, receptor_state_name: str, effector_stat
         
 
 def build_fluid_function(physics_parameters: dict, mapping_config: dict, urdf_path: str, emitter_position: tuple,
-                         receptor_state_min: float|bool, receptor_state_max: float|bool, effector_state_min: float|bool, effector_state_max: float|bool,
+                         receptor_state_min: float|bool, receptor_state_max: float|bool, effector_state_min: float|bool, effector_state_max: float|bool, output_dir: str,
                          delta: float = None):
     parameters_dict = {"MAX_DROPLET_SIZE": physics_parameters["MAX_DROPLET_SIZE"], 
                        "MIN_DROPLET_SIZE": physics_parameters["MIN_DROPLET_SIZE"],
@@ -124,14 +121,14 @@ def build_fluid_function(physics_parameters: dict, mapping_config: dict, urdf_pa
     function_call = generate_function_call(mapping_config["type"], physics_parameters["RECETPOR_STATE_NAME"], physics_parameters["EFFECTOR_STATE_NAME"])
     fluid_function_code = fluid_function_template.replace("INSERT_DEFINITIONS_HERE", definitions).replace("MAPPING_FUNCTION", function_call)
 
-    with open(os.path.join(dir_abs_path, "fluid_function_instanced.py"), 'w') as f:
+    with open(os.path.join(output_dir, "fluid_function_instanced.py"), 'w') as f:
         f.write(fluid_function_code)
 
 
 def generate_joint_init(rigid_connected: bool, receptor_state_min: float, effector_state_min: float) -> str:
-    joint_init_list = [f"effector_joint: {effector_state_min},\n"]
+    joint_init_list = [f"\"effector_joint\": {effector_state_min},\n"]
     if not rigid_connected:
-        joint_init_list.append(f"receptor_joint: {receptor_state_min}\n")
+        joint_init_list.append(f"\"receptor_joint\": {receptor_state_min}\n")
     return ''.join(joint_init_list)
 
 
@@ -145,13 +142,18 @@ def generate_actuator_config(rigid_connected: bool) -> str:
 
 
 def build_geometry_function(physics_parameters: dict, mapping_config: dict, usd_path: str, rigid_connected: bool,
-                            receptor_state_min: float|bool, receptor_state_max: float|bool, effector_state_min: float, effector_state_max: float,
+                            receptor_state_min: float|bool, receptor_state_max: float|bool, effector_state_min: float, effector_state_max: float, output_dir: str,
                             delta: float = None):
     parameters_dict = {"USD_PATH": usd_path, "RIGID_CONNECTED": rigid_connected}
     
     if not rigid_connected:
         mapping_instance = instantiate_mapping_function(mapping_config, receptor_state_min, receptor_state_max, effector_state_min, effector_state_max, delta)
         parameters_dict["MAPPING_FUNCTION"] = mapping_instance
+        parameters_dict["RECEPTOR_STATE_MIN"] = receptor_state_min
+        parameters_dict["RECEPTOR_STATE_MAX"] = receptor_state_max
+    else:
+        parameters_dict["RECEPTOR_STATE_MIN"] = effector_state_min
+        parameters_dict["RECEPTOR_STATE_MAX"] = effector_state_max
 
     with open(os.path.join(dir_abs_path, "geometry_function.py"), 'r') as f:
         geometry_function_template = f.read()
@@ -160,15 +162,15 @@ def build_geometry_function(physics_parameters: dict, mapping_config: dict, usd_
     joint_initialize = generate_joint_init(rigid_connected, receptor_state_min, effector_state_min)
     actuators_config = generate_actuator_config(rigid_connected)
     if rigid_connected:
-        function_call = str(effector_state_max)
+        function_call = "receptor_target_state"
     else:
         function_call = generate_function_call(mapping_config["type"], physics_parameters["RECETPOR_STATE_NAME"], physics_parameters["EFFECTOR_STATE_NAME"])
-    geometry_function_code = geometry_function_template.replace("INSERT_DEFINITION", definitions)\
+    geometry_function_code = geometry_function_template.replace("INSERT_DEFINITIONS_HERE", definitions)\
                                                        .replace("INITIALIZE_JOINT", joint_initialize)\
                                                        .replace("ACTUATORS_CONFIG", actuators_config)\
                                                        .replace("MAPPING_FUNCTION", function_call)
 
-    with open(os.path.join(dir_abs_path, "geometry_function_instanced.py"), 'w') as f:
+    with open(os.path.join(output_dir, "geometry_function_instanced.py"), 'w') as f:
         f.write(geometry_function_code)
 
 
@@ -195,6 +197,7 @@ def build_function(
     effector_state_min: float | bool,
     effector_state_max: float | bool,
     delta: float = None,
+    output_dir: str = None,
     **kwargs,
 ):
     normalized_effect = _normalize_physical_effect(physical_effect)
@@ -216,6 +219,7 @@ def build_function(
             receptor_state_max=receptor_state_max,
             effector_state_min=effector_state_min,
             effector_state_max=effector_state_max,
+            output_dir=output_dir,
             delta=delta,
         )
 
@@ -234,6 +238,7 @@ def build_function(
         receptor_state_max=receptor_state_max,
         effector_state_min=effector_state_min,
         effector_state_max=effector_state_max,
+        output_dir=output_dir,
         delta=delta,
     )
 
@@ -246,6 +251,7 @@ def build_urdf_from_reconstruction(
     output_dir: str,
     robot_name: str = "articulated_object",
     urdf_filename: str = "object.urdf",
+    rigid_connected: bool = False,
 ) -> dict:
     """Build a URDF from reconstructed part meshes and articulation estimation results.
 
@@ -259,28 +265,37 @@ def build_urdf_from_reconstruction(
         output_dir: Directory where the URDF and mesh files will be written.
         robot_name: Name embedded in the URDF <robot> tag.
         urdf_filename: Output URDF filename.
-
+        rigid_connected: Whether the receptor and effector are rigidly connected.
     Returns:
         Dict with keys "urdf_path", "root_link", "virtual_root_name",
         "virtual_root_to_base_xyz" (from generate_urdf_from_open3d_meshes).
     """
-
+    # RGBA in uint8
+    effector_rgba = np.array([252, 141, 98, 255], dtype=np.uint8)  # red, effector
+    receptor_rgba = np.array([102, 194, 165, 255], dtype=np.uint8)  # blue-green, receiver
+    base_rgba = np.array([179, 179, 179, 255], dtype=np.uint8)  # gray, background
     meshes = {
         "base": o3d.io.read_triangle_mesh(base_mesh_path),
         "receptor": o3d.io.read_triangle_mesh(receptor_mesh_path),
         "effector": o3d.io.read_triangle_mesh(effector_mesh_path),
     }
+    meshes["base"].paint_uniform_color(base_rgba[:3] / 255)
+    meshes["receptor"].paint_uniform_color(receptor_rgba[:3] / 255)
+    meshes["effector"].paint_uniform_color(effector_rgba[:3] / 255)
 
     articulations = []
     for role in ["receptor", "effector"]:
         # Support both "receptor" (main.py) and "receiver" (pred_mask variant) keys.
         result = articulation_results.get(role)
-        if result is None and role == "receptor":
-            result = articulation_results.get("receiver")
         if isinstance(result, str) or result is None:
             # Estimation was skipped or missing — treat as fixed joint.
+            if rigid_connected:
+                parent = "effector"
+                print("rigid_connected is True, treating receptor as child of effector in URDF.")
+            else:
+                parent = "base"
             articulation = {
-                "parent": "base",
+                "parent": parent,
                 "child": role,
                 "joint_type": "fixed",
                 "origin": {"xyz": [0.0, 0.0, 0.0], "rpy": [0.0, 0.0, 0.0]},
@@ -314,10 +329,6 @@ def build_urdf_from_reconstruction(
         insert_virtual_root=True,
         recenter_by_base=True,
     )
-
-
-def convert_urdf_to_usd(urdf_path: str, output_usd_path: str):
-    os.system(f"urdf_usd_converter {urdf_path} {output_usd_path}")
 
 
 def _get_articulation_state_range(articulation_results: dict, role: str) -> tuple:
@@ -362,11 +373,9 @@ def translate_position(position: tuple | list, translation: tuple | list) -> tup
 
 
 def compile_function_instance(
-    receptor_mesh_path: str,
-    effector_mesh_path: str,
-    base_mesh_path: str,
-    articulation_results_path: str,
-    function_results_path: str,
+    reconstruction_dir: str,
+    articulation_dir: str,
+    function_dir: str,
     output_dir: str,
     robot_name: str = "articulated_object",
     delta: float = None,
@@ -400,6 +409,11 @@ def compile_function_instance(
             "physical_effect": resolved physical effect string (e.g. "fluid", "geometry").
             "mapping_type": resolved mapping type string (e.g. "step", "linear").
     """
+    receptor_mesh_path = f"{reconstruction_dir}/reconstruction/receptor_mesh.glb"
+    effector_mesh_path = f"{reconstruction_dir}/reconstruction/effector_mesh.glb"
+    base_mesh_path = f"{reconstruction_dir}/reconstruction/base_mesh.glb"
+    articulation_results_path = f"{articulation_dir}/articulation/articulation_results.json"
+    function_results_path = f"{function_dir}/function/function_results.json"
     with open(articulation_results_path, "r") as f:
         articulation_results = json.load(f)
     with open(function_results_path, "r") as f:
@@ -423,20 +437,16 @@ def compile_function_instance(
         articulation_results=articulation_results,
         output_dir=output_dir,
         robot_name=robot_name,
+        rigid_connected=kwargs.get("rigid_connected", False),
     )
     if physical_effect == "geometry":
-        usd_path = kwargs.get("usd_path")
-        if usd_path is None:
-            raise ValueError("usd_path must be provided in kwargs for geometry physical effect.")
-        output_usd_path = os.path.join(output_dir, "object.usd")
-        convert_urdf_to_usd(urdf_result["urdf_path"], output_usd_path)
-        kwargs["usd_path"] = output_usd_path
+        kwargs["usd_path"] = f"f\"{{abs_dir}}/object.usd\""
 
     mapping_config = load_mapping_template(mapping_type)
 
     effect_kwargs = dict(kwargs)
     if physical_effect == "fluid":
-        effect_kwargs["urdf_path"] = urdf_result["urdf_path"]
+        effect_kwargs["urdf_path"] = f"f\"{{abs_dir}}/object.urdf\""
         if "emitter_position" not in effect_kwargs:
             effect_kwargs["emitter_position"] = compute_emitter_position(
                 receptor_mesh_path=receptor_mesh_path,
@@ -449,8 +459,9 @@ def compile_function_instance(
     elif physical_effect == "geometry":
         if "usd_path" not in effect_kwargs:
             raise ValueError("usd_path must be provided in kwargs for geometry physical effect.")
-        receptor_result = articulation_results.get("receptor") or articulation_results.get("receiver")
+        receptor_result = articulation_results.get("receptor")
         effect_kwargs["rigid_connected"] = isinstance(receptor_result, str) or receptor_result is None
+        
 
     build_function(
         physical_effect=physical_effect,
@@ -460,10 +471,11 @@ def compile_function_instance(
         effector_state_min=effector_state_min,
         effector_state_max=effector_state_max,
         delta=delta,
+        output_dir=output_dir,
         **effect_kwargs,
     )
 
-    function_script_path = os.path.join(dir_abs_path, f"{physical_effect}_function_instanced.py")
+    function_script_path = os.path.join(output_dir, f"{physical_effect}_function_instanced.py")
     return {
         "urdf_result": urdf_result,
         "function_script_path": function_script_path,
@@ -475,14 +487,14 @@ def compile_function_instance(
 if __name__ == "__main__":
     args = parse_arguments()
     result = compile_function_instance(
-        receptor_mesh_path=args.receptor_mesh_path,
-        effector_mesh_path=args.effector_mesh_path,
-        base_mesh_path=args.base_mesh_path,
-        articulation_results_path=args.articulation_results_path,
-        function_results_path=args.function_results_path,
+        reconstruction_dir=args.reconstruction_dir,
+        articulation_dir=args.articulation_dir,
+        function_dir=args.function_dir,
         output_dir=args.output_dir,
         robot_name=args.robot_name,
         delta=args.delta,
+        emitter_position=args.emitter_position,
+        rigid_connected=args.rigid_connected,
     )
     print("Compilation complete. Results:")
     print(json.dumps(result, indent=2))

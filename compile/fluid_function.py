@@ -1,5 +1,8 @@
 import numpy as np
 import genesis as gs
+import os
+
+abs_dir = os.path.dirname(os.path.realpath(__file__))
 
 INSERT_DEFINITIONS_HERE
 
