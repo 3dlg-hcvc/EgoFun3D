@@ -15,8 +15,8 @@ sam3_propagation:
   offload_video_to_cpu: false
 xsam:
   code_root: "third_party/X-SAM/xsam"
-  config_path: "xsam/configs/xsam/s3_mixed_finetune/xsam_qwen3_4b_instruct_siglip2_so400m_p14_384_sam_large_m2f_gpu16_mixed_finetune.py"
-  checkpoint_path: "third_party/X-SAM/inits/X-SAM/s3_mixed_finetune/xsam_qwen3_4b_instruct_siglip2_so400m_p14_384_sam_large_m2f_gpu16_mixed_finetune/pytorch_model.bin"
+  config_path: "xsam/configs/xsam/s3_mixed_finetune/xsam_phi3_mini_4k_instruct_siglip2_so400m_p14_384_sam_large_m2f_gpu16_mixed_finetune.pyy"
+  checkpoint_path: "third_party/X-SAM/inits/X-SAM/s3_mixed_finetune/xsam_phi3_mini_4k_instruct_siglip2_so400m_p14_384_sam_large_m2f_gpu16_mixed_finetune/pytorch_model.bin"
   score_thr: 0.5
   max_query: 1
   prompt_template: "Can you segment <p>{PartDescription}</p> in this image? Please output the corresponding segmentation mask."
