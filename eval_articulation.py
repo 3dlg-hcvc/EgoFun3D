@@ -67,7 +67,7 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
             if not config.pred_mask:
                 mask_list = data[f"{role}_mask_list"]
             else:
-                role_mask_dir = os.path.join(config.segmentation_results_dir, data["video_name"], f"00/segmentation_{role}")
+                role_mask_dir = os.path.join(config.segmentation_results_dir, data["video_name"], f"segmentation/segmentation_{role}")
                 if not os.path.exists(role_mask_dir):
                     loguru.logger.info(f"Segmentation results for {role} do not exist, skipping articulation estimation for this role.")
                     articulation_results[role] = "No segmentation results, skipping articulation estimation for this role."

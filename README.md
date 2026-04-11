@@ -33,6 +33,13 @@ Simon Fraser University
    cd part_function_reconstruction
    bash install.sh
    ```
+   There are many different modules in this project. Thus, pip will notify you several incompatible issues during installation. Usually this is not a big problem. Make sure several key packages satisfy the following version.
+   ```txt
+   torch==2.9.1
+   transformers==4.57.6
+   vllm==0.15.1
+   numpy==1.26.4
+   ```
 3. Download EgoFun3D dataset.
    ```bash
    hf download 3dlg-hcvc/EgoFun3D --repo-type dataset --local-dir full_dataset
@@ -80,6 +87,24 @@ python eval_segmentation.py \
   disable_vlm_calls=true \
   segmentation=VisionReasoner \
   vlm_segmentation=gemini_segmentation
+```
+
+To run SAM3 Agent segmentation, you need to run vllm first, and then run the segmentation script. We recommend to run VLM on one GPU and segmentation on another GPU to prevent OOM.
+```bash
+CUDA_VISIBLE_DEVICES=1 vllm serve Qwen/Qwen3-VL-8B-Thinking --max-model-len 65536 --port 8001 &
+VLLM_PID=$!
+
+# Wait for the server to be ready
+until curl -s http://localhost:8001/health > /dev/null 2>&1; do
+    echo "Waiting for vLLM server to start..."
+    sleep 10
+done
+echo "vLLM server is ready!"
+
+python eval_segmentation.py save_shared_vlm=true segmentation=SAM3Agent
+
+kill $VLLM_PID
+wait $VLLM_PID 2>/dev/null
 ```
 
 Results are saved under `outputs/{exp_name}/{time}/{video_name}/segmentation/`.
@@ -131,6 +156,31 @@ Results are saved under `outputs/{exp_name}/{time}/{video_name}/function/`.
 We also provide a gradio interface to run the full pipeline at once.
 ```bash
 python pipeline.py
+```
+
+## Compilation
+Once we get all necessary results from previous steps, we can compile the executable function script to run in physics simulators. Currently we support compiling fluid and geometry functions. The fluid function executes in Genesis and the geometry function executes in Isaac Sim.
+
+For Genesis, simply run
+```bash
+pip install genesis-world==0.4.4
+```
+
+For Isaac Sim, we run it through Isaac Lab. Therefore, please follow [Isaac Lab Installation Guidance](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/pip_installation.html) to prepare Isaac Lab environment. We suggest you creating another conda environment to run Isaac Lab.
+
+To compile executable function script, run
+```bash
+python compile/compile.py --reconstruction_dir {PATH TO RECONSTRUCTION DIR} --articulation_dir {PATH TO ARTICULATION DIR} --function_dir {PATH TO FUNCTION DIR} --output_dir {PATH TO EXECUTABLE FUNCTION SCRIPT OUTPUT DIR}
+```
+Please refer to `compile/compile.py` for more information on input parameters.
+
+After getting the URDF and function script, for fluid function, you can simply run the script. For geometry function, you can move the URDF and the script to the `IsaacLab/scripts/tutorials/01_assets/` folder, then convert URDF to USD by running 
+```bash
+./isaaclab.sh -p scripts/tools/convert_urdf.py PATH_TO_URDF OUTPUT_PATH_TO_USD
+```
+and also modify the USD path in the function script. Finally, you can test the function script by running
+```bash
+./isaaclab.sh -p scripts/tutorials/01_assets/{YOUR_SCRIPT_NAME}
 ```
 
 ## Acknowledgment

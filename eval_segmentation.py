@@ -106,8 +106,8 @@ def _prompt_description(vlm_prompter: Any, video_path: str) -> dict:
 
 
 
-def _save_segmentation_runtime(runtime_info: dict, save_dir: str, scene_name: str, seg_id: str, role: str) -> str:
-    runtime_dir = os.path.join(save_dir, scene_name, seg_id, f'segmentation_{role}')
+def _save_segmentation_runtime(runtime_info: dict, save_dir: str, scene_name: str, role: str) -> str:
+    runtime_dir = os.path.join(save_dir, scene_name, 'segmentation', f'segmentation_{role}')
     os.makedirs(runtime_dir, exist_ok=True)
     runtime_path = os.path.join(runtime_dir, 'segmentation_runtime.json')
     with open(runtime_path, 'w') as f:
@@ -116,8 +116,8 @@ def _save_segmentation_runtime(runtime_info: dict, save_dir: str, scene_name: st
 
 
 
-def _load_existing_vlm_output(save_dir: str, scene_name: str, seg_id: str) -> dict | None:
-    vlm_path = os.path.join(save_dir, scene_name, seg_id, 'vlm_narrator', 'vlm_analysis.json')
+def _load_existing_vlm_output(save_dir: str, scene_name: str) -> dict | None:
+    vlm_path = os.path.join(save_dir, scene_name, 'segmentation', 'vlm_narrator', 'vlm_analysis.json')
     if not os.path.exists(vlm_path):
         return None
     try:
@@ -142,7 +142,6 @@ def _resolve_grouped_results(
     config: DictConfig,
     save_dir: str,
     scene_name: str,
-    seg_id: str,
     vlm_prompter: Any | None,
 ) -> tuple[dict | None, str, Any | None]:
     grouped_results = None
@@ -167,12 +166,12 @@ def _resolve_grouped_results(
         }
         vlm_source = 'gt_labels'
     elif use_from_existing:
-        grouped_results = _load_existing_vlm_output(save_dir, scene_name, seg_id)
+        grouped_results = _load_existing_vlm_output(save_dir, scene_name)
         if grouped_results is not None:
             vlm_source = 'from_existing'
 
     if grouped_results is None and use_from_shared_vlm:
-        shared_vlm_output = load_shared_vlm_output(shared_vlm_root, scene_name, seg_id)
+        shared_vlm_output = load_shared_vlm_output(shared_vlm_root, scene_name)
         grouped_results = _normalize_shared_vlm_results(shared_vlm_output)
         if grouped_results is not None:
             vlm_source = shared_vlm_output.get('source', 'vlm')
@@ -190,11 +189,11 @@ def _resolve_grouped_results(
     if grouped_results is None:
         return None, 'invalid_prompt_result', vlm_prompter
 
-    save_vlm_dir = os.path.join(save_dir, scene_name, seg_id, 'vlm_narrator')
+    save_vlm_dir = os.path.join(save_dir, scene_name, 'segmentation', 'vlm_narrator')
     save_vlm_output(grouped_results, save_vlm_dir)
     if save_shared_vlm:
-        shared_output = build_shared_vlm_output(grouped_results, scene_name, seg_id, vlm_source)
-        save_shared_vlm_output(shared_output, shared_vlm_root, scene_name, seg_id)
+        shared_output = build_shared_vlm_output(grouped_results, scene_name, vlm_source)
+        save_shared_vlm_output(shared_output, shared_vlm_root, scene_name)
     return grouped_results, vlm_source, vlm_prompter
 
 
@@ -202,11 +201,10 @@ def _resolve_grouped_results(
 def _load_existing_segmentation_outputs(
     save_dir: str,
     scene_name: str,
-    seg_id: str,
     role: str,
     total_frames: int,
 ) -> tuple[list[np.ndarray], list[dict], list[int]] | None:
-    role_dir = os.path.join(save_dir, scene_name, seg_id, f'segmentation_{role}')
+    role_dir = os.path.join(save_dir, scene_name, 'segmentation', f'segmentation_{role}')
     if not os.path.isdir(role_dir):
         return None
     masks = load_segmentation_mask_archive(role_dir)
@@ -351,14 +349,12 @@ def segment_scene(
     sam3_tracker=None,
 ):
     scene_name = str(data['video_name'])
-    seg_id = str(data.get('seg_id', '00'))
 
     grouped_results, _vlm_source, vlm_prompter = _resolve_grouped_results(
         data=data,
         config=config,
         save_dir=save_dir,
         scene_name=scene_name,
-        seg_id=seg_id,
         vlm_prompter=vlm_prompter,
     )
     if grouped_results is None:
@@ -382,10 +378,10 @@ def segment_scene(
 
     for role in ('receptor', 'effector'):
         role_start = time.time()
-        role_dir = os.path.join(save_dir, scene_name, seg_id, f'segmentation_{role}')
+        role_dir = os.path.join(save_dir, scene_name, 'segmentation', f'segmentation_{role}')
         existing_outputs = None
         if bool(_get_optional_config_value(config, 'from_existing', False)):
-            existing_outputs = _load_existing_segmentation_outputs(save_dir, scene_name, seg_id, role, total_frames)
+            existing_outputs = _load_existing_segmentation_outputs(save_dir, scene_name, role, total_frames)
 
         used_existing_masks = existing_outputs is not None
         if existing_outputs is not None:
@@ -422,7 +418,6 @@ def segment_scene(
         )
         runtime_info = {
             'scene_name': scene_name,
-            'seg_id': seg_id,
             'role': role,
             'model': str(config.segmentation.model),
             'frame_subsample': config.segmentation.get('frame_subsample', None),
@@ -454,7 +449,7 @@ def segment_scene(
             eval_frame_ids=eval_frame_ids,
             runtime_info=runtime_info,
         )
-        _save_segmentation_runtime(runtime_info, save_dir, scene_name, seg_id, role)
+        _save_segmentation_runtime(runtime_info, save_dir, scene_name, role)
         role_results[role] = {
             'full_masks': np.stack(pred_mask_list, axis=0).astype(bool),
             'valid_frame_ids': [int(i) for i in valid_frame_ids],

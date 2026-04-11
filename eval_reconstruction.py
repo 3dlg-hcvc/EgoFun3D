@@ -70,7 +70,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 mask_list = data[f"{role}_mask_list"]
                 valid_frame_ids = [i for i, mask in enumerate(mask_list) if mask.sum() > 0]
             else:
-                role_mask_dir = os.path.join(config.segmentation_results_dir, data["video_name"], f"00/segmentation_{role}")
+                role_mask_dir = os.path.join(config.segmentation_results_dir, data["video_name"], f"segmentation/segmentation_{role}")
                 if not os.path.exists(role_mask_dir):
                     reconstruction_metrics = {
                         "chamfer_distance": 200,

@@ -135,12 +135,11 @@ def save_vlm_output(output_dict: dict, save_path: str):
         json.dump(output_dict, f, indent=4)
 
 
-def build_shared_vlm_output(grouped_results: Dict[str, Dict[str, str]], scene_name: str, seg_id: str, source: str) -> dict:
+def build_shared_vlm_output(grouped_results: Dict[str, Dict[str, str]], scene_name: str, source: str) -> dict:
     receptor = grouped_results['receptor']
     effector = grouped_results['effector']
     return {
         'scene_name': scene_name,
-        'seg_id': seg_id,
         'source': source,
         'parts': {
             'receptor': {
@@ -159,17 +158,17 @@ def build_shared_vlm_output(grouped_results: Dict[str, Dict[str, str]], scene_na
     }
 
 
-def save_shared_vlm_output(shared_output: dict, save_root: str, scene_name: str, seg_id: str) -> str:
+def save_shared_vlm_output(shared_output: dict, save_root: str, scene_name: str) -> str:
     output_dir = os.path.join(save_root, scene_name)
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f'{seg_id}.json')
+    output_path = os.path.join(output_dir, 'shared_vlm_output.json')
     with open(output_path, 'w') as f:
         json.dump(shared_output, f, indent=4)
     return output_path
 
 
-def load_shared_vlm_output(save_root: str, scene_name: str, seg_id: str) -> Optional[dict]:
-    output_path = os.path.join(save_root, scene_name, f'{seg_id}.json')
+def load_shared_vlm_output(save_root: str, scene_name: str) -> Optional[dict]:
+    output_path = os.path.join(save_root, scene_name, 'shared_vlm_output.json')
     if not os.path.exists(output_path):
         return None
     with open(output_path, 'r') as f:

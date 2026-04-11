@@ -9,6 +9,11 @@ pip install accelerate open3d point_cloud_utils qwen_vl_utils molmo_utils hydra-
 pip install "git+https://github.com/facebookresearch/sam3.git"
 pip install "git+https://github.com/facebookresearch/sam2.git"
 
+cd third_party/X-SAM/xsam
+pip install git+https://github.com/InternLM/xtuner.git@v0.2.0
+pip install -r requirements/xsam.txt
+pip install aria2
+
 # prepare environment for reconstruction
 cd third_party/map-anything
 pip install -e .
