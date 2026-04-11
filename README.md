@@ -153,9 +153,41 @@ You can switch articulation method to `gpt_function`, `qwen_function`, or `molmo
 Results are saved under `outputs/{exp_name}/{time}/{video_name}/function/`.
 
 ## Run the Full Pipeline
-We also provide a gradio interface to run the full pipeline at once.
+
+### Pipeline demo (single video)
+`pipeline.py` runs the complete pipeline on an arbitrary video file with no UI.
+Part labels are auto-detected by a Qwen VLM if not supplied; pass `--gemini_key` to use Gemini instead.
+
 ```bash
-python pipeline.py
+python pipeline.py \
+    --video /path/to/video.mp4 \
+    --output_dir /path/to/outputs
+```
+
+Supply part labels directly to skip VLM auto-detection:
+```bash
+python pipeline.py \
+    --video /path/to/video.mp4 \
+    --output_dir /path/to/outputs \
+    --receptor "faucet handle" \
+    --effector "faucet spout"
+```
+
+Override the segmentation config (default: VisionReasoner) or VLM function config:
+```bash
+python pipeline.py \
+    --video /path/to/video.mp4 \
+    --output_dir /path/to/outputs \
+    --seg_config config/segmentation/MolmoSAM.yaml \
+    --vlm_function_config config/vlm_function/gemini_function.yaml
+```
+
+Outputs follow the evaluation suite layout (`reconstruction/`, `articulation/`, `function/`, `compile/`).
+
+### Interactive demo (Gradio)
+We also provide a Gradio interface to run the full pipeline interactively.
+```bash
+python gradio.py
 ```
 
 ## Compilation
