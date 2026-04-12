@@ -83,7 +83,7 @@ body {
 }
 
 .hf-icon {
-  width: 3.75em !important;
+  width: 1em !important;
 }
 
 .hf-icon img {
@@ -757,5 +757,4 @@ a:focus {
     box-shadow: none !important;
   }
 }
-
 
