@@ -202,7 +202,7 @@
       </div>
       <div class="works-list">
         <!-- TODO: Replace with your lab's related works -->
-        <a href="https://arxiv.org/abs/2506.08334" class="work-item" target="_blank">
+        <a href="https://3dlg-hcvc.github.io/video2articulation/" class="work-item" target="_blank">
           <div class="work-info">
             <!-- TODO: Replace with actual paper title -->
             <h5>iTACO: Interactable Digital Twins of Articulated Objects from Casually Captured RGBD Videos</h5>
@@ -214,7 +214,7 @@
           <i class="fas fa-external-link-alt"></i>
         </a>
         <!-- TODO: Add more related works or remove extra items -->
-        <a href="https://arxiv.org/abs/2409.18896" class="work-item" target="_blank">
+        <a href="https://3dlg-hcvc.github.io/s2o/" class="work-item" target="_blank">
           <div class="work-info">
             <h5>S2O: Static to Openable Enhancement for Articulated 3D Objects</h5>
             <p>Create interactive articulated 3D objects from static counterparts through openable part detection, motion prediction, and interior geometry completion.</p>
@@ -222,7 +222,7 @@
           </div>
           <i class="fas fa-external-link-alt"></i>
         </a>
-        <a href="https://arxiv.org/abs/2410.16499" class="work-item" target="_blank">
+        <a href="https://3dlg-hcvc.github.io/singapo/" class="work-item" target="_blank">
           <div class="work-info">
             <h5>SINGAPO: Single Image Controlled Generation of Articulated Parts in Objects</h5>
             <p>Create 3D assets for household articulated objects from a single image</p>
@@ -448,14 +448,28 @@ These outputs are combined to build the interactive object.
             .dataset-media {
               width: 100%;
               height: 100%;
-              object-fit: cover;
-              object-position: center;
-              border-radius: 10px;
               background: #000;
               display: block;
             }
 
+            img.dataset-media {
+              object-fit: cover;
+              object-position: center;
+              border-radius: 10px;
+            }
+
+            video.dataset-media {
+              position: absolute;
+              inset: 0;
+              object-fit: contain;
+              object-position: center;
+              border-radius: 0;
+              transform: translateZ(0);
+              -webkit-transform: translateZ(0);
+            }
+
             .dataset-media-frame {
+              position: relative;
               width: 100%;
               aspect-ratio: 1 / 1;
               overflow: hidden;
@@ -516,21 +530,21 @@ These outputs are combined to build the interactive object.
                 <th>2D Segmentation</th>
                 <td>
                   <div class="dataset-media-frame">
-                    <video class="dataset-media" controls muted loop preload="metadata">
+                    <video class="dataset-media" controls playsinline webkit-playsinline muted loop preload="metadata">
                       <source src="static/videos/dataset_segmentation_example1.mp4" type="video/mp4">
                     </video>
                   </div>
                 </td>
                 <td>
                   <div class="dataset-media-frame">
-                    <video class="dataset-media" controls muted loop preload="metadata">
+                    <video class="dataset-media" controls playsinline webkit-playsinline muted loop preload="metadata">
                       <source src="static/videos/dataset_segmentation_example2.mp4" type="video/mp4">
                     </video>
                   </div>
                 </td>
                 <td>
                   <div class="dataset-media-frame">
-                    <video class="dataset-media" controls muted loop preload="metadata">
+                    <video class="dataset-media" controls playsinline webkit-playsinline muted loop preload="metadata">
                       <source src="static/videos/dataset_segmentation_example3.mp4" type="video/mp4">
                     </video>
                   </div>
@@ -540,14 +554,14 @@ These outputs are combined to build the interactive object.
                 <th>3D Segmentation and Articulation</th>
                 <td>
                   <div class="dataset-media-frame">
-                    <video class="dataset-media" controls muted loop preload="metadata">
+                    <video class="dataset-media" controls playsinline webkit-playsinline muted loop preload="metadata">
                       <source src="static/videos/dataset_reconarti_example1.mp4" type="video/mp4">
                     </video>
                   </div>
                 </td>
                 <td>
                   <div class="dataset-media-frame">
-                    <video class="dataset-media" controls muted loop preload="metadata">
+                    <video class="dataset-media" controls playsinline webkit-playsinline muted loop preload="metadata">
                       <source src="static/videos/dataset_reconarti_example2.mp4" type="video/mp4">
                     </video>
                   </div>
@@ -574,21 +588,21 @@ These outputs are combined to build the interactive object.
                 <th>Interactive Object</th>
                 <td>
                   <div class="dataset-media-frame">
-                    <video class="dataset-media" controls muted loop preload="metadata">
+                    <video class="dataset-media" controls playsinline webkit-playsinline muted loop preload="metadata">
                       <source src="static/videos/dataset_final_example1.mp4" type="video/mp4">
                     </video>
                   </div>
                 </td>
                 <td>
                   <div class="dataset-media-frame">
-                    <video class="dataset-media" controls muted loop preload="metadata">
+                    <video class="dataset-media" controls playsinline webkit-playsinline muted loop preload="metadata">
                       <source src="static/videos/dataset_final_example2.mp4" type="video/mp4">
                     </video>
                   </div>
                 </td>
                 <td>
                   <div class="dataset-media-frame">
-                    <video class="dataset-media" controls muted loop preload="metadata">
+                    <video class="dataset-media" controls playsinline webkit-playsinline muted loop preload="metadata">
                       <source src="static/videos/dataset_final_example3.mp4" type="video/mp4">
                     </video>
                   </div>
@@ -679,6 +693,7 @@ There are prominent long tail distributions across categories, physical effects,
             }
 
             .benchmark-media-frame {
+              position: relative;
               width: 100%;
               aspect-ratio: 1 / 1;
               overflow: hidden;
@@ -694,8 +709,20 @@ There are prominent long tail distributions across categories, physical effects,
               width: 100%;
               height: 100%;
               display: block;
-              object-fit: cover;
+            }
+
+            img.benchmark-media,
+            video.benchmark-media {
+              position: absolute;
+              inset: 0;
+              object-fit: contain;
               object-position: center;
+              transform: translateZ(0);
+              -webkit-transform: translateZ(0);
+            }
+
+            img.benchmark-media {
+              background: #fff;
             }
 
             video.benchmark-media {
@@ -815,21 +842,21 @@ We find that SAM3 & Qwen3-VL outperforms other methods by a large margin, but is
                   <th class="benchmark-label">Ground Truth</th>
                   <td>
                     <div class="benchmark-media-frame">
-                      <video class="benchmark-media" controls muted loop preload="metadata">
+                      <video class="benchmark-media" controls playsinline webkit-playsinline muted loop preload="metadata">
                         <source src="static/videos/segmentation_gt_example1.mp4" type="video/mp4">
                       </video>
                     </div>
                   </td>
                   <td>
                     <div class="benchmark-media-frame">
-                      <video class="benchmark-media" controls muted loop preload="metadata">
+                      <video class="benchmark-media" controls playsinline webkit-playsinline muted loop preload="metadata">
                         <source src="static/videos/segmentation_gt_example2.mp4" type="video/mp4">
                       </video>
                     </div>
                   </td>
                   <td>
                     <div class="benchmark-media-frame">
-                      <video class="benchmark-media" controls muted loop preload="metadata">
+                      <video class="benchmark-media" controls playsinline webkit-playsinline muted loop preload="metadata">
                         <source src="static/videos/segmentation_gt_example3.mp4" type="video/mp4">
                       </video>
                     </div>
@@ -839,21 +866,21 @@ We find that SAM3 & Qwen3-VL outperforms other methods by a large margin, but is
                   <th class="benchmark-label">SAM3-Agent+Qwen3VL</th>
                   <td>
                     <div class="benchmark-media-frame">
-                      <video class="benchmark-media" controls muted loop preload="metadata">
+                      <video class="benchmark-media" controls playsinline webkit-playsinline muted loop preload="metadata">
                         <source src="static/videos/segmentation_pred_example1.mp4" type="video/mp4">
                       </video>
                     </div>
                   </td>
                   <td>
                     <div class="benchmark-media-frame">
-                      <video class="benchmark-media" controls muted loop preload="metadata">
+                      <video class="benchmark-media" controls playsinline webkit-playsinline muted loop preload="metadata">
                         <source src="static/videos/segmentation_pred_example2.mp4" type="video/mp4">
                       </video>
                     </div>
                   </td>
                   <td>
                     <div class="benchmark-media-frame">
-                      <video class="benchmark-media" controls muted loop preload="metadata">
+                      <video class="benchmark-media" controls playsinline webkit-playsinline muted loop preload="metadata">
                         <source src="static/videos/segmentation_pred_example3.mp4" type="video/mp4">
                       </video>
                     </div>
@@ -1136,11 +1163,26 @@ Among the four different VLMs we benchmarked on this task, Gemini-3-flash perfor
     margin: 0;
   }
 
-  .final-carousel-video {
+  .final-carousel-video-frame {
+    position: relative;
     width: 100%;
-    display: block;
-    background: #000;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
     border-radius: 10px;
+    background: #000;
+  }
+
+  .final-carousel-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+    object-position: center;
+    background: #000;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
   }
 
   .final-carousel-caption {
@@ -1160,17 +1202,17 @@ Among the four different VLMs we benchmarked on this task, Gemini-3-flash perfor
           <div class="columns is-variable is-4 is-mobile">
             <div class="column has-text-centered">
               <figure class="final-carousel-pair">
-                <video class="final-carousel-video" id="final-gt-1" controls muted loop preload="metadata">
+                <div class="final-carousel-video-frame"><video class="final-carousel-video" id="final-gt-1" controls playsinline webkit-playsinline muted loop preload="metadata">
                   <source src="static/videos/final_gt_example1.mp4" type="video/mp4">
-                </video>
+                </video></div>
                 <figcaption class="final-carousel-caption">Ground Truth</figcaption>
               </figure>
             </div>
             <div class="column has-text-centered">
               <figure class="final-carousel-pair">
-                <video class="final-carousel-video" id="final-pred-1" controls muted loop preload="metadata">
+                <div class="final-carousel-video-frame"><video class="final-carousel-video" id="final-pred-1" controls playsinline webkit-playsinline muted loop preload="metadata">
                   <source src="static/videos/final_pred_example1.mp4" type="video/mp4">
-                </video>
+                </video></div>
                 <figcaption class="final-carousel-caption">Prediction</figcaption>
               </figure>
             </div>
@@ -1180,17 +1222,17 @@ Among the four different VLMs we benchmarked on this task, Gemini-3-flash perfor
           <div class="columns is-variable is-4 is-mobile">
             <div class="column has-text-centered">
               <figure class="final-carousel-pair">
-                <video class="final-carousel-video" id="final-gt-2" controls muted loop preload="metadata">
+                <div class="final-carousel-video-frame"><video class="final-carousel-video" id="final-gt-2" controls playsinline webkit-playsinline muted loop preload="metadata">
                   <source src="static/videos/final_gt_example2.mp4" type="video/mp4">
-                </video>
+                </video></div>
                 <figcaption class="final-carousel-caption">Ground Truth</figcaption>
               </figure>
             </div>
             <div class="column has-text-centered">
               <figure class="final-carousel-pair">
-                <video class="final-carousel-video" id="final-pred-2" controls muted loop preload="metadata">
+                <div class="final-carousel-video-frame"><video class="final-carousel-video" id="final-pred-2" controls playsinline webkit-playsinline muted loop preload="metadata">
                   <source src="static/videos/final_pred_example2.mp4" type="video/mp4">
-                </video>
+                </video></div>
                 <figcaption class="final-carousel-caption">Prediction</figcaption>
               </figure>
             </div>
@@ -1200,17 +1242,17 @@ Among the four different VLMs we benchmarked on this task, Gemini-3-flash perfor
           <div class="columns is-variable is-4 is-mobile">
             <div class="column has-text-centered">
               <figure class="final-carousel-pair">
-                <video class="final-carousel-video" id="final-gt-3" controls muted loop preload="metadata">
+                <div class="final-carousel-video-frame"><video class="final-carousel-video" id="final-gt-3" controls playsinline webkit-playsinline muted loop preload="metadata">
                   <source src="static/videos/final_gt_example3.mp4" type="video/mp4">
-                </video>
+                </video></div>
                 <figcaption class="final-carousel-caption">Ground Truth</figcaption>
               </figure>
             </div>
             <div class="column has-text-centered">
               <figure class="final-carousel-pair">
-                <video class="final-carousel-video" id="final-pred-3" controls muted loop preload="metadata">
+                <div class="final-carousel-video-frame"><video class="final-carousel-video" id="final-pred-3" controls playsinline webkit-playsinline muted loop preload="metadata">
                   <source src="static/videos/final_pred_example3.mp4" type="video/mp4">
-                </video>
+                </video></div>
                 <figcaption class="final-carousel-caption">Prediction</figcaption>
               </figure>
             </div>
@@ -1220,17 +1262,17 @@ Among the four different VLMs we benchmarked on this task, Gemini-3-flash perfor
           <div class="columns is-variable is-4 is-mobile">
             <div class="column has-text-centered">
               <figure class="final-carousel-pair">
-                <video class="final-carousel-video" id="final-gt-4" controls muted loop preload="metadata">
+                <div class="final-carousel-video-frame"><video class="final-carousel-video" id="final-gt-4" controls playsinline webkit-playsinline muted loop preload="metadata">
                   <source src="static/videos/final_gt_example4.mp4" type="video/mp4">
-                </video>
+                </video></div>
                 <figcaption class="final-carousel-caption">Ground Truth</figcaption>
               </figure>
             </div>
             <div class="column has-text-centered">
               <figure class="final-carousel-pair">
-                <video class="final-carousel-video" id="final-pred-4" controls muted loop preload="metadata">
+                <div class="final-carousel-video-frame"><video class="final-carousel-video" id="final-pred-4" controls playsinline webkit-playsinline muted loop preload="metadata">
                   <source src="static/videos/final_pred_example4.mp4" type="video/mp4">
-                </video>
+                </video></div>
                 <figcaption class="final-carousel-caption">Prediction</figcaption>
               </figure>
             </div>
@@ -1240,17 +1282,17 @@ Among the four different VLMs we benchmarked on this task, Gemini-3-flash perfor
           <div class="columns is-variable is-4 is-mobile">
             <div class="column has-text-centered">
               <figure class="final-carousel-pair">
-                <video class="final-carousel-video" id="final-gt-5" controls muted loop preload="metadata">
+                <div class="final-carousel-video-frame"><video class="final-carousel-video" id="final-gt-5" controls playsinline webkit-playsinline muted loop preload="metadata">
                   <source src="static/videos/final_gt_example5.mp4" type="video/mp4">
-                </video>
+                </video></div>
                 <figcaption class="final-carousel-caption">Ground Truth</figcaption>
               </figure>
             </div>
             <div class="column has-text-centered">
               <figure class="final-carousel-pair">
-                <video class="final-carousel-video" id="final-pred-5" controls muted loop preload="metadata">
+                <div class="final-carousel-video-frame"><video class="final-carousel-video" id="final-pred-5" controls playsinline webkit-playsinline muted loop preload="metadata">
                   <source src="static/videos/final_pred_example5.mp4" type="video/mp4">
-                </video>
+                </video></div>
                 <figcaption class="final-carousel-caption">Prediction</figcaption>
               </figure>
             </div>
@@ -1260,17 +1302,17 @@ Among the four different VLMs we benchmarked on this task, Gemini-3-flash perfor
           <div class="columns is-variable is-4 is-mobile">
             <div class="column has-text-centered">
               <figure class="final-carousel-pair">
-                <video class="final-carousel-video" id="final-gt-6" controls muted loop preload="metadata">
+                <div class="final-carousel-video-frame"><video class="final-carousel-video" id="final-gt-6" controls playsinline webkit-playsinline muted loop preload="metadata">
                   <source src="static/videos/final_gt_example6.mp4" type="video/mp4">
-                </video>
+                </video></div>
                 <figcaption class="final-carousel-caption">Ground Truth</figcaption>
               </figure>
             </div>
             <div class="column has-text-centered">
               <figure class="final-carousel-pair">
-                <video class="final-carousel-video" id="final-pred-6" controls muted loop preload="metadata">
+                <div class="final-carousel-video-frame"><video class="final-carousel-video" id="final-pred-6" controls playsinline webkit-playsinline muted loop preload="metadata">
                   <source src="static/videos/final_pred_example6.mp4" type="video/mp4">
-                </video>
+                </video></div>
                 <figcaption class="final-carousel-caption">Prediction</figcaption>
               </figure>
             </div>
@@ -1297,7 +1339,7 @@ We use teal to indicate receptors and orange to indicate effectors.
     <div class="container">
       <div class="columns is-centered has-text-centered">
         <div class="column is-four-fifths">
-          <h2 class="title is-3">Acknowledgment</h2>
+          <h2 class="title is-3">Acknowledgments</h2>
           <div class="content has-text-justified">
             <p>
 This work was funded in part by a Canada Research Chair, NSERC Discovery Grant, and enabled by support from the Digital Research Alliance of Canada. 
