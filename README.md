@@ -224,7 +224,7 @@ This codebase is built on top of [VisionReasoner](https://github.com/JIA-Lab-res
 If you find our project to be useful, please cite our paper
 ```bibtex
 @article{peng2026egofun3d,
-  title={EgoFun3D: Modeling Interactive Objects from Egocentric Videos using Function Templates},
+  title={{EgoFun3D: Modeling Interactive Objects from Egocentric Videos using Function Templates}},
   author={Peng, Weikun and Iliash, Denys and Savva, Manolis},
   journal={arxiv preprint},
   year={2026}
