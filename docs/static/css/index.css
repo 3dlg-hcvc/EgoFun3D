@@ -82,6 +82,15 @@ body {
     margin: 8px 4px;
 }
 
+.hf-icon {
+  width: 3.75em !important;
+}
+
+.hf-icon img {
+  height: 1em;
+  width: auto;
+}
+
 .dnerf {
   font-variant: small-caps;
 }
@@ -748,6 +757,5 @@ a:focus {
     box-shadow: none !important;
   }
 }
-
 
 
