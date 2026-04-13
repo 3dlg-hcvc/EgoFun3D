@@ -26,7 +26,7 @@ Simon Fraser University
 ## Installation
 1. Clone this repo
    ```bash
-   git clone --recursive git@github.com:willipwk/part_function_reconstruction.git
+   git clone --recursive git@github.com:3dlg-hcvc/EgoFun3D.git
    ```
 2. Prepare a conda environment
    ```bash
