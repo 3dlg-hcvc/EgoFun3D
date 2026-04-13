@@ -30,7 +30,7 @@ Simon Fraser University
    ```
 2. Prepare a conda environment
    ```bash
-   cd part_function_reconstruction
+   cd EgoFun3D
    bash install.sh
    ```
    There are many different modules in this project. Thus, pip will notify you several incompatible issues during installation. Usually this is not a big problem. Make sure several key packages satisfy the following version.
