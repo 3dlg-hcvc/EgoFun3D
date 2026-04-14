@@ -1,7 +1,7 @@
 <div align="center">
 <h1>EgoFun3D: Modeling Interactive Objects from Egocentric Videos using Function Templates</h1>
 <a href="docs/static/pdf/Part_Function_Reconstruction_from_Egocentric_Videos_arxiv.pdf"><img src="https://img.shields.io/badge/Paper-blue" alt="Paper"></a>
-<!-- <a href="https://arxiv.org/abs/2509.13414"><img src="https://img.shields.io/badge/arXiv-2509.13414-b31b1b" alt="arXiv"></a> -->
+<a href="https://arxiv.org/abs/2604.11038"><img src="https://img.shields.io/badge/arXiv-2604.11038-b31b1b" alt="arXiv"></a>
 <a href="https://3dlg-hcvc.github.io/EgoFun3D/"><img src="https://img.shields.io/badge/Project_Page-green" alt="Project Page"></a>
 <!-- <a href="https://x.com/Nik__V__/status/1968316841618518371"><img src="https://img.shields.io/badge/X_Thread-1DA1F2" alt="X Thread"></a> -->
 <a href="https://huggingface.co/datasets/3dlg-hcvc/EgoFun3D"><img src='https://img.shields.io/badge/%F0%9F%A4%97_Hugging_Face-Dataset-blue'></a>
@@ -226,7 +226,7 @@ If you find our project to be useful, please cite our paper
 @article{peng2026egofun3d,
   title={{EgoFun3D: Modeling Interactive Objects from Egocentric Videos using Function Templates}},
   author={Peng, Weikun and Iliash, Denys and Savva, Manolis},
-  journal={arxiv preprint},
+  journal={arXiv preprint arXiv:2604.11038},
   year={2026}
 }
 ```
