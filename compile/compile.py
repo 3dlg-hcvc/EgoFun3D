@@ -53,7 +53,8 @@ def compute_mapping_parameters(mapping: str, receptor_state_min: float|bool, rec
         if isinstance(effector_state_min, bool) or isinstance(effector_state_max, bool):
             raise ValueError("For linear mapping, effector states must be numeric.")
         coefficient = (effector_state_max - effector_state_min) / (receptor_state_max - receptor_state_min)
-        mapping_parameters = {"COEFFICIENT": coefficient}
+        intercept = effector_state_min - coefficient * receptor_state_min
+        mapping_parameters = {"COEFFICIENT": coefficient, "INTERCEPT": intercept}
     elif mapping == "binary":
         mapping_parameters = {"RECEPTOR_STATE": receptor_state_max,
                               "EFFECTOR_STATE1": effector_state_min,
@@ -306,8 +307,8 @@ def build_urdf_from_reconstruction(
             axis = result.get("axis", [0.0, 0.0, 1.0])
             origin_xyz = result.get("origin", [0.0, 0.0, 0.0])
             states = result.get("state", [0.0])
-            lower = float(max(min(states), 0.0))
-            upper = float(max(max(states), 0.0))
+            lower = float(min(states))
+            upper = float(max(states))
             articulation = {
                 "parent": "base",
                 "child": role,
@@ -423,11 +424,11 @@ def compile_function_instance(
     mapping_type = NUMERICAL_FUNCTION_MAP[function_results["2"]]
 
     receptor_state_min, receptor_state_max = _get_articulation_state_range(articulation_results, "receptor")
-    receptor_state_min = max(receptor_state_min, 0.0) if isinstance(receptor_state_min, float) else receptor_state_min
-    receptor_state_max = max(receptor_state_max, 0.0) if isinstance(receptor_state_max, float) else receptor_state_max
+    receptor_state_min = receptor_state_min if isinstance(receptor_state_min, float) else receptor_state_min
+    receptor_state_max = receptor_state_max if isinstance(receptor_state_max, float) else receptor_state_max
     effector_state_min, effector_state_max = _get_articulation_state_range(articulation_results, "effector")
-    effector_state_min = max(effector_state_min, 0.0) if isinstance(effector_state_min, float) else effector_state_min
-    effector_state_max = max(effector_state_max, 0.0) if isinstance(effector_state_max, float) else effector_state_max
+    effector_state_min = effector_state_min if isinstance(effector_state_min, float) else effector_state_min
+    effector_state_max = effector_state_max if isinstance(effector_state_max, float) else effector_state_max
 
     os.makedirs(output_dir, exist_ok=True)
     urdf_result = build_urdf_from_reconstruction(
