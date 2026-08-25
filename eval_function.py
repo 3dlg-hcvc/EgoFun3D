@@ -52,6 +52,9 @@ def evaluate(eval_dataloader: DataLoader, vlm: VLMPrompter, config: omegaconf.Di
             os.makedirs(save_function_dir)
         gt_function = data["function_annotation"]
         assert gt_function is not None, "GT function annotation is required for evaluation."
+        if gt_function["physics"] == "undefined" or gt_function["func"] == "undefined":
+            loguru.logger.info("GT function annotation is undefined, skipping function and evaluation for this sample.")
+            continue
         video_frame_list = data["rgb_list"]
         if not config.pred_mask:
             receptor_mask_list = data[f"receptor_mask_list"]
