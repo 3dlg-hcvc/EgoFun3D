@@ -209,7 +209,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                 )
             role_end = time.time()
             print(f"Total time for {role} (including fusion and evaluation): {role_end - role_start:.2f} seconds")
-        if config.save_mesh:
+        if config.save_mesh and reconstruction_results is not None:
             base_mask_list = np.logical_and(
                 data["object_mask_list"],
                 np.logical_not(np.logical_or(data["receptor_mask_list"], data["effector_mask_list"]))
