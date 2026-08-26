@@ -1,6 +1,7 @@
 import json
 import copy
 import time
+import re
 import h5py
 import numpy as np
 import os
@@ -95,6 +96,7 @@ class UniformDataset(Dataset):
             "receptor_articulation": receptor_articulation,
             "effector_articulation": effector_articulation,
             "function_annotation": function_annotation,
+            "initial_state": video_dict.get("initial_state", "close"),
             "sample_indices": sample_indices,
             "num_total_frames": int(full_num_frames)
         }
@@ -376,6 +378,9 @@ class NewDataset(Dataset):
         function_instance_id = video_dict.get(
             "function_instance_id", video_dict.get("function_id")
         )
+        articulation_path = video_dict.get(
+            "articulation_path", video_dict.get("articulation")
+        )
         geometry_data = None
         if self.load_mesh_data_enabled:
             geometry_data = self.load_mesh_data(
@@ -384,13 +389,16 @@ class NewDataset(Dataset):
                 part_annotation_path,
                 function_instance_id,
                 has_object,
+                articulation_path=(
+                    articulation_path if self.load_articulation_enabled else None
+                ),
             )
 
         receptor_articulation = None
         effector_articulation = None
         if self.load_articulation_enabled:
             receptor_articulation, effector_articulation = self.load_articulation(
-                video_dict.get("articulation_path", video_dict.get("articulation")),
+                articulation_path,
                 geometry_data,
                 part_annotation_path=part_annotation_path,
                 function_instance_id=function_instance_id,
@@ -431,6 +439,7 @@ class NewDataset(Dataset):
             "receptor_articulation": receptor_articulation,
             "effector_articulation": effector_articulation,
             "function_annotation": function_annotation,
+            "initial_state": video_dict.get("initial_state", "close"),
             "sample_indices": sample_indices,
             "num_total_frames": int(full_num_frames)
         }
@@ -618,8 +627,17 @@ class NewDataset(Dataset):
 
     def load_role_part_annotations(
         self, part_annotation_path: str, function_instance_id: int
-    ) -> Tuple[Any, Dict[str, dict]]:
-        """Load the receptor/effector records without loading the mesh itself."""
+    ) -> Tuple[Any, Dict[str, List[dict]]]:
+        """Load role records, including annotations shared by multiple roles.
+
+        Annotation labels begin with one or more role-instance tokens. For
+        example, ``r1_handle`` belongs to receptor 1, while
+        ``r1+r2_shared_handle`` belongs to receptors 1 and 2 and
+        ``r1+e1_shared_part`` belongs to both roles of function instance 1.
+        A role can therefore match multiple annotations. A missing receptor is
+        invalid; a missing effector is represented by an empty list and is
+        later interpreted as the whole object mesh.
+        """
         if part_annotation_path is None:
             raise KeyError("Metadata entry is missing the part annotation path.")
         if function_instance_id is None:
@@ -639,20 +657,66 @@ class NewDataset(Dataset):
         instance_id = str(function_instance_id)
         role_annotations = {}
         for role, role_prefix in (("receptor", "r"), ("effector", "e")):
-            label_prefix = f"{role_prefix}{instance_id}_"
+            role_token = f"{role_prefix}{instance_id}"
             matches = [
                 annotation for annotation in annotations
-                if str(annotation.get("label", "")).startswith(label_prefix)
-            ]
-            if len(matches) != 1:
-                raise ValueError(
-                    f"Expected one part with prefix '{label_prefix}' in "
-                    f"{part_annotation_path}, found {len(matches)}."
+                if role_token in self.parse_part_role_tokens(
+                    str(annotation.get("label", ""))
                 )
-            role_annotations[role] = matches[0]
+            ]
+            if not matches and role == "receptor":
+                raise ValueError(
+                    f"No receptor part assigned to '{role_token}' in "
+                    f"{part_annotation_path}."
+                )
+            role_annotations[role] = matches
         return annotation_data, role_annotations
 
-    def load_mesh_data(self, geometry_path: str, transformation_path: str, part_annotation_path: str, function_instance_id: int, has_object: bool) -> dict:
+    @staticmethod
+    def parse_part_role_tokens(part_label: str) -> List[str]:
+        """Return leading role tokens such as ``r1`` and ``e2`` from a label."""
+        prefix_match = re.match(r"^([re]\d+(?:\+[re]\d+)*)", part_label)
+        return prefix_match.group(1).split("+") if prefix_match else []
+
+    def get_ordered_role_pids(
+        self, annotations: List[dict], role: str, function_instance_id: int
+    ) -> List[Any]:
+        """Return unique PIDs, preferring a part assigned only to this role."""
+        role_token = f"{'r' if role == 'receptor' else 'e'}{function_instance_id}"
+        primary_annotation = next(
+            (
+                annotation for annotation in annotations
+                if self.parse_part_role_tokens(str(annotation.get("label", "")))
+                == [role_token]
+            ),
+            annotations[0] if annotations else None,
+        )
+        ordered_annotations = (
+            [primary_annotation]
+            + [
+                annotation for annotation in annotations
+                if annotation is not primary_annotation
+            ]
+            if primary_annotation is not None else []
+        )
+        pids = []
+        for annotation in ordered_annotations:
+            annotation_pid = annotation.get(
+                "pid", annotation.get("partId", annotation.get("objectId"))
+            )
+            if annotation_pid is not None and annotation_pid not in pids:
+                pids.append(annotation_pid)
+        return pids
+
+    def load_mesh_data(
+        self,
+        geometry_path: str,
+        transformation_path: str,
+        part_annotation_path: str,
+        function_instance_id: int,
+        has_object: bool,
+        articulation_path: Optional[str] = None,
+    ) -> dict:
         required_paths = {
             "mesh": geometry_path,
             "object transformation": transformation_path,
@@ -670,6 +734,12 @@ class NewDataset(Dataset):
         annotation_data, role_annotations = self.load_role_part_annotations(
             part_annotation_path, function_instance_id
         )
+        articulation_records = self.load_articulation_records(articulation_path)
+        articulations_by_pid = {}
+        for articulation in articulation_records:
+            pid = articulation.get("pid")
+            if pid is not None:
+                articulations_by_pid.setdefault(str(pid), []).append(articulation)
 
         canonical2world = self.load_object_transformation(transformation_path)
         if canonical2world.shape != (4, 4):
@@ -702,6 +772,15 @@ class NewDataset(Dataset):
                 raise ValueError(f"No mesh indices found for part '{annotation.get('label')}'.")
             return full_mesh.select_by_index(vertex_indices)
 
+        def normalized_part_mesh(annotation: dict) -> o3d.geometry.TriangleMesh:
+            part_mesh = annotated_part_mesh(annotation)
+            pid = annotation.get(
+                "pid", annotation.get("partId", annotation.get("objectId"))
+            )
+            return self.transform_part_mesh_to_min_joint_values(
+                part_mesh, articulations_by_pid.get(str(pid), [])
+            )
+
         def sample_world_points(mesh: o3d.geometry.TriangleMesh) -> np.ndarray:
             if mesh.is_empty() or len(mesh.triangles) == 0:
                 raise ValueError("Cannot sample an empty annotated part mesh.")
@@ -715,17 +794,44 @@ class NewDataset(Dataset):
 
         geometry_annotations = {"canonical_to_world": canonical2world}
         selected_labels = {}
-        for role, annotation in role_annotations.items():
-            part_mesh = annotated_part_mesh(annotation)
-            pid = annotation.get("pid", annotation.get("partId", annotation.get("objectId")))
-            geometry_annotations[role] = {
-                "part_pcd": sample_world_points(part_mesh),
-                "pid": pid,
-            }
-            selected_labels[role] = str(annotation["label"])
+        sampled_role_parts = {}
+        full_mesh_points = None
+        for role, annotations in role_annotations.items():
+            if not annotations:
+                if role != "effector":
+                    raise ValueError(f"No mesh annotation found for role '{role}'.")
+                if full_mesh_points is None:
+                    full_mesh_points = sample_world_points(full_mesh)
+                part_points = full_mesh_points
+                pid = None
+                pids = []
+                selected_labels[role] = "whole mesh"
+            else:
+                annotation_key = tuple(id(annotation) for annotation in annotations)
+                if annotation_key not in sampled_role_parts:
+                    part_mesh = normalized_part_mesh(annotations[0])
+                    for annotation in annotations[1:]:
+                        part_mesh += normalized_part_mesh(annotation)
+                    sampled_role_parts[annotation_key] = sample_world_points(part_mesh)
+                part_points = sampled_role_parts[annotation_key]
 
-        if has_object:
-            object_points = sample_world_points(full_mesh)
+                pids = self.get_ordered_role_pids(
+                    annotations, role, function_instance_id
+                )
+                pid = pids[0] if pids else None
+                selected_labels[role] = " + ".join(
+                    str(annotation["label"]) for annotation in annotations
+                )
+            geometry_annotations[role] = {
+                "part_pcd": part_points,
+                "pid": pid,
+                "pids": pids,
+            }
+
+        if has_object or not role_annotations["effector"]:
+            if full_mesh_points is None:
+                full_mesh_points = sample_world_points(full_mesh)
+            object_points = full_mesh_points
         else:
             object_points = np.concatenate(
                 [geometry_annotations[role]["part_pcd"] for role in ("receptor", "effector")],
@@ -750,6 +856,83 @@ class NewDataset(Dataset):
         canonical2world = np.array(transformation_data["canonical_to_world"])
         return canonical2world
 
+    def load_articulation_records(
+        self, articulation_path: Optional[str]
+    ) -> List[dict]:
+        """Load all articulation records, preserving their file order."""
+        if articulation_path is None:
+            return []
+        full_articulation_path = os.path.join(self.root_path, articulation_path)
+        if not os.path.exists(full_articulation_path):
+            return []
+        with open(full_articulation_path, "r") as f:
+            articulation_data = json.load(f)
+        records = (
+            articulation_data.get("articulations", [])
+            if isinstance(articulation_data, dict)
+            else articulation_data
+        )
+        if not isinstance(records, list):
+            raise ValueError(f"Invalid articulation data in {articulation_path}.")
+        return records
+
+    @staticmethod
+    def transform_part_mesh_to_min_joint_values(
+        part_mesh: o3d.geometry.TriangleMesh,
+        articulation_records: Sequence[dict],
+    ) -> o3d.geometry.TriangleMesh:
+        """Move a part from joint value zero to every matching minimum value.
+
+        Revolute ranges are interpreted in radians and prismatic ranges in the
+        mesh's canonical distance unit. Records without a finite minimum (for
+        example continuous joints) do not transform the mesh.
+        """
+        transformed_mesh = copy.deepcopy(part_mesh)
+        for articulation in articulation_records:
+            joint_type = str(articulation.get("type", "")).lower()
+            range_min = articulation.get(
+                "rangeMin", articulation.get("range_min")
+            )
+            if range_min is None or joint_type == "continuous":
+                continue
+            range_min = float(range_min)
+            if not np.isfinite(range_min):
+                raise ValueError("Articulation rangeMin must be finite.")
+
+            # The annotated mesh is assumed to be at joint value zero.
+            joint_delta = range_min
+            if np.isclose(joint_delta, 0.0):
+                continue
+
+            axis = np.asarray(articulation.get("axis"), dtype=float)
+            if axis.shape != (3,) or not np.isfinite(axis).all():
+                raise ValueError("Articulation axis must contain three finite values.")
+            axis_norm = np.linalg.norm(axis)
+            if axis_norm <= 0:
+                raise ValueError("Articulation axis must be non-zero.")
+            axis = axis / axis_norm
+
+            if joint_type == "revolute":
+                origin = articulation.get("origin")
+                if origin is None:
+                    raise ValueError("A revolute articulation requires an origin.")
+                origin = np.asarray(origin, dtype=float)
+                if origin.shape != (3,) or not np.isfinite(origin).all():
+                    raise ValueError(
+                        "Articulation origin must contain three finite values."
+                    )
+                rotation = o3d.geometry.get_rotation_matrix_from_axis_angle(
+                    axis * joint_delta
+                )
+                transformed_mesh.rotate(rotation, center=origin)
+            elif joint_type == "prismatic":
+                transformed_mesh.translate(axis * joint_delta)
+            else:
+                raise ValueError(
+                    f"Unsupported articulation type '{articulation.get('type')}'."
+                )
+        return transformed_mesh
+
     def load_articulation(
         self,
         articulation_path: str,
@@ -763,16 +946,7 @@ class NewDataset(Dataset):
         if articulation_path is None:
             return receptor_articulation, effector_articulation
 
-        full_articulation_path = os.path.join(self.root_path, articulation_path)
-        if not os.path.exists(full_articulation_path):
-            return receptor_articulation, effector_articulation
-        with open(full_articulation_path, "r") as f:
-            articulation_data = json.load(f)
-        joints = (
-            articulation_data.get("articulations", [])
-            if isinstance(articulation_data, dict)
-            else articulation_data
-        )
+        joints = self.load_articulation_records(articulation_path)
         joints_by_pid = {str(joint.get("pid")): joint for joint in joints}
         if geometry_data is None:
             _, role_annotations = self.load_role_part_annotations(
@@ -780,12 +954,17 @@ class NewDataset(Dataset):
             )
             role_geometry_data = {
                 role: {
-                    "pid": annotation.get(
-                        "pid", annotation.get("partId", annotation.get("objectId"))
-                    )
+                    "pid": None,
+                    "pids": self.get_ordered_role_pids(
+                        annotations, role, function_instance_id
+                    ),
                 }
-                for role, annotation in role_annotations.items()
+                for role, annotations in role_annotations.items()
             }
+            for role_data in role_geometry_data.values():
+                role_data["pid"] = (
+                    role_data["pids"][0] if role_data["pids"] else None
+                )
             canonical2world = (
                 self.load_object_transformation(transformation_path)
                 if transformation_path is not None else None
@@ -795,7 +974,16 @@ class NewDataset(Dataset):
             canonical2world = geometry_data.get("canonical_to_world")
 
         def joint_for_role(role: str):
-            joint = joints_by_pid.get(str(role_geometry_data[role]["pid"]))
+            role_pids = role_geometry_data[role].get(
+                "pids", [role_geometry_data[role].get("pid")]
+            )
+            joint = next(
+                (
+                    joints_by_pid[str(pid)] for pid in role_pids
+                    if pid is not None and str(pid) in joints_by_pid
+                ),
+                None,
+            )
             if joint is None:
                 return None
             joint = copy.deepcopy(joint)

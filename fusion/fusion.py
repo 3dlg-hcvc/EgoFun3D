@@ -17,7 +17,13 @@ class BaseFusion:
     def __init__(self):
         pass
 
-    def fuse_part_pcds(self, image_path_list: List[np.ndarray], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray]) -> Tuple[np.ndarray, List[np.ndarray]]:
+    def fuse_part_pcds(
+        self,
+        image_path_list: List[np.ndarray],
+        part_mask_list: List[np.ndarray],
+        points_map_list: List[np.ndarray],
+        initial_state: str = "close",
+    ) -> Tuple[np.ndarray, List[np.ndarray]]:
         raise NotImplementedError
 
 
@@ -51,8 +57,8 @@ class FeatureMatchingFusion(BaseFusion):
         boundary_mask = np.logical_and(kptsA_boundary_mask, kptsB_boundary_mask)
         kptsA = kptsA_origin[boundary_mask]
         kptsB = kptsB_origin[boundary_mask]
-        kptsA_index = current_part_mask[kptsA[:,1], kptsA[:,0]]
-        kptsB_index = anchor_part_mask[kptsB[:,1], kptsB[:,0]]
+        kptsA_index = anchor_part_mask[kptsA[:,1], kptsA[:,0]]
+        kptsB_index = current_part_mask[kptsB[:,1], kptsB[:,0]]
         valid_index = np.logical_and(kptsA_index, kptsB_index)
         kptsA = kptsA[valid_index]
         kptsB = kptsB[valid_index]
@@ -67,12 +73,53 @@ class FeatureMatchingFusion(BaseFusion):
         current2anchor = estimate_se3_transformation(current_part_3dkpts, anchor_part_3dkpts)
         return current2anchor, kptsA_origin, kptsB_origin
 
-    def fuse_part_pcds(self, video_frame_list: List[np.ndarray], part_mask_list: List[np.ndarray], points_map_list: List[np.ndarray], kptsA_origin_dict: Dict[str, np.ndarray] = None, kptsB_origin_dict: Dict[str, np.ndarray] = None) -> Tuple[np.ndarray, List[np.ndarray]]:
+    def fuse_part_pcds(
+        self,
+        video_frame_list: List[np.ndarray],
+        part_mask_list: List[np.ndarray],
+        points_map_list: List[np.ndarray],
+        kptsA_origin_dict: Dict[str, np.ndarray] = None,
+        kptsB_origin_dict: Dict[str, np.ndarray] = None,
+        initial_state: str = "close",
+    ) -> Tuple[
+        np.ndarray,
+        List[np.ndarray],
+        Dict[str, np.ndarray],
+        Dict[str, np.ndarray],
+    ]:
+        """Fuse observations in the frame selected by the initial state.
+
+        Closed (and unspecified) sequences use the first valid observation as
+        the anchor. Open sequences use the last valid observation. Returned
+        transformations retain input observation order.
+        """
+        if not (
+            len(video_frame_list) == len(part_mask_list) == len(points_map_list)
+        ):
+            raise ValueError(
+                "Video frames, part masks, and point maps must have equal lengths."
+            )
+        if len(video_frame_list) == 0:
+            raise ValueError("Cannot fuse an empty observation sequence.")
+
+        # Open sequences end at the canonical state; all other metadata values
+        # preserve the original first-observation alignment behavior.
+        normalized_initial_state = str(initial_state or "close").lower()
+        anchor_image_id = (
+            len(video_frame_list) - 1
+            if normalized_initial_state == "open" else 0
+        )
+        anchor_point_map = points_map_list[anchor_image_id]
+        anchor_part_mask = part_mask_list[anchor_image_id]
+        kptsA_origin_dict = (
+            {} if kptsA_origin_dict is None else kptsA_origin_dict
+        )
+        kptsB_origin_dict = (
+            {} if kptsB_origin_dict is None else kptsB_origin_dict
+        )
+
         part_pcd_list = []
         transformation_list = []
-        anchor_image_id = None
-        anchor_point_map = None
-        anchor_part_mask = None
         # kptsA_origin_dict_new = {}
         # kptsB_origin_dict_new = {}
         for frame_id, video_frame in enumerate(video_frame_list):
@@ -82,23 +129,21 @@ class FeatureMatchingFusion(BaseFusion):
             # part_pcd_world, current_point_map = self.get_part_pcd(image, part_mask, cam_pose, gt_depth, gt_intrinsics)
             part_pcd_list.append(part_pcd_world)
             
-            if frame_id == 0:
+            if frame_id == anchor_image_id:
                 transformation_list.append(np.eye(4))
-                anchor_image_id = frame_id
-                anchor_point_map = current_point_map
-                anchor_part_mask = part_mask
             else:
                 # print("Computing transformation for frame", frame_id)
+                cache_key = f"{frame_id}_{anchor_image_id}"
                 transformation, kptsA_origin, kptsB_origin = self.compute_part_transformation(
                     video_frame, current_point_map, part_mask,
                     video_frame_list[anchor_image_id], anchor_point_map, anchor_part_mask, 
-                    kptsA_origin_dict[f"{frame_id}_{anchor_image_id}"] if (kptsA_origin_dict is not None and f"{frame_id}_{anchor_image_id}" in kptsA_origin_dict.keys()) else None, 
-                    kptsB_origin_dict[f"{frame_id}_{anchor_image_id}"] if (kptsB_origin_dict is not None and f"{frame_id}_{anchor_image_id}" in kptsB_origin_dict.keys()) else None
+                    kptsA_origin_dict.get(cache_key),
+                    kptsB_origin_dict.get(cache_key),
                 )
-                if (f"{frame_id}_{anchor_image_id}" not in kptsA_origin_dict.keys()) or (f"{frame_id}_{anchor_image_id}" not in kptsB_origin_dict.keys()):
-                    # print("add kptsA_origin and kptsB_origin to the dict")
-                    kptsA_origin_dict[f"{frame_id}_{anchor_image_id}"] = kptsA_origin
-                    kptsB_origin_dict[f"{frame_id}_{anchor_image_id}"] = kptsB_origin
+                if cache_key not in kptsA_origin_dict:
+                    kptsA_origin_dict[cache_key] = kptsA_origin
+                if cache_key not in kptsB_origin_dict:
+                    kptsB_origin_dict[cache_key] = kptsB_origin
                 # transformation = transformation[0]
                 transformation_list.append(transformation)
         

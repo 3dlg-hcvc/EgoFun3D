@@ -155,6 +155,7 @@ def evaluate(
                         valid_points_map_list,
                         kptsA_origin_dict,
                         kptsB_origin_dict,
+                        initial_state=data.get("initial_state", "close"),
                     )
                 )
             elif isinstance(fusion_model, TrackingFusion):
@@ -240,6 +241,7 @@ def evaluate(
                             base_valid_points_map_list,
                             kptsA_origin_dict,
                             kptsB_origin_dict,
+                            initial_state=data.get("initial_state", "close"),
                         )
                         save_mesh(
                             reconstruction_results=reconstruction_results,
