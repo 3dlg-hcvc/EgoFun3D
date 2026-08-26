@@ -100,7 +100,9 @@ class FeatureMatchingFusion(BaseFusion):
                 "Video frames, part masks, and point maps must have equal lengths."
             )
         if len(video_frame_list) == 0:
-            raise ValueError("Cannot fuse an empty observation sequence.")
+            # raise ValueError("Cannot fuse an empty observation sequence.")
+            print("Cannot fuse an empty observation sequence.")
+            return np.empty((0, 3)), [], {}, {}
 
         # Open sequences end at the canonical state; all other metadata values
         # preserve the original first-observation alignment behavior.

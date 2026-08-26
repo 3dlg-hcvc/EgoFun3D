@@ -161,7 +161,14 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             
             fuse_start = time.time()
             if isinstance(fusion_model, FeatureMatchingFusion):
-                fused_part_pcd, transformation_list, kptsA_origin_dict, kptsB_origin_dict = fusion_model.fuse_part_pcds(valid_video_frame_list, valid_mask_list, valid_points_map_list, kptsA_origin_dict, kptsB_origin_dict)
+                fused_part_pcd, transformation_list, kptsA_origin_dict, kptsB_origin_dict = fusion_model.fuse_part_pcds(
+                    valid_video_frame_list,
+                    valid_mask_list,
+                    valid_points_map_list,
+                    kptsA_origin_dict,
+                    kptsB_origin_dict,
+                    initial_state=data.get("initial_state", "close"),
+                )
                 # print("kpts len:", len(kptsA_origin_dict), len(kptsB_origin_dict))
             # elif isinstance(fusion_model, TrackingFusion):
             #     if tracks3d is None:
@@ -224,6 +231,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                     base_valid_points_map_list,
                     kptsA_origin_dict,
                     kptsB_origin_dict,
+                    initial_state=data.get("initial_state", "close"),
                 )
                 save_mesh(
                     reconstruction_results=reconstruction_results,

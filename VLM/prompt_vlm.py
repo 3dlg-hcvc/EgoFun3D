@@ -5,14 +5,18 @@ import torch
 from molmo_utils import process_vision_info
 from vllm import LLM, SamplingParams
 # from qwen_vl_utils import process_vision_info
+import ast
 import re
 import cv2
 import numpy as np
 from PIL import Image as PILImage
 import base64
+import json
 import os
 import shutil
 import tempfile
+import urllib.error
+import urllib.request
 try:
     # MoviePy >=2
     from moviepy import ImageSequenceClip
@@ -84,6 +88,236 @@ class VLMPrompter:
         self.vlm_model = vlm_model
         self.prompt_template = prompt_template
         self.max_query = max_query
+
+
+class ExpyditeHubVideoNarrator(VLMPrompter):
+    """Base class for video models served by an Expydite Hub pool.
+
+    The pools expose an OpenAI-compatible chat-completions endpoint. Videos are
+    passed as base64 data URLs, so model weights are not loaded locally.
+    """
+
+    DEFAULT_HUB = "https://expydite-hub.datatunnel.net"
+    TOKEN_ENV = "EXPYDITE_HUB_TOKEN"
+
+    def __init__(
+        self,
+        vlm_model: str,
+        pool: str,
+        prompt_template: str = "",
+        max_query: int = 10,
+        hub_url: str = DEFAULT_HUB,
+        token: Optional[str] = None,
+        max_tokens: int = 2048,
+        timeout: float = 300,
+    ):
+        super().__init__(vlm_model, prompt_template, max_query)
+        self.pool = pool
+        self.hub_url = hub_url.rstrip("/")
+        self.token = token or os.environ.get(self.TOKEN_ENV)
+        self.max_tokens = max_tokens
+        self.timeout = timeout
+
+    @property
+    def endpoint(self) -> str:
+        return f"{self.hub_url}/p/{self.pool}/v1/chat/completions"
+
+    def _request(self, prompt: str, video_path: str) -> str:
+        if not self.token:
+            raise RuntimeError(
+                f"Expydite Hub token is missing. Set {self.TOKEN_ENV} or pass "
+                "hub_token in the VLM config."
+            )
+
+        with open(video_path, "rb") as video_file:
+            video_data = base64.b64encode(video_file.read()).decode("ascii")
+
+        payload = {
+            "model": self.vlm_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "video_url",
+                            "video_url": {
+                                "url": f"data:video/mp4;base64,{video_data}"
+                            },
+                        },
+                    ],
+                }
+            ],
+            "max_tokens": self.max_tokens,
+        }
+        request = urllib.request.Request(
+            self.endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json",
+                "Prefer": "wait",
+                "User-Agent": "egofun3d-client/1.0",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                result = json.load(response)
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"Expydite Hub request failed with HTTP {error.code}: {detail}"
+            ) from error
+        except urllib.error.URLError as error:
+            raise RuntimeError(f"Expydite Hub request failed: {error.reason}") from error
+
+        try:
+            content = result["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as error:
+            raise RuntimeError(f"Unexpected Expydite Hub response: {result!r}") from error
+        if not isinstance(content, str):
+            raise RuntimeError(f"Expected text completion, got: {content!r}")
+        return content
+
+    @staticmethod
+    def post_process_description_output(output_text: str) -> dict:
+        pairs = re.findall(
+            r"\{\s*name:\s*(.*?)\s*,\s*description:\s*(.*?)\s*\}",
+            output_text,
+            flags=re.S,
+        )
+
+        def clean(text: str) -> str:
+            return re.sub(r"\s+", " ", text).strip()
+
+        if len(pairs) != 2:
+            print("Warning: Unexpected number of parts found in VLM output.")
+            return {}
+        return {
+            role: {"name": clean(name), "description": clean(description)}
+            for role, (name, description) in zip(
+                ("receptor", "effector"), pairs
+            )
+        }
+
+    @staticmethod
+    def post_process_function_output(output_text: str) -> dict:
+        text = output_text.strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json|python)?\s*|\s*```$", "", text, flags=re.I)
+        try:
+            result = json.loads(text)
+        except json.JSONDecodeError:
+            try:
+                result = ast.literal_eval(text)
+            except (SyntaxError, ValueError):
+                print(f"Failed to evaluate output text: {output_text}")
+                return {}
+        return result if isinstance(result, dict) else {}
+
+    def prompt_description(self, video_path: str) -> dict:
+        grouped_results = {}
+        query_count = 0
+        while len(grouped_results) != 2 and query_count < self.max_query:
+            output_text = self._request(self.prompt_template, video_path)
+            grouped_results = self.post_process_description_output(output_text)
+            query_count += 1
+        return grouped_results
+
+    def prompt(self, video_path: str, prompt_type: str = "text") -> dict:
+        if prompt_type != "text":
+            raise ValueError(
+                f"Expydite Hub narrators only support text prompts, got {prompt_type!r}"
+            )
+        return self.prompt_description(video_path)
+
+    def prompt_function(
+        self,
+        rgb_frame_list: List[np.ndarray],
+        receptor_part_masks: np.ndarray,
+        effector_part_masks: np.ndarray,
+    ) -> Dict[str, str]:
+        if not (
+            len(rgb_frame_list)
+            == len(receptor_part_masks)
+            == len(effector_part_masks)
+        ):
+            raise ValueError("frames and receptor/effector masks must have equal lengths")
+
+        rendered_frames = []
+        for rgb_frame, receptor_mask, effector_mask in zip(
+            rgb_frame_list, receptor_part_masks, effector_part_masks
+        ):
+            rgb_frame = np.asarray(rgb_frame)
+            receptor_color_mask = np.zeros_like(rgb_frame)
+            receptor_color_mask[:, :, 1] = receptor_mask * 255
+            effector_color_mask = np.zeros_like(rgb_frame)
+            effector_color_mask[:, :, 0] = effector_mask * 255
+            blended_frame = cv2.addWeighted(
+                rgb_frame, 0.5, receptor_color_mask, 0.5, 0
+            )
+            blended_frame = cv2.addWeighted(
+                blended_frame, 0.5, effector_color_mask, 0.5, 0
+            )
+            rendered_frames.append(blended_frame.astype(np.uint8))
+
+        with tempfile.TemporaryDirectory(prefix="expydite_masked_video_") as tmp_dir:
+            video_path = os.path.join(tmp_dir, "rendered_video.mp4")
+            compose_video_from_numpy_frames(
+                frames=rendered_frames,
+                output_path=video_path,
+                fps=15,
+                codec="libx264",
+            )
+            grouped_results = {}
+            query_count = 0
+            while len(grouped_results) != 3 and query_count < self.max_query:
+                output_text = self._request(self.prompt_template, video_path)
+                grouped_results = self.post_process_function_output(output_text)
+                query_count += 1
+        return grouped_results
+
+
+class QwenHubVideoNarrator(ExpyditeHubVideoNarrator):
+    """Qwen3-VL served by the ``egofun3d-qwen3vl`` Expydite pool."""
+
+    def __init__(
+        self,
+        vlm_model: str = "Qwen/Qwen3-VL-8B-Instruct",
+        prompt_template: str = "",
+        max_query: int = 10,
+        pool: str = "egofun3d-qwen3vl",
+        **hub_kwargs,
+    ):
+        super().__init__(
+            vlm_model=vlm_model,
+            pool=pool,
+            prompt_template=prompt_template,
+            max_query=max_query,
+            **hub_kwargs,
+        )
+
+
+class MolmoHubVideoNarrator(ExpyditeHubVideoNarrator):
+    """Molmo2 served by the ``egofun3d-molmo2`` Expydite pool."""
+
+    def __init__(
+        self,
+        vlm_model: str = "allenai/Molmo2-8B",
+        prompt_template: str = "",
+        max_query: int = 10,
+        pool: str = "egofun3d-molmo2",
+        **hub_kwargs,
+    ):
+        super().__init__(
+            vlm_model=vlm_model,
+            pool=pool,
+            prompt_template=prompt_template,
+            max_query=max_query,
+            **hub_kwargs,
+        )
 
 
 class GeminiVideoNarrator(VLMPrompter):
@@ -946,6 +1180,31 @@ def build_vlm_prompter(vlm_config: dict) -> VLMPrompter:
                 prompt_template=vlm_config.prompt_template,
                 max_query=vlm_config.max_query,
                 device=dev,
+            )
+        elif vlm_config["vlm_type"] in ("qwen_hub", "molmo_hub"):
+            narrator_class = (
+                QwenHubVideoNarrator
+                if vlm_config["vlm_type"] == "qwen_hub"
+                else MolmoHubVideoNarrator
+            )
+            default_pool = (
+                "egofun3d-qwen3vl"
+                if vlm_config["vlm_type"] == "qwen_hub"
+                else "egofun3d-molmo2"
+            )
+            return narrator_class(
+                vlm_model=vlm_config.vlm_model,
+                prompt_template=vlm_config.prompt_template,
+                max_query=vlm_config.max_query,
+                pool=OmegaConf.select(vlm_config, "pool", default=default_pool),
+                hub_url=OmegaConf.select(
+                    vlm_config,
+                    "hub_url",
+                    default=ExpyditeHubVideoNarrator.DEFAULT_HUB,
+                ),
+                token=OmegaConf.select(vlm_config, "hub_token", default=None),
+                max_tokens=OmegaConf.select(vlm_config, "max_tokens", default=2048),
+                timeout=OmegaConf.select(vlm_config, "timeout", default=300),
             )
         else:
             raise ValueError(f"Unknown VLM type: {vlm_config['vlm_type']}")
