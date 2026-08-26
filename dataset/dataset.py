@@ -1,10 +1,13 @@
 import json
 import copy
+from contextlib import contextmanager
 import time
 import re
 import h5py
 import numpy as np
 import os
+from pathlib import Path
+import tempfile
 import omegaconf
 import point_cloud_utils as pcu
 import open3d as o3d
@@ -13,6 +16,65 @@ from torch.utils.data import DataLoader
 import imageio
 
 from typing import Tuple, List, Dict, Any, Mapping, Optional, Sequence
+
+
+@contextmanager
+def temporary_video_from_frames(
+    rgb_list: Sequence[np.ndarray],
+    source_video_path: Optional[str] = None,
+    sample_indices: Optional[Sequence[int]] = None,
+):
+    """Write sampled frames to a temporary MP4 in the repository root.
+
+    This is used when a consumer such as ViPE needs a file path but the
+    in-memory frames have been cropped. The temporary video contains exactly
+    the frames in ``rgb_list`` and is removed when the context exits.
+    """
+    if len(rgb_list) == 0:
+        raise ValueError("Cannot create a temporary video from an empty frame list.")
+
+    frames = np.stack([np.asarray(frame) for frame in rgb_list])
+    if frames.ndim != 4 or frames.shape[-1] != 3:
+        raise ValueError(
+            f"Expected video frames shaped (T, H, W, 3), got {frames.shape}."
+        )
+    if frames.dtype != np.uint8:
+        frames = np.clip(frames, 0, 255).astype(np.uint8)
+
+    fps = 30.0
+    if source_video_path is not None:
+        try:
+            metadata = imageio.v3.immeta(source_video_path)
+            fps = float(metadata.get("fps", fps))
+        except (OSError, TypeError, ValueError):
+            pass
+    if not np.isfinite(fps) or fps <= 0:
+        fps = 30.0
+    if sample_indices is not None and len(sample_indices) > 1:
+        frame_steps = np.diff(np.asarray(sample_indices, dtype=float))
+        positive_steps = frame_steps[frame_steps > 0]
+        if len(positive_steps) > 0:
+            fps /= float(np.median(positive_steps))
+
+    repository_root = Path(__file__).resolve().parent.parent
+    file_descriptor, temp_video_path = tempfile.mkstemp(
+        prefix="tmp_vipe_", suffix=".mp4", dir=repository_root
+    )
+    os.close(file_descriptor)
+    try:
+        imageio.mimwrite(
+            temp_video_path,
+            frames,
+            fps=fps,
+            codec="libx264",
+            pixelformat="yuv444p",
+            macro_block_size=None,
+            ffmpeg_log_level="error",
+        )
+        yield temp_video_path
+    finally:
+        if os.path.exists(temp_video_path):
+            os.remove(temp_video_path)
 
 
 class UniformDataset(Dataset):
@@ -99,7 +161,8 @@ class UniformDataset(Dataset):
             "function_annotation": function_annotation,
             "initial_state": video_dict.get("initial_state", "close"),
             "sample_indices": sample_indices,
-            "num_total_frames": int(full_num_frames)
+            "num_total_frames": int(full_num_frames),
+            "crop": crop,
         }
         return data_dict
     
@@ -446,7 +509,8 @@ class NewDataset(Dataset):
             "function_annotation": function_annotation,
             "initial_state": video_dict.get("initial_state", "close"),
             "sample_indices": sample_indices,
-            "num_total_frames": int(full_num_frames)
+            "num_total_frames": int(full_num_frames),
+            "crop": self.image_type == "cropped",
         }
         return data_dict
 
