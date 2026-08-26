@@ -5,6 +5,7 @@ import re
 import h5py
 import numpy as np
 import os
+import omegaconf
 import point_cloud_utils as pcu
 import open3d as o3d
 from torch.utils.data import Dataset
@@ -233,6 +234,10 @@ class UniformDataset(Dataset):
             part_pcd_np = np.asarray(part_pcd.points)
             geometry_annotations[role] = {
                 "part_pcd": part_pcd_np,
+                "part_mesh": {
+                    "vertices": np.asarray(part_mesh.vertices).copy(),
+                    "triangles": np.asarray(part_mesh.triangles).copy(),
+                },
                 "pid": pid
             }
         geometry_annotations["relation"] = annotations_dict[function_instance_id]["description"]
@@ -708,6 +713,116 @@ class NewDataset(Dataset):
                 pids.append(annotation_pid)
         return pids
 
+    @staticmethod
+    def get_open3d_triangle_index_remap(
+        full_mesh_path: str,
+        full_mesh: o3d.geometry.TriangleMesh,
+    ) -> np.ndarray:
+        """Map GLTF node-order triangle indices to Open3D's loaded order.
+
+        The part annotations index triangles in GLTF node/primitive order.
+        Open3D's legacy GLB reader instead groups primitives by material while
+        flattening them into one ``TriangleMesh``. When a material is reused by
+        non-adjacent nodes, directly applying annotation indices can therefore
+        select triangles from the wrong node.
+        """
+        try:
+            from pygltflib import GLTF2
+        except ImportError as exc:
+            raise ImportError(
+                "Loading triangle-index annotations from GLTF/GLB requires "
+                "pygltflib so their indices can be aligned with Open3D."
+            ) from exc
+
+        gltf = GLTF2().load(full_mesh_path)
+        primitive_records = []
+        source_offset = 0
+        for node_index, node in enumerate(gltf.nodes or []):
+            if node.mesh is None:
+                continue
+            mesh = gltf.meshes[node.mesh]
+            for primitive_index, primitive in enumerate(mesh.primitives):
+                if primitive.mode not in (None, 4):
+                    raise ValueError(
+                        f"Unsupported GLTF primitive mode {primitive.mode} in "
+                        f"{full_mesh_path}; triangle annotations require mode 4."
+                    )
+                accessor_index = primitive.indices
+                if accessor_index is None:
+                    accessor_index = primitive.attributes.POSITION
+                index_count = gltf.accessors[accessor_index].count
+                if index_count % 3:
+                    raise ValueError(
+                        f"Primitive {(node_index, primitive_index)} in "
+                        f"{full_mesh_path} has {index_count} indices."
+                    )
+                face_count = index_count // 3
+                material = (
+                    primitive.material if primitive.material is not None else -1
+                )
+                primitive_records.append(
+                    {
+                        "key": (node_index, primitive_index),
+                        "material": material,
+                        "face_count": face_count,
+                        "source_start": source_offset,
+                    }
+                )
+                source_offset += face_count
+
+        loaded_face_count = len(full_mesh.triangles)
+        if source_offset != loaded_face_count:
+            raise ValueError(
+                f"GLTF contains {source_offset} triangle faces but Open3D loaded "
+                f"{loaded_face_count} from {full_mesh_path}."
+            )
+
+        primitives_by_material = {}
+        for record in primitive_records:
+            primitives_by_material.setdefault(record["material"], []).append(record)
+        open3d_records = [
+            record
+            for material_records in primitives_by_material.values()
+            for record in material_records
+        ]
+
+        target_offset = 0
+        target_start_by_key = {}
+        expected_material_ids = []
+        for record in open3d_records:
+            target_start_by_key[record["key"]] = target_offset
+            expected_material_ids.append(
+                np.full(
+                    record["face_count"], record["material"], dtype=np.int32
+                )
+            )
+            target_offset += record["face_count"]
+
+        source_keys = [record["key"] for record in primitive_records]
+        target_keys = [record["key"] for record in open3d_records]
+        if source_keys != target_keys:
+            loaded_material_ids = np.asarray(full_mesh.triangle_material_ids)
+            expected_material_ids = np.concatenate(expected_material_ids)
+            if (len(loaded_material_ids) != loaded_face_count
+                    or not np.array_equal(
+                        loaded_material_ids.astype(np.int32, copy=False),
+                        expected_material_ids,
+                    )):
+                raise ValueError(
+                    "Could not confirm Open3D's material-grouped triangle "
+                    f"ordering for {full_mesh_path}."
+                )
+
+        remap = np.empty(loaded_face_count, dtype=np.int64)
+        for record in primitive_records:
+            source_start = record["source_start"]
+            source_stop = source_start + record["face_count"]
+            target_start = target_start_by_key[record["key"]]
+            remap[source_start:source_stop] = (
+                target_start + np.arange(record["face_count"], dtype=np.int64)
+            )
+        return remap
+
     def load_mesh_data(
         self,
         geometry_path: str,
@@ -749,6 +864,9 @@ class NewDataset(Dataset):
 
         full_vertices = np.asarray(full_mesh.vertices)
         full_triangles = np.asarray(full_mesh.triangles)
+        triangle_index_remap = self.get_open3d_triangle_index_remap(
+            full_mesh_path, full_mesh
+        )
 
         def annotated_part_mesh(annotation: dict) -> o3d.geometry.TriangleMesh:
             triangle_indices = annotation.get("triIndices")
@@ -757,6 +875,7 @@ class NewDataset(Dataset):
                 if (triangle_indices.size == 0 or triangle_indices.min() < 0
                         or triangle_indices.max() >= len(full_triangles)):
                     raise ValueError(f"Invalid triangle indices for part '{annotation.get('label')}'.")
+                triangle_indices = triangle_index_remap[triangle_indices]
                 selected_triangles = full_triangles[triangle_indices]
                 selected_vertices, remapped = np.unique(
                     selected_triangles.reshape(-1), return_inverse=True
@@ -781,39 +900,56 @@ class NewDataset(Dataset):
                 part_mesh, articulations_by_pid.get(str(pid), [])
             )
 
-        def sample_world_points(mesh: o3d.geometry.TriangleMesh) -> np.ndarray:
+        def world_mesh(mesh: o3d.geometry.TriangleMesh) -> o3d.geometry.TriangleMesh:
+            if mesh.is_empty() or len(mesh.triangles) == 0:
+                raise ValueError("Cannot transform an empty annotated part mesh.")
+            transformed_mesh = copy.deepcopy(mesh)
+            transformed_mesh.transform(canonical2world)
+            return transformed_mesh
+
+        def sample_points(mesh: o3d.geometry.TriangleMesh) -> np.ndarray:
             if mesh.is_empty() or len(mesh.triangles) == 0:
                 raise ValueError("Cannot sample an empty annotated part mesh.")
-            points = np.asarray(
+            return np.asarray(
                 mesh.sample_points_uniformly(number_of_points=10000).points
             )
-            homogeneous_points = np.concatenate(
-                [points, np.ones((len(points), 1), dtype=points.dtype)], axis=1
-            )
-            return (canonical2world @ homogeneous_points.T).T[:, :3]
+
+        def mesh_data(mesh: o3d.geometry.TriangleMesh) -> dict:
+            return {
+                "vertices": np.asarray(mesh.vertices).copy(),
+                "triangles": np.asarray(mesh.triangles).copy(),
+            }
 
         geometry_annotations = {"canonical_to_world": canonical2world}
         selected_labels = {}
-        sampled_role_parts = {}
+        loaded_role_parts = {}
         full_mesh_points = None
+        full_world_mesh = None
         for role, annotations in role_annotations.items():
             if not annotations:
                 if role != "effector":
                     raise ValueError(f"No mesh annotation found for role '{role}'.")
+                if full_world_mesh is None:
+                    full_world_mesh = world_mesh(full_mesh)
                 if full_mesh_points is None:
-                    full_mesh_points = sample_world_points(full_mesh)
+                    full_mesh_points = sample_points(full_world_mesh)
                 part_points = full_mesh_points
+                part_mesh = full_world_mesh
                 pid = None
                 pids = []
                 selected_labels[role] = "whole mesh"
             else:
                 annotation_key = tuple(id(annotation) for annotation in annotations)
-                if annotation_key not in sampled_role_parts:
-                    part_mesh = normalized_part_mesh(annotations[0])
+                if annotation_key not in loaded_role_parts:
+                    canonical_part_mesh = normalized_part_mesh(annotations[0])
                     for annotation in annotations[1:]:
-                        part_mesh += normalized_part_mesh(annotation)
-                    sampled_role_parts[annotation_key] = sample_world_points(part_mesh)
-                part_points = sampled_role_parts[annotation_key]
+                        canonical_part_mesh += normalized_part_mesh(annotation)
+                    transformed_part_mesh = world_mesh(canonical_part_mesh)
+                    loaded_role_parts[annotation_key] = (
+                        transformed_part_mesh,
+                        sample_points(transformed_part_mesh),
+                    )
+                part_mesh, part_points = loaded_role_parts[annotation_key]
 
                 pids = self.get_ordered_role_pids(
                     annotations, role, function_instance_id
@@ -824,20 +960,36 @@ class NewDataset(Dataset):
                 )
             geometry_annotations[role] = {
                 "part_pcd": part_points,
+                "part_mesh": mesh_data(part_mesh),
                 "pid": pid,
                 "pids": pids,
             }
 
         if has_object or not role_annotations["effector"]:
+            if full_world_mesh is None:
+                full_world_mesh = world_mesh(full_mesh)
             if full_mesh_points is None:
-                full_mesh_points = sample_world_points(full_mesh)
+                full_mesh_points = sample_points(full_world_mesh)
             object_points = full_mesh_points
+            object_mesh = full_world_mesh
         else:
             object_points = np.concatenate(
                 [geometry_annotations[role]["part_pcd"] for role in ("receptor", "effector")],
                 axis=0,
             )
-        geometry_annotations["object"] = {"part_pcd": object_points, "pid": None}
+            receptor_key = tuple(
+                id(annotation) for annotation in role_annotations["receptor"]
+            )
+            effector_key = tuple(
+                id(annotation) for annotation in role_annotations["effector"]
+            )
+            object_mesh = copy.deepcopy(loaded_role_parts[receptor_key][0])
+            object_mesh += loaded_role_parts[effector_key][0]
+        geometry_annotations["object"] = {
+            "part_pcd": object_points,
+            "part_mesh": mesh_data(object_mesh),
+            "pid": None,
+        }
         relation = None
         if isinstance(annotation_data, dict):
             relation = annotation_data.get("relation", annotation_data.get("description"))
@@ -1018,15 +1170,16 @@ def visualize_loaded_point_clouds(
     role_colors: Optional[Mapping[str, Sequence[float]]] = None,
     point_size: float = 3.0,
     show_coordinate_frame: bool = True,
-    window_name: str = "Loaded role point clouds",
+    window_name: Optional[str] = None,
     window_width: int = 1280,
     window_height: int = 720,
+    geometry_type: str = "point_cloud",
 ) -> None:
-    """Visualize loaded role point clouds together in an Open3D window.
+    """Visualize loaded role point clouds or meshes in an Open3D window.
 
     ``data`` may be either a dataset item returned by ``__getitem__`` or its
-    ``geometry_data`` dictionary. By default, every entry containing a
-    ``part_pcd`` array is shown. Pass ``roles`` to display a subset.
+    ``geometry_data`` dictionary. By default, every entry containing the
+    selected geometry type is shown. Pass ``roles`` to display a subset.
 
     Args:
         data: Loaded dataset item or geometry-data dictionary.
@@ -1034,14 +1187,18 @@ def visualize_loaded_point_clouds(
         role_colors: Optional RGB colors in the range [0, 1], keyed by role.
         point_size: Open3D render point size in pixels.
         show_coordinate_frame: Whether to draw the world-coordinate axes.
-        window_name: Title of the Open3D window.
+        window_name: Title of the Open3D window. Defaults to a title matching
+            ``geometry_type``.
         window_width: Initial window width in pixels.
         window_height: Initial window height in pixels.
+        geometry_type: ``"point_cloud"`` (default) or ``"mesh"``.
 
     Example:
         >>> sample = dataset[0]
         >>> visualize_loaded_point_clouds(sample)
-        >>> visualize_loaded_point_clouds(sample, roles=("receptor", "effector"))
+        >>> visualize_loaded_point_clouds(
+        ...     sample, roles=("receptor", "effector"), geometry_type="mesh"
+        ... )
     """
     if "geometry_data" in data:
         geometry_data = data["geometry_data"]
@@ -1050,27 +1207,40 @@ def visualize_loaded_point_clouds(
     if not isinstance(geometry_data, dict):
         raise TypeError("data must be a dataset item or geometry-data dictionary.")
 
+    geometry_keys = {"point_cloud": "part_pcd", "mesh": "part_mesh"}
+    if geometry_type not in geometry_keys:
+        raise ValueError(
+            f"geometry_type must be one of {list(geometry_keys)}; got {geometry_type!r}."
+        )
+    geometry_key = geometry_keys[geometry_type]
+
     available_roles = [
         role for role, role_data in geometry_data.items()
-        if isinstance(role_data, dict) and "part_pcd" in role_data
+        if isinstance(role_data, dict) and geometry_key in role_data
     ]
     if isinstance(roles, str):
         selected_roles = [roles]
     else:
         selected_roles = list(roles) if roles is not None else available_roles
     if not selected_roles:
-        raise ValueError("No role point clouds were found to visualize.")
+        raise ValueError(f"No role {geometry_type} data were found to visualize.")
 
     missing_roles = [role for role in selected_roles if role not in available_roles]
     if missing_roles:
         raise ValueError(
-            f"No point cloud found for role(s) {missing_roles}. "
+            f"No {geometry_type} found for role(s) {missing_roles}. "
             f"Available roles: {available_roles}."
         )
     if point_size <= 0:
         raise ValueError("point_size must be positive.")
     if window_width <= 0 or window_height <= 0:
         raise ValueError("Window dimensions must be positive.")
+    if window_name is None:
+        window_name = (
+            "Loaded role meshes"
+            if geometry_type == "mesh"
+            else "Loaded role point clouds"
+        )
 
     default_colors = {
         "receptor": (1.0, 0.25, 0.10),
@@ -1084,22 +1254,11 @@ def visualize_loaded_point_clouds(
         (0.15, 0.80, 0.85),
     )
     requested_colors = dict(role_colors or {})
-    point_clouds = []
+    role_geometries = []
     all_points = []
 
-    print("Point-cloud visualization legend:")
+    print(f"{geometry_type.replace('_', ' ').title()} visualization legend:")
     for role_index, role in enumerate(selected_roles):
-        points = np.asarray(geometry_data[role]["part_pcd"])
-        if points.ndim != 2 or points.shape[1] != 3:
-            raise ValueError(
-                f"Role '{role}' must have a point cloud shaped (N, 3); "
-                f"got {points.shape}."
-            )
-        if len(points) == 0:
-            raise ValueError(f"Role '{role}' has an empty point cloud.")
-        if not np.isfinite(points).all():
-            raise ValueError(f"Role '{role}' contains non-finite point coordinates.")
-
         color = requested_colors.get(
             role,
             default_colors.get(role, fallback_colors[role_index % len(fallback_colors)]),
@@ -1110,17 +1269,74 @@ def visualize_loaded_point_clouds(
         if np.any(color < 0) or np.any(color > 1):
             raise ValueError(f"Color for role '{role}' must be in the range [0, 1].")
 
-        point_cloud = o3d.geometry.PointCloud()
-        point_cloud.points = o3d.utility.Vector3dVector(points.astype(float, copy=False))
-        point_cloud.paint_uniform_color(color)
-        point_clouds.append(point_cloud)
+        if geometry_type == "point_cloud":
+            points = np.asarray(geometry_data[role][geometry_key])
+            if points.ndim != 2 or points.shape[1] != 3:
+                raise ValueError(
+                    f"Role '{role}' must have a point cloud shaped (N, 3); "
+                    f"got {points.shape}."
+                )
+            if len(points) == 0:
+                raise ValueError(f"Role '{role}' has an empty point cloud.")
+            if not np.isfinite(points).all():
+                raise ValueError(
+                    f"Role '{role}' contains non-finite point coordinates."
+                )
+
+            geometry = o3d.geometry.PointCloud()
+            geometry.points = o3d.utility.Vector3dVector(
+                points.astype(float, copy=False)
+            )
+            count_description = f"{len(points):,} points"
+        else:
+            role_mesh = geometry_data[role][geometry_key]
+            if not isinstance(role_mesh, Mapping):
+                raise ValueError(
+                    f"Role '{role}' mesh must contain 'vertices' and 'triangles'."
+                )
+            vertices = np.asarray(role_mesh.get("vertices"))
+            triangles = np.asarray(role_mesh.get("triangles"))
+            if vertices.ndim != 2 or vertices.shape[1] != 3 or len(vertices) == 0:
+                raise ValueError(
+                    f"Role '{role}' mesh vertices must have shape (N, 3); "
+                    f"got {vertices.shape}."
+                )
+            if not np.isfinite(vertices).all():
+                raise ValueError(
+                    f"Role '{role}' contains non-finite mesh vertices."
+                )
+            if (triangles.ndim != 2 or triangles.shape[1] != 3
+                    or len(triangles) == 0):
+                raise ValueError(
+                    f"Role '{role}' mesh triangles must have shape (M, 3); "
+                    f"got {triangles.shape}."
+                )
+            if not np.issubdtype(triangles.dtype, np.integer):
+                raise ValueError(f"Role '{role}' mesh triangle indices must be integers.")
+            if triangles.min() < 0 or triangles.max() >= len(vertices):
+                raise ValueError(
+                    f"Role '{role}' mesh contains out-of-range triangle indices."
+                )
+
+            points = vertices
+            geometry = o3d.geometry.TriangleMesh(
+                o3d.utility.Vector3dVector(vertices.astype(float, copy=False)),
+                o3d.utility.Vector3iVector(triangles.astype(np.int32, copy=False)),
+            )
+            geometry.compute_vertex_normals()
+            count_description = (
+                f"{len(vertices):,} vertices, {len(triangles):,} triangles"
+            )
+
+        geometry.paint_uniform_color(color)
+        role_geometries.append(geometry)
         all_points.append(points)
         print(
-            f"  {role}: {len(points):,} points, RGB={color.tolist()}, "
+            f"  {role}: {count_description}, RGB={color.tolist()}, "
             f"min={points.min(axis=0).tolist()}, max={points.max(axis=0).tolist()}"
         )
 
-    geometries = list(point_clouds)
+    geometries = list(role_geometries)
     if show_coordinate_frame:
         combined_points = np.concatenate(all_points, axis=0)
         scene_extent = np.linalg.norm(
@@ -1425,29 +1641,76 @@ def visualize_loaded_video_with_masks(
             pass
 
 
-def build_dataset(dataset_config: dict) -> Dataset:
-    dataset_name = dataset_config["name"]
-    if dataset_name == "Uniform":
-        return UniformDataset(
-            root_path=dataset_config["root_path"],
-            meta_file_path=dataset_config["meta_file"],
-            image_type=dataset_config.get("image_type", "undistorted"),
-            sample_strategy=dataset_config.get("sample_strategy", "fix_size"),
-            sample_num=dataset_config.get("sample_num", 20)
-        )
-    elif dataset_name == "NewDataset":
-        return NewDataset(
-            root_path=dataset_config["root_path"],
-            meta_file_path=dataset_config["meta_file"],
-            image_type=dataset_config.get("image_type", "undistorted"),
-            sample_strategy=dataset_config.get("sample_strategy", "fix_size"),
-            sample_num=dataset_config.get("sample_num", 20),
-            load_2d_masks=dataset_config.get("load_2d_masks", True),
-            load_mesh_data=dataset_config.get("load_mesh_data", True),
-            load_articulation=dataset_config.get("load_articulation", True),
-            load_function_annotation=dataset_config.get(
-                "load_function_annotation", True
-            ),
-        )
-    else:
-        raise ValueError(f"Unsupported dataset type: {dataset_name}")
+# def build_dataset(dataset_config: dict) -> Dataset:
+#     dataset_name = dataset_config["name"]
+#     if dataset_name == "Uniform":
+#         return UniformDataset(
+#             root_path=dataset_config["root_path"],
+#             meta_file_path=dataset_config["meta_file"],
+#             image_type=dataset_config.get("image_type", "undistorted"),
+#             sample_strategy=dataset_config.get("sample_strategy", "fix_size"),
+#             sample_num=dataset_config.get("sample_num", 20)
+#         )
+#     elif dataset_name == "NewDataset":
+#         return NewDataset(
+#             root_path=dataset_config["root_path"],
+#             meta_file_path=dataset_config["meta_file"],
+#             image_type=dataset_config.get("image_type", "undistorted"),
+#             sample_strategy=dataset_config.get("sample_strategy", "fix_size"),
+#             sample_num=dataset_config.get("sample_num", 20),
+#             load_2d_masks=dataset_config.get("load_2d_masks", True),
+#             load_mesh_data=dataset_config.get("load_mesh_data", True),
+#             load_articulation=dataset_config.get("load_articulation", True),
+#             load_function_annotation=dataset_config.get(
+#                 "load_function_annotation", True
+#             ),
+#         )
+#     else:
+#         raise ValueError(f"Unsupported dataset type: {dataset_name}")
+
+
+# def identity_collate(batch):
+#     # batch is a list of dataset items
+#     # with batch_size=1, just return the single element
+#     return batch[0]
+
+
+# if __name__ == "__main__":
+#     import argparse
+#     parser = argparse.ArgumentParser(description="Visualize a dataset item.")
+#     parser.add_argument("dataset_config", type=str, help="Path to the dataset config JSON file.")
+#     parser.add_argument("item_index", type=int, help="Index of the dataset item to visualize.")
+#     parser.add_argument(
+#         "--geometry-type",
+#         choices=("point_cloud", "mesh"),
+#         default="point_cloud",
+#         help="Render sampled point clouds (default) or triangle meshes.",
+#     )
+#     parser.add_argument(
+#         "--roles",
+#         nargs="+",
+#         choices=("receptor", "effector", "object"),
+#         default=None,
+#         help=(
+#             "Render only the selected role(s). For example, "
+#             "'--roles receptor' shows the receptor alone."
+#         ),
+#     )
+#     args = parser.parse_args()
+
+#     with open(args.dataset_config, "r") as f:
+#         dataset_config = omegaconf.OmegaConf.load(f)
+
+#     dataset = build_dataset(dataset_config)
+#     eval_dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=identity_collate)
+
+#     for data_count, data in enumerate(eval_dataloader):
+#         if data_count != args.item_index:
+#             continue
+#         if "geometry_data" in data:
+#             visualize_loaded_point_clouds(
+#                 data,
+#                 roles=args.roles,
+#                 geometry_type=args.geometry_type,
+#             )
+#         break
