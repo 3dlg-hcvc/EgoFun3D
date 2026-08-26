@@ -1,5 +1,5 @@
 role: "video_narrator"
-vlm_type: "qwen" # can be "gemini", "gpt", or "molmo"
+vlm_type: "qwen_hub" # can be "gemini", "gpt", or "molmo"
 vlm_model: "Qwen/Qwen3-VL-8B-Instruct"
 prompt_type: "text" # can be "text" or "points"
 prompt_template: "This is a video. The receptor part marked in green and the effector part marked in red have functional relationship. Function has two attributes: physical effect and numerical relationship. \
