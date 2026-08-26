@@ -1641,32 +1641,32 @@ def visualize_loaded_video_with_masks(
             pass
 
 
-# def build_dataset(dataset_config: dict) -> Dataset:
-#     dataset_name = dataset_config["name"]
-#     if dataset_name == "Uniform":
-#         return UniformDataset(
-#             root_path=dataset_config["root_path"],
-#             meta_file_path=dataset_config["meta_file"],
-#             image_type=dataset_config.get("image_type", "undistorted"),
-#             sample_strategy=dataset_config.get("sample_strategy", "fix_size"),
-#             sample_num=dataset_config.get("sample_num", 20)
-#         )
-#     elif dataset_name == "NewDataset":
-#         return NewDataset(
-#             root_path=dataset_config["root_path"],
-#             meta_file_path=dataset_config["meta_file"],
-#             image_type=dataset_config.get("image_type", "undistorted"),
-#             sample_strategy=dataset_config.get("sample_strategy", "fix_size"),
-#             sample_num=dataset_config.get("sample_num", 20),
-#             load_2d_masks=dataset_config.get("load_2d_masks", True),
-#             load_mesh_data=dataset_config.get("load_mesh_data", True),
-#             load_articulation=dataset_config.get("load_articulation", True),
-#             load_function_annotation=dataset_config.get(
-#                 "load_function_annotation", True
-#             ),
-#         )
-#     else:
-#         raise ValueError(f"Unsupported dataset type: {dataset_name}")
+def build_dataset(dataset_config: dict) -> Dataset:
+    dataset_name = dataset_config["name"]
+    if dataset_name == "Uniform":
+        return UniformDataset(
+            root_path=dataset_config["root_path"],
+            meta_file_path=dataset_config["meta_file"],
+            image_type=dataset_config.get("image_type", "undistorted"),
+            sample_strategy=dataset_config.get("sample_strategy", "fix_size"),
+            sample_num=dataset_config.get("sample_num", 20)
+        )
+    elif dataset_name == "NewDataset":
+        return NewDataset(
+            root_path=dataset_config["root_path"],
+            meta_file_path=dataset_config["meta_file"],
+            image_type=dataset_config.get("image_type", "undistorted"),
+            sample_strategy=dataset_config.get("sample_strategy", "fix_size"),
+            sample_num=dataset_config.get("sample_num", 20),
+            load_2d_masks=dataset_config.get("load_2d_masks", True),
+            load_mesh_data=dataset_config.get("load_mesh_data", True),
+            load_articulation=dataset_config.get("load_articulation", True),
+            load_function_annotation=dataset_config.get(
+                "load_function_annotation", True
+            ),
+        )
+    else:
+        raise ValueError(f"Unsupported dataset type: {dataset_name}")
 
 
 # def identity_collate(batch):
