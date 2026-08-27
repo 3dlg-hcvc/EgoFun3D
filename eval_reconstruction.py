@@ -297,7 +297,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                     observation_indices=np.asarray(base_valid_frame_ids, dtype=int),
                     num_observations=3
                 )
-        if reconstruction_results is not None and not config.pred_mask:
+        if reconstruction_results is not None:
             save_reconstruction_results_to_hdf5(reconstruction_results, f"{save_pcd_dir}/reconstruction_results.h5")
         data_count += 1
         end_time = time.time()
