@@ -85,7 +85,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         kptsB_origin_dict = {}
         video_frame_list = data["rgb_list"]
         save_pcd_dir = os.path.join(save_dir, data["video_name"], "reconstruction")
-        if os.path.exists(f"{save_pcd_dir}/reconstruction_results.h5") and not config.pred_mask:
+        if os.path.exists(f"{save_pcd_dir}/reconstruction_results.h5"):
             print("Reconstruction results already exist, skipping reconstruction and evaluation for this sample.")
             continue
         if config.pred_mask and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_receptor_pred_mask.json") and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_effector_pred_mask.json"):
