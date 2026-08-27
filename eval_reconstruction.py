@@ -20,6 +20,33 @@ from utils.reconstruction_utils import refine_point_mask, depth2xyz_world
 from segmentation.workflow import load_segmentation_masks_for_sample
 
 
+RECOMPUTED_SEGMENTATION_IOU_PATH = os.path.join(
+    "/3dlg-jupiter-project/FunGraph3D/self_capture_data/dataset/",
+    "sam3agent_gemini_recomputed_iou.json",
+)
+
+
+def load_recomputed_segmentation_ious():
+    with open(RECOMPUTED_SEGMENTATION_IOU_PATH, "r") as f:
+        iou_records = json.load(f)
+    if not isinstance(iou_records, list):
+        raise TypeError(
+            f"Expected a list in {RECOMPUTED_SEGMENTATION_IOU_PATH}"
+        )
+
+    iou_by_video = {}
+    for record in iou_records:
+        video_name = record.get("video_name")
+        if not isinstance(video_name, str):
+            raise ValueError(
+                f"IoU record has no string video_name: {record}"
+            )
+        if video_name in iou_by_video:
+            raise ValueError(f"Duplicate IoU record for video: {video_name}")
+        iou_by_video[video_name] = record
+    return iou_by_video
+
+
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -40,6 +67,9 @@ def _get_mesh_save_path(save_dir: str, role: str, pred_mask: bool, mesh_format: 
 
 def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: BaseFusion, reconstruction_model: BaseReconstruction, config: DictConfig, save_dir: str):
     # Run segmentation
+    segmentation_iou_by_video = (
+        load_recomputed_segmentation_ious() if config.pred_mask else None
+    )
     if config.debug:
         print("Debug mode enabled: Limiting evaluation dataset to 1 sample.")
         max_dataset_size = 1
@@ -79,10 +109,20 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                     }
                     save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}_pred_mask.json")
                     continue
-                segmentation_metric_path = f"{role_mask_dir}/segmentation_metrics.json"
-                with open(segmentation_metric_path, "r") as f:
-                    segmentation_metrics = json.load(f)
-                mean_iou = segmentation_metrics["mean_iou"]
+                segmentation_metrics = segmentation_iou_by_video.get(data["video_name"])
+                if segmentation_metrics is None:
+                    print(
+                        f"No recomputed IoU record for {data['video_name']}, "
+                        f"skipping reconstruction and evaluation for {role}."
+                    )
+                    reconstruction_metrics = {
+                        "chamfer_distance": 200,
+                        "rotation_error_radians": 0,
+                        "translation_error": 0
+                    }
+                    save_reconstruction_metrics(reconstruction_metrics, f"{save_pcd_dir}/reconstruction_metrics_{role}_pred_mask.json")
+                    continue
+                mean_iou = segmentation_metrics.get(f"{role}_mean_iou")
                 if mean_iou is None or mean_iou < config.pred_mask_iou_threshold:
                     print(f"Mean IoU for {role} is below threshold ({config.pred_mask_iou_threshold}), skipping reconstruction and evaluation for this role.")
                     reconstruction_metrics = {

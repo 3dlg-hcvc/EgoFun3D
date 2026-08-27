@@ -23,6 +23,33 @@ MAX_JOINT_ORI_ERROR = np.pi / 2
 MAX_JOINT_POS_ERROR = 1.0
 
 
+RECOMPUTED_SEGMENTATION_IOU_PATH = os.path.join(
+    "/3dlg-jupiter-project/FunGraph3D/self_capture_data/dataset/",
+    "sam3agent_gemini_recomputed_iou.json",
+)
+
+
+def load_recomputed_segmentation_ious():
+    with open(RECOMPUTED_SEGMENTATION_IOU_PATH, "r") as f:
+        iou_records = json.load(f)
+    if not isinstance(iou_records, list):
+        raise TypeError(
+            f"Expected a list in {RECOMPUTED_SEGMENTATION_IOU_PATH}"
+        )
+
+    iou_by_video = {}
+    for record in iou_records:
+        video_name = record.get("video_name")
+        if not isinstance(video_name, str):
+            raise ValueError(
+                f"IoU record has no string video_name: {record}"
+            )
+        if video_name in iou_by_video:
+            raise ValueError(f"Duplicate IoU record for video: {video_name}")
+        iou_by_video[video_name] = record
+    return iou_by_video
+
+
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -38,6 +65,9 @@ def identity_collate(batch):
 
 def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: ArticulationEstimation, config: omegaconf.DictConfig, save_dir: str):
     # Run segmentation
+    segmentation_iou_by_video = (
+        load_recomputed_segmentation_ious() if config.pred_mask else None
+    )
     if config.debug:
         loguru.logger.debug("Debug mode enabled: Limiting evaluation dataset to 1 sample.")
         max_dataset_size = 1
@@ -78,10 +108,21 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
                     }
                     save_articulation_metrics(articulation_metrics, f"{save_articulation_dir}/articulation_metrics_{role}_pred_mask.json")
                     continue
-                segmentation_metric_path = f"{role_mask_dir}/segmentation_metrics.json"
-                with open(segmentation_metric_path, "r") as f:
-                    segmentation_metrics = json.load(f)
-                mean_iou = segmentation_metrics["mean_iou"]
+                segmentation_metrics = segmentation_iou_by_video.get(data["video_name"])
+                if segmentation_metrics is None:
+                    loguru.logger.info(
+                        f"No recomputed IoU record for {data['video_name']}, "
+                        f"skipping articulation estimation for {role}."
+                    )
+                    articulation_results[role] = "No recomputed IoU, skipping articulation estimation."
+                    articulation_metrics = {
+                        "joint axis error": MAX_JOINT_ORI_ERROR,
+                        "joint position error": MAX_JOINT_POS_ERROR,
+                        "joint type correct": False
+                    }
+                    save_articulation_metrics(articulation_metrics, f"{save_articulation_dir}/articulation_metrics_{role}_pred_mask.json")
+                    continue
+                mean_iou = segmentation_metrics.get(f"{role}_mean_iou")
                 if mean_iou is None or mean_iou < config.pred_mask_iou_threshold:
                     loguru.logger.info(f"Mean IoU for {role} is below threshold ({config.pred_mask_iou_threshold}), skipping articulation estimation for this role.")
                     articulation_results[role] = "Pred mask IoU below threshold, skipping articulation estimation."

@@ -17,6 +17,33 @@ from function.evaluate_function import compute_function_error, save_function_res
 from segmentation.workflow import load_segmentation_masks_for_sample
 
 
+RECOMPUTED_SEGMENTATION_IOU_PATH = os.path.join(
+    "/3dlg-jupiter-project/FunGraph3D/self_capture_data/dataset/",
+    "sam3agent_gemini_recomputed_iou.json",
+)
+
+
+def load_recomputed_segmentation_ious():
+    with open(RECOMPUTED_SEGMENTATION_IOU_PATH, "r") as f:
+        iou_records = json.load(f)
+    if not isinstance(iou_records, list):
+        raise TypeError(
+            f"Expected a list in {RECOMPUTED_SEGMENTATION_IOU_PATH}"
+        )
+
+    iou_by_video = {}
+    for record in iou_records:
+        video_name = record.get("video_name")
+        if not isinstance(video_name, str):
+            raise ValueError(
+                f"IoU record has no string video_name: {record}"
+            )
+        if video_name in iou_by_video:
+            raise ValueError(f"Duplicate IoU record for video: {video_name}")
+        iou_by_video[video_name] = record
+    return iou_by_video
+
+
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -32,6 +59,9 @@ def identity_collate(batch):
 
 def evaluate(eval_dataloader: DataLoader, vlm: VLMPrompter, config: omegaconf.DictConfig, save_dir: str):
     # Run segmentation
+    segmentation_iou_by_video = (
+        load_recomputed_segmentation_ious() if config.pred_mask else None
+    )
     if config.debug:
         loguru.logger.debug("Debug mode enabled: Limiting evaluation dataset to 1 sample.")
         max_dataset_size = 1
@@ -69,14 +99,19 @@ def evaluate(eval_dataloader: DataLoader, vlm: VLMPrompter, config: omegaconf.Di
                 save_function_results(function_error_metrics, f"{save_function_dir}/function_metrics_pred_mask.json")
                 save_function_results(function_results, f"{save_function_dir}/function_results_pred_mask.json")
                 continue
-            receptor_segmentation_metric_path = f"{receptor_mask_dir}/segmentation_metrics.json"
-            with open(receptor_segmentation_metric_path, "r") as f:
-                receptor_segmentation_metrics = json.load(f)
-            receptor_mean_iou = receptor_segmentation_metrics["mean_iou"]
-            effector_segmentation_metric_path = f"{effector_mask_dir}/segmentation_metrics.json"
-            with open(effector_segmentation_metric_path, "r") as f:
-                effector_segmentation_metrics = json.load(f)
-            effector_mean_iou = effector_segmentation_metrics["mean_iou"]
+            segmentation_metrics = segmentation_iou_by_video.get(data["video_name"])
+            if segmentation_metrics is None:
+                loguru.logger.warning(
+                    f"No recomputed IoU record for {data['video_name']}, "
+                    "skipping function estimation and evaluation for this sample."
+                )
+                function_error_metrics = {"physical_effect": False, "numerical_function": False}
+                function_results = {"1": None, "2": None}
+                save_function_results(function_error_metrics, f"{save_function_dir}/function_metrics_pred_mask.json")
+                save_function_results(function_results, f"{save_function_dir}/function_results_pred_mask.json")
+                continue
+            receptor_mean_iou = segmentation_metrics.get("receptor_mean_iou")
+            effector_mean_iou = segmentation_metrics.get("effector_mean_iou")
             if receptor_mean_iou is None or effector_mean_iou is None or receptor_mean_iou < config.pred_mask_iou_threshold or effector_mean_iou < config.pred_mask_iou_threshold:
                 loguru.logger.warning(f"Mean IoU for receptor or effector is below threshold ({config.pred_mask_iou_threshold}), skipping function and evaluation for this sample.")
                 function_error_metrics = {"physical_effect": False, "numerical_function": False}
