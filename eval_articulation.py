@@ -148,7 +148,11 @@ def evaluate(eval_dataloader: DataLoader, articulation_estimation_model: Articul
                 articulation_results["effector"] = "Reconstruction failed, skipping this sample."
                 break
             # run articulation estimation
-            articulation_results[role] = articulation_estimation_model.articulation_estimation(video_frame_list, reconstruction_results, mask_list)
+            try:
+                articulation_results[role] = articulation_estimation_model.articulation_estimation(video_frame_list, reconstruction_results, mask_list)
+            except Exception as e:
+                loguru.logger.error(f"Error occurred during articulation estimation: {e}")
+                articulation_results[role] = None
 
             # Evaluate reconstruction
             if articulation_results[role] is None:
