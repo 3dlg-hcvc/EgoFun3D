@@ -1,4 +1,5 @@
 import argparse
+import gc
 import gzip
 import pickle
 import omegaconf
@@ -60,6 +61,15 @@ def identity_collate(batch):
     return batch[0]
 
 
+def clear_unused_cuda_memory():
+    """Release per-sample CUDA allocations that are no longer referenced."""
+    # Some tensors can participate in reference cycles, so collect them before
+    # asking PyTorch's caching allocator to return its unused blocks.
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def _get_mesh_save_path(save_dir: str, role: str, pred_mask: bool, mesh_format: str = "glb") -> str:
     suffix = "_pred_mask" if pred_mask else ""
     return os.path.join(save_dir, f"{role}_mesh{suffix}.{mesh_format}")
@@ -87,9 +97,11 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         save_pcd_dir = os.path.join(save_dir, data["video_name"], "reconstruction")
         if os.path.exists(f"{save_pcd_dir}/reconstruction_results.h5"):
             print("Reconstruction results already exist, skipping reconstruction and evaluation for this sample.")
+            clear_unused_cuda_memory()
             continue
         if config.pred_mask and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_receptor_pred_mask.json") and os.path.exists(f"{save_pcd_dir}/reconstruction_metrics_effector_pred_mask.json"):
             print("Pred mask reconstruction metrics already exist, skipping refinement and evaluation for this sample.")
+            clear_unused_cuda_memory()
             continue
         if not os.path.exists(save_pcd_dir):
             os.makedirs(save_pcd_dir)
@@ -302,6 +314,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         data_count += 1
         end_time = time.time()
         print(f"Total evaluation time for this sample: {end_time - start_time:.2f} seconds")
+        clear_unused_cuda_memory()
 
 
 @hydra.main(version_base="1.3", config_path="config", config_name="default")
