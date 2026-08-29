@@ -34,6 +34,7 @@ def compute_part_chamfer_distance(gt_pcd: np.ndarray, pred_pcd: np.ndarray, devi
     pred_tensor = torch.from_numpy(pred_pcd).unsqueeze(0).to(torch.float32).to(device)  # (1, M, 3)
 
     chamfer_dist, _ = chamfer_distance(gt_tensor, pred_tensor)
+    del gt_tensor, pred_tensor  # Free memory
     return chamfer_dist.item()
 
 
