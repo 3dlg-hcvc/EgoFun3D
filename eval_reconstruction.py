@@ -17,7 +17,7 @@ from dataset.dataset import Dataset, build_dataset, temporary_video_from_frames
 from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction
 from fusion.evaluate_reconstruction import save_mesh, save_reconstruction_metrics, evaluate_reconstruction, save_pcd, save_reconstruction_results_to_hdf5, load_reconstruction_results_from_hdf5
-from utils.reconstruction_utils import refine_point_mask, depth2xyz_world
+from utils.reconstruction_utils import refine_point_mask, depth2xyz_world, print_cuda_memory_usage
 from segmentation.workflow import load_segmentation_masks_for_sample
 
 
@@ -70,20 +70,6 @@ def clear_unused_cuda_memory():
         torch.cuda.empty_cache()
 
 
-def print_cuda_memory_usage(label: str):
-    """Print memory managed by PyTorch for the current CUDA device."""
-    if not torch.cuda.is_available():
-        print(f"CUDA memory ({label}): CUDA is not available")
-        return
-
-    device = torch.cuda.current_device()
-    gib = 1024 ** 3
-    allocated = torch.cuda.memory_allocated(device) / gib
-    reserved = torch.cuda.memory_reserved(device) / gib
-    print(
-        f"CUDA memory ({label}, {torch.cuda.get_device_name(device)}): "
-        f"allocated={allocated:.3f} GiB, reserved={reserved:.3f} GiB"
-    )
 
 
 def _get_mesh_save_path(save_dir: str, role: str, pred_mask: bool, mesh_format: str = "glb") -> str:
@@ -206,7 +192,9 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                             input_intrinsics = data["camera_intrinsics"]
                         if input_modality.find("extrinsics") != -1:
                             input_extrinsics = data["camera_extrinsics"]
+                        print_cuda_memory_usage(f"before reconstruct [{role}]")
                         reconstruction_results = reconstruction_model.reconstruct(video_frame_list, init_extrinsics, input_intrinsics, input_extrinsics, input_depth)
+                        print_cuda_memory_usage(f"after reconstruct [{role}]")
             load_results_end = time.time()
             print(f"Initial reconstruction time: {load_results_end - load_results_start:.2f} seconds")
             if reconstruction_results is None:
@@ -244,6 +232,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             
             fuse_start = time.time()
             if isinstance(fusion_model, FeatureMatchingFusion):
+                print_cuda_memory_usage(f"before fuse_part_pcds [{role}]")
                 fused_part_pcd, transformation_list, kptsA_origin_dict, kptsB_origin_dict = fusion_model.fuse_part_pcds(
                     valid_video_frame_list,
                     valid_mask_list,
@@ -252,6 +241,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                     kptsB_origin_dict,
                     initial_state=data.get("initial_state", "close"),
                 )
+                print_cuda_memory_usage(f"after fuse_part_pcds [{role}]")
                 # print("kpts len:", len(kptsA_origin_dict), len(kptsB_origin_dict))
             # elif isinstance(fusion_model, TrackingFusion):
             #     if tracks3d is None:
@@ -332,7 +322,9 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         data_count += 1
         end_time = time.time()
         print(f"Total evaluation time for this sample: {end_time - start_time:.2f} seconds")
+        print_cuda_memory_usage("after evaluation")
         clear_unused_cuda_memory()
+        print_cuda_memory_usage("after clearing unused memory")
 
 
 @hydra.main(version_base="1.3", config_path="config", config_name="default")
