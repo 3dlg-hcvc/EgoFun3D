@@ -636,3 +636,12 @@ def print_cuda_memory_usage(label: str):
         f"CUDA memory ({label}, {torch.cuda.get_device_name(device)}): "
         f"allocated={allocated:.3f} GiB, reserved={reserved:.3f} GiB"
     )
+
+
+def clear_unused_cuda_memory():
+    """Release per-sample CUDA allocations that are no longer referenced."""
+    # Some tensors can participate in reference cycles, so collect them before
+    # asking PyTorch's caching allocator to return its unused blocks.
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()

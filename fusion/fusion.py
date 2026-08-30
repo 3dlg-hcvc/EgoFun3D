@@ -8,7 +8,7 @@ import sys
 # from third_party.SpaTrackerV2.models.SpaTrackV2.models.predictor import Predictor
 # from third_party.SpaTrackerV2.models.SpaTrackV2.models.utils import get_points_on_a_grid
 
-from utils.reconstruction_utils import estimate_se3_transformation, print_cuda_memory_usage
+from utils.reconstruction_utils import estimate_se3_transformation, print_cuda_memory_usage, clear_unused_cuda_memory
 
 from typing import Dict, Tuple, List
 
@@ -72,6 +72,7 @@ class FeatureMatchingFusion(BaseFusion):
         # Estimate transformation
         current2anchor = estimate_se3_transformation(current_part_3dkpts, anchor_part_3dkpts)
         del kptsA, kptsB
+        clear_unused_cuda_memory()
         return current2anchor, kptsA_origin, kptsB_origin
 
     def fuse_part_pcds(
@@ -145,6 +146,7 @@ class FeatureMatchingFusion(BaseFusion):
                     kptsA_origin_dict.get(cache_key),
                     kptsB_origin_dict.get(cache_key),
                 )
+                clear_unused_cuda_memory()
                 print_cuda_memory_usage(f"after compute_part_transformation [{frame_id}]")
                 if cache_key not in kptsA_origin_dict:
                     kptsA_origin_dict[cache_key] = kptsA_origin

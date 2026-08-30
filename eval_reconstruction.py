@@ -17,7 +17,7 @@ from dataset.dataset import Dataset, build_dataset, temporary_video_from_frames
 from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction
 from fusion.evaluate_reconstruction import save_mesh, save_reconstruction_metrics, evaluate_reconstruction, save_pcd, save_reconstruction_results_to_hdf5, load_reconstruction_results_from_hdf5
-from utils.reconstruction_utils import refine_point_mask, depth2xyz_world, print_cuda_memory_usage
+from utils.reconstruction_utils import refine_point_mask, depth2xyz_world, print_cuda_memory_usage, clear_unused_cuda_memory
 from segmentation.workflow import load_segmentation_masks_for_sample
 
 
@@ -59,17 +59,6 @@ def identity_collate(batch):
     # batch is a list of dataset items
     # with batch_size=1, just return the single element
     return batch[0]
-
-
-def clear_unused_cuda_memory():
-    """Release per-sample CUDA allocations that are no longer referenced."""
-    # Some tensors can participate in reference cycles, so collect them before
-    # asking PyTorch's caching allocator to return its unused blocks.
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-
 
 
 def _get_mesh_save_path(save_dir: str, role: str, pred_mask: bool, mesh_format: str = "glb") -> str:
