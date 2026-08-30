@@ -8,7 +8,7 @@ import sys
 # from third_party.SpaTrackerV2.models.SpaTrackV2.models.predictor import Predictor
 # from third_party.SpaTrackerV2.models.SpaTrackV2.models.utils import get_points_on_a_grid
 
-from utils.reconstruction_utils import estimate_se3_transformation
+from utils.reconstruction_utils import estimate_se3_transformation, print_cuda_memory_usage
 
 from typing import Dict, Tuple, List
 
@@ -71,6 +71,7 @@ class FeatureMatchingFusion(BaseFusion):
             return np.eye(4), kptsA_origin, kptsB_origin
         # Estimate transformation
         current2anchor = estimate_se3_transformation(current_part_3dkpts, anchor_part_3dkpts)
+        del kptsA, kptsB
         return current2anchor, kptsA_origin, kptsB_origin
 
     def fuse_part_pcds(
@@ -136,12 +137,15 @@ class FeatureMatchingFusion(BaseFusion):
             else:
                 # print("Computing transformation for frame", frame_id)
                 cache_key = f"{frame_id}_{anchor_image_id}"
+                print("cache_key:", cache_key)
+                print_cuda_memory_usage(f"before compute_part_transformation [{frame_id}]")
                 transformation, kptsA_origin, kptsB_origin = self.compute_part_transformation(
                     video_frame, current_point_map, part_mask,
                     video_frame_list[anchor_image_id], anchor_point_map, anchor_part_mask, 
                     kptsA_origin_dict.get(cache_key),
                     kptsB_origin_dict.get(cache_key),
                 )
+                print_cuda_memory_usage(f"after compute_part_transformation [{frame_id}]")
                 if cache_key not in kptsA_origin_dict:
                     kptsA_origin_dict[cache_key] = kptsA_origin
                 if cache_key not in kptsB_origin_dict:
