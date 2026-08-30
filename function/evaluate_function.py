@@ -7,8 +7,14 @@ NUMERICAL_FUNCTION_MAP = {"a": "binary", "b": "step", "c": "linear", "d": "cumul
 
 def compute_function_error(gt_function: dict, pred_function: dict) -> dict:
     error_metrics = {}
-    error_metrics["physical_effect"] = gt_function["physics"] == PHYSICAL_EFFECT_MAP[pred_function["1"]]
-    error_metrics["numerical_function"] = gt_function["func"] == NUMERICAL_FUNCTION_MAP[pred_function["2"]]
+    if pred_function["1"] not in PHYSICAL_EFFECT_MAP.keys():
+        error_metrics["physical_effect"] = False
+    else:
+        error_metrics["physical_effect"] = gt_function["physics"] == PHYSICAL_EFFECT_MAP[pred_function["1"]]
+    if pred_function["2"] not in NUMERICAL_FUNCTION_MAP.keys():
+        error_metrics["numerical_function"] = False
+    else:
+        error_metrics["numerical_function"] = gt_function["func"] == NUMERICAL_FUNCTION_MAP[pred_function["2"]]
     return error_metrics
 
 
