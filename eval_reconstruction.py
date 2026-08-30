@@ -180,9 +180,9 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                             input_intrinsics = data["camera_intrinsics"]
                         if input_modality.find("extrinsics") != -1:
                             input_extrinsics = data["camera_extrinsics"]
-                        print_cuda_memory_usage(f"before reconstruct [{role}]")
+                        # print_cuda_memory_usage(f"before reconstruct [{role}]")
                         reconstruction_results = reconstruction_model.reconstruct(video_frame_list, init_extrinsics, input_intrinsics, input_extrinsics, input_depth)
-                        print_cuda_memory_usage(f"after reconstruct [{role}]")
+                        # print_cuda_memory_usage(f"after reconstruct [{role}]")
             load_results_end = time.time()
             print(f"Initial reconstruction time: {load_results_end - load_results_start:.2f} seconds")
             if reconstruction_results is None:
@@ -220,7 +220,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             
             fuse_start = time.time()
             if isinstance(fusion_model, FeatureMatchingFusion):
-                print_cuda_memory_usage(f"before fuse_part_pcds [{role}]")
+                # print_cuda_memory_usage(f"before fuse_part_pcds [{role}]")
                 fused_part_pcd, transformation_list, kptsA_origin_dict, kptsB_origin_dict = fusion_model.fuse_part_pcds(
                     valid_video_frame_list,
                     valid_mask_list,
@@ -229,7 +229,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                     kptsB_origin_dict,
                     initial_state=data.get("initial_state", "close"),
                 )
-                print_cuda_memory_usage(f"after fuse_part_pcds [{role}]")
+                # print_cuda_memory_usage(f"after fuse_part_pcds [{role}]")
                 # print("kpts len:", len(kptsA_origin_dict), len(kptsB_origin_dict))
             # elif isinstance(fusion_model, TrackingFusion):
             #     if tracks3d is None:
@@ -239,14 +239,14 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             fuse_end = time.time()
             print(f"Fusion time: {fuse_end - fuse_start:.2f} seconds")
             # Evaluate reconstruction
-            print_cuda_memory_usage(f"before evaluate_reconstruction [{role}]")
+            # print_cuda_memory_usage(f"before evaluate_reconstruction [{role}]")
             chamfer_dist, rot_error, trans_error = evaluate_reconstruction(
                 pred_pcd=fused_part_pcd,
                 pred_extrinsics=reconstruction_results["extrinsics"],
                 gt_pcd=data["geometry_data"][role]["part_pcd"],
                 gt_extrinsics=data["camera_extrinsics"],
             )
-            print_cuda_memory_usage(f"after evaluate_reconstruction [{role}]")
+            # print_cuda_memory_usage(f"after evaluate_reconstruction [{role}]")
             if not config.pred_mask:
                 save_pcd(fused_part_pcd, f"{save_pcd_dir}/{role}_fused.ply")
             else:
@@ -310,9 +310,9 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
         data_count += 1
         end_time = time.time()
         print(f"Total evaluation time for this sample: {end_time - start_time:.2f} seconds")
-        print_cuda_memory_usage("after evaluation")
+        # print_cuda_memory_usage("after evaluation")
         clear_unused_cuda_memory()
-        print_cuda_memory_usage("after clearing unused memory")
+        # print_cuda_memory_usage("after clearing unused memory")
 
 
 @hydra.main(version_base="1.3", config_path="config", config_name="default")

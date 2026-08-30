@@ -138,18 +138,18 @@ class FeatureMatchingFusion(BaseFusion):
             else:
                 # print("Computing transformation for frame", frame_id)
                 cache_key = f"{frame_id}_{anchor_image_id}"
-                print("cache_key:", cache_key)
-                torch.cuda.synchronize()
-                print_cuda_memory_usage(f"before compute_part_transformation [{frame_id}]")
+                # print("cache_key:", cache_key)
+                # torch.cuda.synchronize()
+                # print_cuda_memory_usage(f"before compute_part_transformation [{frame_id}]")
                 transformation, kptsA_origin, kptsB_origin = self.compute_part_transformation(
                     video_frame, current_point_map, part_mask,
                     video_frame_list[anchor_image_id], anchor_point_map, anchor_part_mask, 
                     kptsA_origin_dict.get(cache_key),
                     kptsB_origin_dict.get(cache_key),
                 )
-                torch.cuda.synchronize()
-                clear_unused_cuda_memory()
-                print_cuda_memory_usage(f"after compute_part_transformation [{frame_id}]")
+                # torch.cuda.synchronize()
+                # clear_unused_cuda_memory()
+                # print_cuda_memory_usage(f"after compute_part_transformation [{frame_id}]")
                 if cache_key not in kptsA_origin_dict:
                     kptsA_origin_dict[cache_key] = kptsA_origin
                 if cache_key not in kptsB_origin_dict:
