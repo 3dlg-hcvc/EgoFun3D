@@ -1,5 +1,4 @@
 import argparse
-import gc
 import gzip
 import pickle
 import omegaconf

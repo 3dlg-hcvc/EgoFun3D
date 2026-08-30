@@ -1,5 +1,5 @@
 import time
-
+import gc
 import open3d as o3d
 import numpy as np
 import multiprocessing as mp
