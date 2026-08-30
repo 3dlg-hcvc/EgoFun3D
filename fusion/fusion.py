@@ -29,7 +29,7 @@ class BaseFusion:
 
 class FeatureMatchingFusion(BaseFusion):
     def __init__(self, device: str):
-        self.feature_matching_model = roma_indoor(device=device)
+        self.feature_matching_model = roma_indoor(device=device, use_custom_corr=False)
         
         # self.monocular_model = MoGeModel.from_pretrained(moge_model_path).to(device)
         self.device = device
