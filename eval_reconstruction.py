@@ -70,6 +70,22 @@ def clear_unused_cuda_memory():
         torch.cuda.empty_cache()
 
 
+def print_cuda_memory_usage(label: str):
+    """Print memory managed by PyTorch for the current CUDA device."""
+    if not torch.cuda.is_available():
+        print(f"CUDA memory ({label}): CUDA is not available")
+        return
+
+    device = torch.cuda.current_device()
+    gib = 1024 ** 3
+    allocated = torch.cuda.memory_allocated(device) / gib
+    reserved = torch.cuda.memory_reserved(device) / gib
+    print(
+        f"CUDA memory ({label}, {torch.cuda.get_device_name(device)}): "
+        f"allocated={allocated:.3f} GiB, reserved={reserved:.3f} GiB"
+    )
+
+
 def _get_mesh_save_path(save_dir: str, role: str, pred_mask: bool, mesh_format: str = "glb") -> str:
     suffix = "_pred_mask" if pred_mask else ""
     return os.path.join(save_dir, f"{role}_mesh{suffix}.{mesh_format}")
@@ -245,12 +261,14 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
             fuse_end = time.time()
             print(f"Fusion time: {fuse_end - fuse_start:.2f} seconds")
             # Evaluate reconstruction
+            print_cuda_memory_usage(f"before evaluate_reconstruction [{role}]")
             chamfer_dist, rot_error, trans_error = evaluate_reconstruction(
                 pred_pcd=fused_part_pcd,
                 pred_extrinsics=reconstruction_results["extrinsics"],
                 gt_pcd=data["geometry_data"][role]["part_pcd"],
                 gt_extrinsics=data["camera_extrinsics"],
             )
+            print_cuda_memory_usage(f"after evaluate_reconstruction [{role}]")
             if not config.pred_mask:
                 save_pcd(fused_part_pcd, f"{save_pcd_dir}/{role}_fused.ply")
             else:
