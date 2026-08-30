@@ -620,3 +620,19 @@ def refine_point_mask(reconstruction_results: dict, refine: bool = False) -> dic
     # finally:
     #     worker.close()
     return reconstruction_results
+
+
+def print_cuda_memory_usage(label: str):
+    """Print memory managed by PyTorch for the current CUDA device."""
+    if not torch.cuda.is_available():
+        print(f"CUDA memory ({label}): CUDA is not available")
+        return
+
+    device = torch.cuda.current_device()
+    gib = 1024 ** 3
+    allocated = torch.cuda.memory_allocated(device) / gib
+    reserved = torch.cuda.memory_reserved(device) / gib
+    print(
+        f"CUDA memory ({label}, {torch.cuda.get_device_name(device)}): "
+        f"allocated={allocated:.3f} GiB, reserved={reserved:.3f} GiB"
+    )
