@@ -83,6 +83,7 @@ class FeatureMatchingFusion(BaseFusion):
         kptsA_origin_dict: Dict[str, np.ndarray] = None,
         kptsB_origin_dict: Dict[str, np.ndarray] = None,
         initial_state: str = "close",
+        no_fuse: bool = False,
     ) -> Tuple[
         np.ndarray,
         List[np.ndarray],
@@ -133,7 +134,7 @@ class FeatureMatchingFusion(BaseFusion):
             # part_pcd_world, current_point_map = self.get_part_pcd(image, part_mask, cam_pose, gt_depth, gt_intrinsics)
             part_pcd_list.append(part_pcd_world)
             
-            if frame_id == anchor_image_id:
+            if frame_id == anchor_image_id or no_fuse:
                 transformation_list.append(np.eye(4))
             else:
                 # print("Computing transformation for frame", frame_id)
