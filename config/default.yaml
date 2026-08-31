@@ -17,6 +17,7 @@ shared_vlm_root: null
 segmentation_results_dir: ???
 save_mesh: True
 save_reconstruction_results: True
+no_fuse: false
 
 defaults:
   - dataset: dataset

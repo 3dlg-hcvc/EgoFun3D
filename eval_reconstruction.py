@@ -228,6 +228,7 @@ def evaluate(input_modality: str, eval_dataloader: DataLoader, fusion_model: Bas
                     kptsA_origin_dict,
                     kptsB_origin_dict,
                     initial_state=data.get("initial_state", "close"),
+                    no_fuse=config.no_fuse
                 )
                 # print_cuda_memory_usage(f"after fuse_part_pcds [{role}]")
                 # print("kpts len:", len(kptsA_origin_dict), len(kptsB_origin_dict))
