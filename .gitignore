@@ -23,3 +23,9 @@ test_urdf*/
 debug_file/
 results_statistics/
 tmp_masked_video*/
+scene-toolkit/
+data\ collection/
+egoexo4d_data/
+new_dataset/
+checkpoints/
+.cache/

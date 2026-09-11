@@ -5,7 +5,7 @@ pip install --no-build-isolation "git+https://github.com/facebookresearch/pytorc
 pip install transformers==4.57.6
 pip install vllm==0.15.1
 pip install -U flash-attn --no-build-isolation
-pip install accelerate open3d point_cloud_utils qwen_vl_utils molmo_utils hydra-core google-genai openai pycocotools scikit-image
+pip install accelerate open3d point_cloud_utils qwen_vl_utils molmo_utils hydra-core google-genai openai pycocotools scikit-image pygltflib
 pip install "git+https://github.com/facebookresearch/sam3.git"
 pip install "git+https://github.com/facebookresearch/sam2.git"
 

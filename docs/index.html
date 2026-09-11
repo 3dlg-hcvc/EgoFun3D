@@ -354,7 +354,7 @@ Interactive objects are of high interest for embodied AI but scarce, making mode
 Our task focuses on obtaining simulation-ready interactive 3D objects from egocentric video input.
 While prior work largely focuses on articulations, we capture general cross-part functional mappings (e.g., rotation of stove knob controls stove burner temperature) through function templates, a structured computational representation.
 Function templates enable precise evaluation and direct compilation into executable code across simulation platforms.
-To enable comprehensive benchmarking, we introduce a dataset of 271 egocentric videos featuring challenging real-world interactions with paired 3D geometry, segmentation over 2D and 3D, articulation and function template annotations.
+To enable comprehensive benchmarking, we introduce a dataset of 517 egocentric videos featuring challenging real-world interactions with paired 3D geometry, segmentation over 2D and 3D, articulation and function template annotations.
 To tackle the task, we propose a 4-stage pipeline consisting of: 2D part segmentation, reconstruction, articulation estimation, and function template inference.
 Comprehensive benchmarking shows that the task is challenging for off-the-shelf methods, highlighting avenues for future work.
           </p>
@@ -620,8 +620,8 @@ Finally, we show concrete instantiations of interactive objects in different sim
             </p>
           </div>
           <div class="dataset-image-row">
-            <img src="static/images/object_category_distribution_phy2.png" alt="Object category distribution for physical effects" loading="lazy"/>
-            <img src="static/images/object_category_distribution_func2.png" alt="Object category distribution for mapping" loading="lazy"/>
+            <img src="static/images/object_category_distribution_phy.png" alt="Object category distribution for physical effects" loading="lazy"/>
+            <img src="static/images/object_category_distribution_mapping.png" alt="Object category distribution for mapping" loading="lazy"/>
           </div>
           <div class="content has-text-justified">
           <!-- TODO: Replace with your paper abstract -->
@@ -753,52 +753,52 @@ There are prominent long tail distributions across categories, physical effects,
 
                 <tr>
                   <th>VisionReasoner</th>
-                  <td class="benchmark-empty">14.6</td>
-                  <td class="benchmark-empty">34.9</td>
-                  <td class="benchmark-empty">24.7</td>
-                  <td class="benchmark-empty">7.4</td>
-                  <td class="benchmark-empty">33.9</td>
-                  <td class="benchmark-empty">452</td>
+                  <td class="benchmark-empty">15.4</td>
+                  <td class="benchmark-empty">28.3</td>
+                  <td class="benchmark-empty">21.8</td>
+                  <td class="benchmark-empty">8.4</td>
+                  <td class="benchmark-empty">25.8</td>
+                  <td class="benchmark-empty">127</td>
                 </tr>
 
                 <tr>
                   <th>SAM3 &amp; Qwen3-VL</th>
-                  <td class="benchmark-empty"><strong>30.0</strong></td>
-                  <td class="benchmark-empty"><strong>47.9</strong></td>
-                  <td class="benchmark-empty"><strong>38.8</strong></td>
-                  <td class="benchmark-empty"><strong>23.2</strong></td>
-                  <td class="benchmark-empty"><strong>55.0</strong></td>
-                  <td class="benchmark-empty">2012</td>
+                  <td class="benchmark-empty"><strong>28.2</strong></td>
+                  <td class="benchmark-empty"><strong>38.9</strong></td>
+                  <td class="benchmark-empty"><strong>33.6</strong></td>
+                  <td class="benchmark-empty"><strong>22.2</strong></td>
+                  <td class="benchmark-empty"><strong>43.9</strong></td>
+                  <td class="benchmark-empty">1769</td>
                 </tr>
 
                 <tr>
                   <th>SAM3 &amp; Molmo2</th>
-                  <td class="benchmark-empty">14.0</td>
-                  <td class="benchmark-empty">29.4</td>
-                  <td class="benchmark-empty">21.7</td>
-                  <td class="benchmark-empty">6.6</td>
-                  <td class="benchmark-empty">20.7</td>
-                  <td class="benchmark-empty">392</td>
+                  <td class="benchmark-empty">16.7</td>
+                  <td class="benchmark-empty">27.5</td>
+                  <td class="benchmark-empty">22.1</td>
+                  <td class="benchmark-empty">8.2</td>
+                  <td class="benchmark-empty">22.4</td>
+                  <td class="benchmark-empty">92</td>
                 </tr>
 
                 <tr>
                   <th>X-SAM</th>
-                  <td class="benchmark-empty">2.5</td>
-                  <td class="benchmark-empty">15.0</td>
-                  <td class="benchmark-empty">8.7</td>
-                  <td class="benchmark-empty">0.4</td>
-                  <td class="benchmark-empty">9.2</td>
-                  <td class="benchmark-empty">255</td>
+                  <td class="benchmark-empty">4.0</td>
+                  <td class="benchmark-empty">13.7</td>
+                  <td class="benchmark-empty">8.8</td>
+                  <td class="benchmark-empty">1.5</td>
+                  <td class="benchmark-empty">8.4</td>
+                  <td class="benchmark-empty">22</td>
                 </tr>
 
                 <tr>
                   <th>Sa2VA</th>
-                  <td class="benchmark-empty">14.8</td>
-                  <td class="benchmark-empty">43.4</td>
-                  <td class="benchmark-empty">29.1</td>
-                  <td class="benchmark-empty">1.8</td>
-                  <td class="benchmark-empty">33.2</td>
-                  <td class="benchmark-empty">2006</td>
+                  <td class="benchmark-empty">15.8</td>
+                  <td class="benchmark-empty">33.6</td>
+                  <td class="benchmark-empty">24.7</td>
+                  <td class="benchmark-empty">6.0</td>
+                  <td class="benchmark-empty">27.7</td>
+                  <td class="benchmark-empty">865</td>
                 </tr>
               </tbody>
             </table>
@@ -885,27 +885,27 @@ Performance on videos featuring more static viewpoints and no part instance ambi
                 </tr>
                 <tr>
                   <th>MapAnything</th>
-                  <td class="benchmark-empty">0.380</td>
-                  <td class="benchmark-empty">0.953</td>
-                  <td class="benchmark-empty">0.580</td>
-                  <td class="benchmark-empty">1.033</td>
-                  <td class="benchmark-empty">0.742</td>
+                  <td class="benchmark-empty">0.408</td>
+                  <td class="benchmark-empty">0.733</td>
+                  <td class="benchmark-empty">0.572</td>
+                  <td class="benchmark-empty">0.960</td>
+                  <td class="benchmark-empty">0.663</td>
                 </tr>
                 <tr>
                   <th>Depth Anything 3</th>
-                  <td class="benchmark-empty"><strong>0.026</strong></td>
-                  <td class="benchmark-empty"><strong>0.014</strong></td>
-                  <td class="benchmark-empty"><strong>0.016</strong></td>
-                  <td class="benchmark-empty"><strong>0.045</strong></td>
-                  <td class="benchmark-empty"><strong>0.049</strong></td>
+                  <td class="benchmark-empty"><strong>0.036</strong></td>
+                  <td class="benchmark-empty"><strong>0.019</strong></td>
+                  <td class="benchmark-empty"><strong>0.022</strong></td>
+                  <td class="benchmark-empty"><strong>0.042</strong></td>
+                  <td class="benchmark-empty"><strong>0.050</strong></td>
                 </tr>
                 <tr>
                   <th>ViPE</th>
-                  <td class="benchmark-empty">0.034</td>
-                  <td class="benchmark-empty">0.021</td>
-                  <td class="benchmark-empty">0.025</td>
-                  <td class="benchmark-empty">0.046</td>
-                  <td class="benchmark-empty">0.058</td>
+                  <td class="benchmark-empty">0.059</td>
+                  <td class="benchmark-empty">0.031</td>
+                  <td class="benchmark-empty">0.040</td>
+                  <td class="benchmark-empty">0.040</td>
+                  <td class="benchmark-empty">0.051</td>
                 </tr>
               </tbody>
             </table>
@@ -994,17 +994,17 @@ Overall, reconstruction from our egocentric video data is highly challenging for
                 </tr>
                 <tr>
                   <th>Artipoint</th>
-                  <td class="benchmark-empty">1.057</td>
-                  <td class="benchmark-empty"><strong>0.346</strong></td>
-                  <td class="benchmark-empty"><strong>74.2</strong></td>
-                  <td class="benchmark-empty">46.4</td>
+                  <td class="benchmark-empty">1.018</td>
+                  <td class="benchmark-empty"><strong>0.331</strong></td>
+                  <td class="benchmark-empty"><strong>78.3</strong></td>
+                  <td class="benchmark-empty">42.8</td>
                 </tr>
                 <tr>
                   <th>iTACO</th>
-                  <td class="benchmark-empty"><strong>1.022</strong></td>
-                  <td class="benchmark-empty">0.665</td>
-                  <td class="benchmark-empty">26.8</td>
-                  <td class="benchmark-empty"><strong>5.6</strong></td>
+                  <td class="benchmark-empty"><strong>1.024</strong></td>
+                  <td class="benchmark-empty">0.758</td>
+                  <td class="benchmark-empty">28.8</td>
+                  <td class="benchmark-empty"><strong>14.2</strong></td>
                 </tr>
               </tbody>
             </table>
@@ -1081,27 +1081,27 @@ However, both methods struggle with small parts such as the stove knob shown her
                 </tr>
                 <tr>
                   <th>Gemini 3 Flash</th>
-                  <td class="benchmark-empty">95.2</td>
-                  <td class="benchmark-empty"><strong>97.6</strong></td>
-                  <td class="benchmark-empty"><strong>92.9</strong></td>
+                  <td class="benchmark-empty">94.8</td>
+                  <td class="benchmark-empty"><strong>96.5</strong></td>
+                  <td class="benchmark-empty"><strong>93.1</strong></td>
                 </tr>
                 <tr>
                   <th>GPT-5 mini</th>
-                  <td class="benchmark-empty">88.1</td>
-                  <td class="benchmark-empty">90.5</td>
-                  <td class="benchmark-empty">83.3</td>
+                  <td class="benchmark-empty">87.9</td>
+                  <td class="benchmark-empty">86.2</td>
+                  <td class="benchmark-empty">79.3</td>
                 </tr>
                 <tr>
                   <th>Molmo2 8B</th>
-                  <td class="benchmark-empty">90.5</td>
-                  <td class="benchmark-empty">31.0</td>
-                  <td class="benchmark-empty">28.6</td>
+                  <td class="benchmark-empty">86.2</td>
+                  <td class="benchmark-empty">36.2</td>
+                  <td class="benchmark-empty">32.7</td>
                 </tr>
                 <tr>
                   <th>Qwen3-VL 8B</th>
-                  <td class="benchmark-empty"><strong>97.6</strong></td>
-                  <td class="benchmark-empty">76.2</td>
-                  <td class="benchmark-empty">76.2</td>
+                  <td class="benchmark-empty"><strong>98.2</strong></td>
+                  <td class="benchmark-empty">79.3</td>
+                  <td class="benchmark-empty">79.3</td>
                 </tr>
               </tbody>
             </table>
@@ -1300,7 +1300,7 @@ We use teal to indicate receptors and orange to indicate effectors.
           <h2 class="title is-3">Acknowledgment</h2>
           <div class="content has-text-justified">
             <p>
-This work was funded in part by a Canada Research Chair, NSERC Discovery Grant, and enabled by support from the Digital Research Alliance of Canada. 
+This work was funded in part by a Canada Research Chair, NSERC Discovery Grant, and enabled by support from the Digital Research Alliance of Canada, and an NVIDIA Academic Grant Award. 
 The authors would like to thank Tianrun Hu from National University of Singapore for collecting data, Jiayi Liu, Xingguang Yan, Austin T. Wang, and Morteza Badali for valuable discussions and proofreading.
             </p>
           </div>

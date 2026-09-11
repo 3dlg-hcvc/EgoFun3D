@@ -9,7 +9,7 @@ import os
 from torch.utils.data import DataLoader
 import pickle
 
-from dataset.dataset import build_dataset
+from dataset.dataset import build_dataset, temporary_video_from_frames
 from segmentation.ref_seg import RefSeg, build_refseg_model
 from fusion.fusion import build_fusion_model, BaseFusion, FeatureMatchingFusion, TrackingFusion
 from fusion.reconstruction import build_reconstruction_model, BaseReconstruction, ViPEReconstruction
@@ -117,9 +117,23 @@ def evaluate(
             if reconstruction_results is None:
                 init_extrinsics = data["camera_extrinsics"][0]
                 if isinstance(reconstruction_model, ViPEReconstruction):
-                    reconstruction_results = reconstruction_model.reconstruct(
-                        data["video_path"], init_extrinsics, data["sample_indices"]
-                    )
+                    if data.get("crop", False):
+                        with temporary_video_from_frames(
+                            video_frame_list,
+                            source_video_path=data["video_path"],
+                            sample_indices=data["sample_indices"],
+                        ) as temp_video_path:
+                            # The temporary video already contains only
+                            # sampled frames, so its indices are local.
+                            reconstruction_results = reconstruction_model.reconstruct(
+                                temp_video_path,
+                                init_extrinsics,
+                                list(range(len(video_frame_list))),
+                            )
+                    else:
+                        reconstruction_results = reconstruction_model.reconstruct(
+                            data["video_path"], init_extrinsics, data["sample_indices"]
+                        )
                 else:
                     input_intrinsics = None
                     input_extrinsics = None
