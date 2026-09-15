@@ -1,6 +1,6 @@
 <div align="center">
 <h1>EgoFun3D: Modeling Interactive Objects from Egocentric Videos using Function Templates</h1>
-<a href="docs/static/pdf/Part_Function_Reconstruction_from_Egocentric_Videos_arxiv.pdf"><img src="https://img.shields.io/badge/Paper-blue" alt="Paper"></a>
+<!-- <a href="docs/static/pdf/Part_Function_Reconstruction_from_Egocentric_Videos_arxiv.pdf"><img src="https://img.shields.io/badge/Paper-blue" alt="Paper"></a> -->
 <a href="https://arxiv.org/abs/2604.11038"><img src="https://img.shields.io/badge/arXiv-2604.11038-b31b1b" alt="arXiv"></a>
 <a href="https://3dlg-hcvc.github.io/EgoFun3D/"><img src="https://img.shields.io/badge/Project_Page-green" alt="Project Page"></a>
 <!-- <a href="https://x.com/Nik__V__/status/1968316841618518371"><img src="https://img.shields.io/badge/X_Thread-1DA1F2" alt="X Thread"></a> -->
@@ -26,11 +26,11 @@ Simon Fraser University
 ## Installation
 1. Clone this repo
    ```bash
-   git clone --recursive git@github.com:willipwk/part_function_reconstruction.git
+   git clone --recursive git@github.com:3dlg-hcvc/EgoFun3D.git
    ```
 2. Prepare a conda environment
    ```bash
-   cd part_function_reconstruction
+   cd EgoFun3D
    bash install.sh
    ```
    There are many different modules in this project. Thus, pip will notify you several incompatible issues during installation. Usually this is not a big problem. Make sure several key packages satisfy the following version.

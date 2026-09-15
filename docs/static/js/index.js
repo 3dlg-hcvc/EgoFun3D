@@ -119,6 +119,34 @@ function setupVideoCarouselAutoplay() {
     });
 }
 
+// Autoplay all embedded videos except the final comparison carousel.
+function enableEmbeddedVideoAutoplay() {
+    const videos = document.querySelectorAll('video');
+
+    videos.forEach(video => {
+        video.playsInline = true;
+        video.setAttribute('playsinline', '');
+        video.setAttribute('webkit-playsinline', '');
+
+        if (video.classList.contains('final-carousel-video')) {
+            return;
+        }
+
+        video.muted = true;
+        video.autoplay = true;
+        video.loop = true;
+        video.setAttribute('autoplay', '');
+
+        const playPromise = video.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => {
+                // Autoplay can still be blocked by browser policy; muted/inline
+                // settings make it work in the common case.
+            });
+        }
+    });
+}
+
 $(document).ready(function() {
     // Check for click events on the navbar burger icon
 
@@ -136,6 +164,8 @@ $(document).ready(function() {
 	
     bulmaSlider.attach();
     
+    enableEmbeddedVideoAutoplay();
+
     // Setup video autoplay for carousel
     setupVideoCarouselAutoplay();
 

@@ -285,11 +285,18 @@ body {
 }
 
 .results-carousel .item img,
-.results-carousel video {
+.results-carousel .item video {
   margin: 0;
   border-radius: var(--border-radius);
   width: 100%;
   height: auto;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+}
+
+.results-carousel .item video {
+  aspect-ratio: 16 / 9;
 }
 
 .results-carousel .subtitle {
