@@ -27,5 +27,7 @@ scene-toolkit/
 data\ collection/
 egoexo4d_data/
 new_dataset/
+aligned_datasets/
+combined_dataset
 checkpoints/
 .cache/

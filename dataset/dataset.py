@@ -18,6 +18,36 @@ import imageio
 from typing import Tuple, List, Dict, Any, Mapping, Optional, Sequence
 
 
+def _load_hdf5_mask_groups(filepath: str) -> dict:
+    """Read normalized or legacy H5 groups using the existing in-memory keys.
+
+    Keep group names as keys (including numbered additional parts) and expose
+    the original annotation label separately through ``name``.
+    """
+    data = {}
+    with h5py.File(filepath, "r") as file:
+        for group_name, group in file.items():
+            if not isinstance(group, h5py.Group):
+                continue
+            mask_id = group.attrs.get("id", group.attrs.get("mask_idx"))
+            if mask_id is None:
+                raise KeyError(f"Mask group '{group_name}' in {filepath} has no id.")
+            key = "mask" if "mask" in group else "masks" if "masks" in group else None
+            if key is None:
+                raise KeyError(
+                    f"Mask group '{group_name}' in {filepath} has no 'mask' or 'masks' dataset."
+                )
+            name = group.attrs.get("name", group_name)
+            if isinstance(name, bytes):
+                name = name.decode("utf-8")
+            data[group_name] = {
+                "mask_idx": int(mask_id),
+                "masks": group[key][:],
+                "name": str(name),
+            }
+    return data
+
+
 @contextmanager
 def temporary_video_from_frames(
     rgb_list: Sequence[np.ndarray],
@@ -209,16 +239,8 @@ class UniformDataset(Dataset):
         return camera_extrinsics, camera_intrinsics, cropped_top_left, cropped_bottom_right
     
     def load_from_hdf5(self, filepath: str) -> dict:
-        """Load the HDF5 file back into the original dict format."""
-        data = {}
-        with h5py.File(filepath, 'r') as f:
-            for name in f:
-                grp = f[name]
-                data[name] = {
-                    'mask_idx': int(grp.attrs['mask_idx']),
-                    'masks': grp['masks'][:]
-                }
-        return data
+        """Load all mask groups, accepting both normalized and legacy files."""
+        return _load_hdf5_mask_groups(filepath)
     
     def load_2d_masks(self, mask_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, str, str, str]:
         # 2d masks
@@ -233,13 +255,13 @@ class UniformDataset(Dataset):
         for mask_name in mask_data.keys():
             if mask_data[mask_name]["mask_idx"] == 3:
                 receptor_mask = mask_data[mask_name]["masks"]
-                receptor_name = mask_name
+                receptor_name = mask_data[mask_name]["name"]
             elif mask_data[mask_name]["mask_idx"] == 4:
                 effector_mask = mask_data[mask_name]["masks"]
-                effector_name = mask_name
+                effector_name = mask_data[mask_name]["name"]
             elif mask_data[mask_name]["mask_idx"] == 5:
                 object_mask = mask_data[mask_name]["masks"]
-                object_name = mask_name
+                object_name = mask_data[mask_name]["name"]
         if object_mask is None:
             object_mask = np.logical_or(receptor_mask, effector_mask)
             object_name = f"{receptor_name} and {effector_name}"
@@ -359,12 +381,21 @@ class NewDataset(Dataset):
     def __len__(self):
         return len(self.meta_info)
 
-    def __getitem__(self, idx: int) -> Dict[str, Any]:
-        video_dict = self.meta_info[idx]
+    def _select_video_path(
+        self, video_dict: Mapping[str, Any]
+    ) -> Tuple[str, bool]:
+        """Return the source video path and whether it is already cropped."""
         video_path = video_dict.get("video_path", video_dict.get("video"))
         if video_path is None:
             raise KeyError("Metadata entry is missing 'video'.")
-        video_name = os.path.basename(video_path).split(".")[0]
+        return str(video_path), False
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        video_dict = self.meta_info[idx]
+        video_path, use_cropped_video = self._select_video_path(video_dict)
+        video_name = video_dict.get(
+            "video_name", os.path.basename(video_path).split(".")[0]
+        )
         print(f"Loading video: {video_name}")
 
         # 2D data
@@ -373,7 +404,13 @@ class NewDataset(Dataset):
         sample_indices = self.get_sample_indices(full_num_frames)
         rgb_list = [rgb_list[i].copy() for i in sample_indices]
 
-        camera_extrinsics, camera_intrinsics = self.load_camera(
+        (
+            camera_extrinsics,
+            camera_intrinsics,
+            stored_cropped_intrinsics,
+            stored_cropped_top_left,
+            stored_cropped_bottom_right,
+        ) = self.load_camera_details(
             video_dict.get("camera_path", video_dict.get("camera"))
         )
         camera_extrinsics = camera_extrinsics[sample_indices]
@@ -402,19 +439,30 @@ class NewDataset(Dataset):
             object_mask_list = object_mask_list[sample_indices]
 
         if self.image_type == "cropped":
-            cropped_top_left, cropped_bottom_right = self.compute_crop_coordinates(
-                rgb_list[0]
-            )
-            camera_intrinsics = self.compute_cropped_intrinsics(
-                camera_intrinsics, cropped_top_left
-            )
-            rgb_list = [
-                frame[
-                    cropped_top_left[1]:cropped_bottom_right[1],
-                    cropped_top_left[0]:cropped_bottom_right[0],
+            if use_cropped_video and stored_cropped_top_left is None:
+                raise ValueError(
+                    f"Metadata selects pre-cropped video {video_path}, but its "
+                    "camera file has no saved crop calibration."
+                )
+            if stored_cropped_top_left is not None:
+                cropped_top_left = stored_cropped_top_left
+                cropped_bottom_right = stored_cropped_bottom_right
+                camera_intrinsics = stored_cropped_intrinsics
+            else:
+                cropped_top_left, cropped_bottom_right = self.compute_crop_coordinates(
+                    rgb_list[0]
+                )
+                camera_intrinsics = self.compute_cropped_intrinsics(
+                    camera_intrinsics, cropped_top_left
+                )
+            if not use_cropped_video:
+                rgb_list = [
+                    frame[
+                        cropped_top_left[1]:cropped_bottom_right[1],
+                        cropped_top_left[0]:cropped_bottom_right[0],
+                    ]
+                    for frame in rgb_list
                 ]
-                for frame in rgb_list
-            ]
             if self.load_2d_masks_enabled:
                 receptor_mask_list = receptor_mask_list[
                     :,
@@ -451,14 +499,18 @@ class NewDataset(Dataset):
         )
         geometry_data = None
         if self.load_mesh_data_enabled:
-            geometry_data = self.load_mesh_data(
+            geometry_data = self.load_geometry_data(
                 geometry_path,
+                video_dict.get("geometry_type", "mesh"),
                 transformation_path,
                 part_annotation_path,
                 function_instance_id,
                 has_object,
                 articulation_path=(
                     articulation_path if self.load_articulation_enabled else None
+                ),
+                normalize_articulation_geometry=video_dict.get(
+                    "normalize_articulation_geometry", True
                 ),
             )
 
@@ -471,6 +523,9 @@ class NewDataset(Dataset):
                 part_annotation_path=part_annotation_path,
                 function_instance_id=function_instance_id,
                 transformation_path=transformation_path,
+                transform_to_world=video_dict.get(
+                    "articulation_in_canonical_frame", True
+                ),
             )
 
         function_annotation = None
@@ -604,7 +659,15 @@ class NewDataset(Dataset):
         rgb_list = imageio.v3.imread(full_video_path)  # (T, H, W, 3)
         return rgb_list, full_video_path
 
-    def load_camera(self, camera_path: str) -> Tuple[np.ndarray, np.ndarray]:
+    def load_camera_details(
+        self, camera_path: str
+    ) -> Tuple[
+        np.ndarray,
+        np.ndarray,
+        Optional[np.ndarray],
+        Optional[List[int]],
+        Optional[List[int]],
+    ]:
         if camera_path is None:
             raise KeyError("Metadata entry is missing 'camera'.")
         full_camera_path = os.path.join(self.root_path, camera_path)
@@ -615,6 +678,17 @@ class NewDataset(Dataset):
                 raise KeyError(f"{full_camera_path} does not contain 'K'.")
             camera_extrinsics = camera_file["T_world_camera"][:]
             camera_intrinsics = camera_file["K"][:]
+            cropped_camera_intrinsics = (
+                camera_file["K_cropped"][:] if "K_cropped" in camera_file else None
+            )
+            cropped_top_left = (
+                camera_file["cropped_top_left"][:].astype(int).tolist()
+                if "cropped_top_left" in camera_file else None
+            )
+            cropped_bottom_right = (
+                camera_file["cropped_bottom_right"][:].astype(int).tolist()
+                if "cropped_bottom_right" in camera_file else None
+            )
 
         if camera_extrinsics.ndim != 3 or camera_extrinsics.shape[1:] != (4, 4):
             raise ValueError(
@@ -624,19 +698,41 @@ class NewDataset(Dataset):
             raise ValueError(
                 f"Expected camera intrinsics shaped (3, 3), got {camera_intrinsics.shape}."
             )
+        crop_values = (
+            cropped_camera_intrinsics,
+            cropped_top_left,
+            cropped_bottom_right,
+        )
+        if any(value is None for value in crop_values) and not all(
+            value is None for value in crop_values
+        ):
+            raise ValueError(
+                f"{full_camera_path} must contain all or none of K_cropped, "
+                "cropped_top_left, and cropped_bottom_right."
+            )
+        if cropped_camera_intrinsics is not None and cropped_camera_intrinsics.shape != (3, 3):
+            raise ValueError(
+                f"Expected cropped camera intrinsics shaped (3, 3), "
+                f"got {cropped_camera_intrinsics.shape}."
+            )
+        return (
+            camera_extrinsics,
+            camera_intrinsics,
+            cropped_camera_intrinsics,
+            cropped_top_left,
+            cropped_bottom_right,
+        )
+
+    def load_camera(self, camera_path: str) -> Tuple[np.ndarray, np.ndarray]:
+        """Load undistorted parameters while preserving the public two-value API."""
+        camera_extrinsics, camera_intrinsics, _, _, _ = self.load_camera_details(
+            camera_path
+        )
         return camera_extrinsics, camera_intrinsics
 
     def load_from_hdf5(self, filepath: str) -> dict:
-        """Load the HDF5 file back into the original dict format."""
-        data = {}
-        with h5py.File(filepath, 'r') as f:
-            for name in f:
-                grp = f[name]
-                data[name] = {
-                    'mask_idx': int(grp.attrs['mask_idx']),
-                    'masks': grp['masks'][:]
-                }
-        return data
+        """Load all mask groups, accepting both normalized and legacy files."""
+        return _load_hdf5_mask_groups(filepath)
 
     def load_2d_masks(self, mask_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, str, str, str, bool]:
         if mask_path is None:
@@ -650,7 +746,7 @@ class NewDataset(Dataset):
             for group_name, group in mask_file.items():
                 if not isinstance(group, h5py.Group):
                     continue
-                mask_id = group.attrs.get("mask_idx", group.attrs.get("id"))
+                mask_id = group.attrs.get("id", group.attrs.get("mask_idx"))
                 role = role_by_id.get(int(mask_id)) if mask_id is not None else None
                 normalized_group_name = group_name.lower()
                 if role is None and normalized_group_name in role_by_id.values():
@@ -658,7 +754,7 @@ class NewDataset(Dataset):
                 if role is None:
                     continue
 
-                dataset_name = "masks" if "masks" in group else "mask" if "mask" in group else None
+                dataset_name = "mask" if "mask" in group else "masks" if "masks" in group else None
                 if dataset_name is None:
                     raise KeyError(
                         f"Mask group '{group_name}' in {full_mask_path} has no 'mask' or 'masks' dataset."
@@ -724,6 +820,27 @@ class NewDataset(Dataset):
             raise ValueError(f"Invalid part annotations in {part_annotation_path}.")
 
         instance_id = str(function_instance_id)
+        if isinstance(annotation_data, list) and annotations and all(
+            "function_instance_id" in annotation for annotation in annotations
+        ):
+            matching_records = [
+                annotation for annotation in annotations
+                if str(annotation["function_instance_id"]) == instance_id
+            ]
+            if len(matching_records) != 1:
+                raise ValueError(
+                    f"Expected one record for function {instance_id!r} in "
+                    f"{part_annotation_path}, found {len(matching_records)}."
+                )
+            annotation_data = matching_records[0]
+            return annotation_data, {
+                "receptor": [annotation_data["receptor"]],
+                "effector": (
+                    [annotation_data["effector"]]
+                    if annotation_data.get("effector") is not None else []
+                ),
+            }
+
         role_annotations = {}
         for role, role_prefix in (("receptor", "r"), ("effector", "e")):
             role_token = f"{role_prefix}{instance_id}"
@@ -887,10 +1004,125 @@ class NewDataset(Dataset):
             )
         return remap
 
+    def load_geometry_data(
+        self,
+        geometry_path: str,
+        geometry_type: str,
+        transformation_path: Optional[str],
+        part_annotation_path: str,
+        function_instance_id: int,
+        has_object: bool,
+        articulation_path: Optional[str] = None,
+        normalize_articulation_geometry: bool = True,
+    ) -> dict:
+        """Load either aligned mesh or point-cloud geometry."""
+        normalized_type = geometry_type.lower().replace("_", " ")
+        if normalized_type == "mesh":
+            return self.load_mesh_data(
+                geometry_path,
+                transformation_path,
+                part_annotation_path,
+                function_instance_id,
+                has_object,
+                # Old meshes are already expressed in their observed world
+                # frame.  Only canonical meshes with an explicit transform
+                # need to be normalized to articulation minima first.
+                articulation_path=(
+                    articulation_path if normalize_articulation_geometry else None
+                ),
+            )
+        if normalized_type == "point cloud":
+            return self.load_point_cloud_data(
+                geometry_path,
+                transformation_path,
+                part_annotation_path,
+                function_instance_id,
+            )
+        raise ValueError(f"Unsupported geometry type: {geometry_type}")
+
+    def load_point_cloud_data(
+        self,
+        geometry_path: str,
+        transformation_path: Optional[str],
+        part_annotation_path: str,
+        function_instance_id: int,
+    ) -> dict:
+        """Load old point-cloud geometry through the aligned metadata schema."""
+        full_pcd = pcu.load_mesh_v(
+            os.path.join(self.root_path, geometry_path), np.float32
+        )
+        annotation_data, role_annotations = self.load_role_part_annotations(
+            part_annotation_path, function_instance_id
+        )
+        canonical2world = (
+            self.load_object_transformation(transformation_path)
+            if transformation_path is not None else np.eye(4)
+        )
+        if canonical2world.shape != (4, 4):
+            raise ValueError(
+                f"Expected a 4x4 canonical-to-world transform, got "
+                f"{canonical2world.shape}."
+            )
+        full_pcd = (
+            full_pcd @ canonical2world[:3, :3].T + canonical2world[:3, 3]
+        )
+        geometry_annotations = {"canonical_to_world": canonical2world}
+        selected_labels = {}
+        for role, annotations in role_annotations.items():
+            if not annotations:
+                if role != "effector":
+                    raise ValueError(f"No point-cloud annotation found for role '{role}'.")
+                part_pcd = full_pcd
+                pid = None
+                pids = []
+                selected_labels[role] = "whole point cloud"
+            else:
+                vertex_indices = np.unique(
+                    np.concatenate(
+                        [
+                            np.asarray(
+                                annotation.get("vertexIndices", annotation.get("indices")),
+                                dtype=np.int64,
+                            )
+                            for annotation in annotations
+                        ]
+                    )
+                )
+                if (vertex_indices.size == 0 or vertex_indices.min() < 0
+                        or vertex_indices.max() >= len(full_pcd)):
+                    raise ValueError(
+                        f"Invalid point indices in {part_annotation_path}."
+                    )
+                part_pcd = full_pcd[vertex_indices]
+                pids = self.get_ordered_role_pids(
+                    annotations, role, function_instance_id
+                )
+                pid = pids[0] if pids else None
+                selected_labels[role] = " + ".join(
+                    str(annotation["label"]) for annotation in annotations
+                )
+            geometry_annotations[role] = {
+                "part_pcd": part_pcd,
+                "pid": pid,
+                "pids": pids,
+            }
+        geometry_annotations["object"] = {
+            "part_pcd": full_pcd,
+            "pid": None,
+        }
+        relation = (
+            annotation_data.get("relation", annotation_data.get("description"))
+            if isinstance(annotation_data, dict) else None
+        )
+        geometry_annotations["relation"] = relation or (
+            f"{selected_labels['receptor']} and {selected_labels['effector']}"
+        )
+        return geometry_annotations
+
     def load_mesh_data(
         self,
         geometry_path: str,
-        transformation_path: str,
+        transformation_path: Optional[str],
         part_annotation_path: str,
         function_instance_id: int,
         has_object: bool,
@@ -898,7 +1130,6 @@ class NewDataset(Dataset):
     ) -> dict:
         required_paths = {
             "mesh": geometry_path,
-            "object transformation": transformation_path,
             "part annotation": part_annotation_path,
         }
         for description, path in required_paths.items():
@@ -920,7 +1151,10 @@ class NewDataset(Dataset):
             if pid is not None:
                 articulations_by_pid.setdefault(str(pid), []).append(articulation)
 
-        canonical2world = self.load_object_transformation(transformation_path)
+        canonical2world = (
+            self.load_object_transformation(transformation_path)
+            if transformation_path is not None else np.eye(4)
+        )
         if canonical2world.shape != (4, 4):
             raise ValueError(
                 f"Expected a 4x4 canonical-to-world transform, got {canonical2world.shape}."
@@ -928,8 +1162,14 @@ class NewDataset(Dataset):
 
         full_vertices = np.asarray(full_mesh.vertices)
         full_triangles = np.asarray(full_mesh.triangles)
-        triangle_index_remap = self.get_open3d_triangle_index_remap(
-            full_mesh_path, full_mesh
+        has_triangle_annotations = any(
+            annotation.get("triIndices") is not None
+            for annotations in role_annotations.values()
+            for annotation in annotations
+        )
+        triangle_index_remap = (
+            self.get_open3d_triangle_index_remap(full_mesh_path, full_mesh)
+            if has_triangle_annotations else None
         )
 
         def annotated_part_mesh(annotation: dict) -> o3d.geometry.TriangleMesh:
@@ -1156,6 +1396,7 @@ class NewDataset(Dataset):
         part_annotation_path: Optional[str] = None,
         function_instance_id: Optional[int] = None,
         transformation_path: Optional[str] = None,
+        transform_to_world: bool = True,
     ) -> Tuple[Optional[dict], Optional[dict]]:
         receptor_articulation = None
         effector_articulation = None
@@ -1203,13 +1444,18 @@ class NewDataset(Dataset):
             if joint is None:
                 return None
             joint = copy.deepcopy(joint)
-            if canonical2world is not None:
+            if transform_to_world and canonical2world is not None:
                 canonical2world_array = np.asarray(canonical2world)
                 if "axis" in joint:
                     axis = canonical2world_array[:3, :3] @ np.asarray(joint["axis"])
                     axis_norm = np.linalg.norm(axis)
                     if axis_norm > 0:
                         joint["axis"] = (axis / axis_norm).tolist()
+                if joint.get("ref") is not None:
+                    reference = (
+                        canonical2world_array[:3, :3] @ np.asarray(joint["ref"])
+                    )
+                    joint["ref"] = reference.tolist()
                 if joint.get("origin") is not None:
                     origin = np.append(np.asarray(joint["origin"]), 1.0)
                     joint["origin"] = (canonical2world_array @ origin)[:3].tolist()
@@ -1228,53 +1474,226 @@ class NewDataset(Dataset):
         return function_annotation
 
 
-def visualize_loaded_point_clouds(
+class CombinedDataset(NewDataset):
+    """Load the unified old/new dataset from its combined metadata.
+
+    Combined metadata always declares both undistorted_video and
+    cropped_video. When cropped input is requested, a stored cropped video
+    is preferred; records without one load and crop the undistorted video.
+    """
+
+    def __init__(
+        self,
+        root_path: str,
+        meta_file_path: str,
+        image_type: str = "undistorted",
+        sample_strategy: str = "fix_size",
+        sample_num: int = 20,
+        load_2d_masks: bool = True,
+        load_mesh_data: bool = True,
+        load_articulation: bool = True,
+        load_function_annotation: bool = True,
+    ):
+        super().__init__(
+            root_path=root_path,
+            meta_file_path=meta_file_path,
+            image_type=image_type,
+            sample_strategy=sample_strategy,
+            sample_num=sample_num,
+            load_2d_masks=load_2d_masks,
+            load_mesh_data=load_mesh_data,
+            load_articulation=load_articulation,
+            load_function_annotation=load_function_annotation,
+        )
+        if self.image_type not in {"undistorted", "cropped"}:
+            raise ValueError(
+                "CombinedDataset image_type must be 'undistorted' or 'cropped', "
+                f"got {self.image_type!r}."
+            )
+        self._validate_combined_video_metadata()
+
+    def _validate_combined_video_metadata(self) -> None:
+        seen_video_names = set()
+        for index, item in enumerate(self.meta_info):
+            missing_keys = {
+                key
+                for key in ("video_name", "undistorted_video", "cropped_video")
+                if key not in item
+            }
+            if missing_keys:
+                raise KeyError(
+                    f"Combined metadata entry {index} is missing keys "
+                    f"{sorted(missing_keys)}."
+                )
+
+            video_name = item["video_name"]
+            if video_name in seen_video_names:
+                raise ValueError(
+                    f"Duplicate combined metadata video_name: {video_name}"
+                )
+            seen_video_names.add(video_name)
+
+            undistorted_video = item["undistorted_video"]
+            if not isinstance(undistorted_video, str) or not undistorted_video:
+                raise ValueError(
+                    f"Combined metadata entry {index} has an invalid "
+                    f"undistorted_video: {undistorted_video!r}."
+                )
+            cropped_video = item["cropped_video"]
+            if cropped_video is not None and (
+                not isinstance(cropped_video, str) or not cropped_video
+            ):
+                raise ValueError(
+                    f"Combined metadata entry {index} has an invalid "
+                    f"cropped_video: {cropped_video!r}."
+                )
+
+    def _select_video_path(
+        self, video_dict: Mapping[str, Any]
+    ) -> Tuple[str, bool]:
+        cropped_video = video_dict["cropped_video"]
+        if self.image_type == "cropped" and cropped_video is not None:
+            return cropped_video, True
+        return video_dict["undistorted_video"], False
+
+
+def _create_articulation_arrow(
+    axis: np.ndarray,
+    shaft_center: np.ndarray,
+    length: float,
+    color: np.ndarray,
+) -> o3d.geometry.TriangleMesh:
+    """Create an Open3D arrow whose shaft follows an axis through a point."""
+    cylinder_height = length * 0.75
+    cone_height = length - cylinder_height
+    arrow = o3d.geometry.TriangleMesh.create_arrow(
+        cylinder_radius=length * 0.025,
+        cone_radius=length * 0.06,
+        cylinder_height=cylinder_height,
+        cone_height=cone_height,
+        resolution=24,
+        cylinder_split=4,
+        cone_split=1,
+    )
+
+    source_axis = np.asarray([0.0, 0.0, 1.0])
+    cosine = float(np.clip(np.dot(source_axis, axis), -1.0, 1.0))
+    if np.isclose(cosine, 1.0):
+        rotation = np.eye(3)
+    elif np.isclose(cosine, -1.0):
+        rotation = o3d.geometry.get_rotation_matrix_from_axis_angle(
+            np.asarray([np.pi, 0.0, 0.0])
+        )
+    else:
+        rotation_axis = np.cross(source_axis, axis)
+        rotation_axis /= np.linalg.norm(rotation_axis)
+        rotation = o3d.geometry.get_rotation_matrix_from_axis_angle(
+            rotation_axis * np.arccos(cosine)
+        )
+
+    arrow.rotate(rotation, center=[0.0, 0.0, 0.0])
+    arrow.translate(shaft_center - axis * (cylinder_height * 0.5))
+    arrow.paint_uniform_color(color)
+    arrow.compute_vertex_normals()
+    return arrow
+
+
+def visualize_loaded_geometry(
     data: Dict[str, Any],
     roles: Optional[Sequence[str]] = None,
     role_colors: Optional[Mapping[str, Sequence[float]]] = None,
     point_size: float = 3.0,
+    show_mesh_wireframe: bool = True,
+    show_articulations: bool = True,
+    articulations: Optional[Mapping[str, Optional[Mapping[str, Any]]]] = None,
+    articulation_arrow_scale: float = 0.3,
     show_coordinate_frame: bool = True,
     window_name: Optional[str] = None,
     window_width: int = 1280,
     window_height: int = 720,
-    geometry_type: str = "point_cloud",
+    geometry_type: str = "auto",
 ) -> None:
-    """Visualize loaded role point clouds or meshes in an Open3D window.
+    """Visualize loaded meshes or point clouds in an Open3D window.
 
     ``data`` may be either a dataset item returned by ``__getitem__`` or its
-    ``geometry_data`` dictionary. By default, every entry containing the
-    selected geometry type is shown. Pass ``roles`` to display a subset.
+    ``geometry_data`` dictionary. Mesh triangles are colored by annotated
+    role. By default, receptor and effector are displayed without the full
+    object mesh so the object does not obscure overlapping annotated parts.
+    Loaded revolute axes are red and pass through their joint origins. Loaded
+    prismatic axes are green and pass through their associated part centers.
 
     Args:
         data: Loaded dataset item or geometry-data dictionary.
         roles: Role names to show, such as ``("receptor", "effector")``.
         role_colors: Optional RGB colors in the range [0, 1], keyed by role.
         point_size: Open3D render point size in pixels.
+        show_mesh_wireframe: Whether to draw triangle edges in mesh mode.
+        show_articulations: Whether to draw loaded articulation axes.
+        articulations: Optional role-to-joint mapping when ``data`` is a bare
+            geometry dictionary. Dataset items provide this automatically.
+        articulation_arrow_scale: Arrow length relative to the displayed
+            geometry's bounding-box diagonal.
         show_coordinate_frame: Whether to draw the world-coordinate axes.
-        window_name: Title of the Open3D window. Defaults to a title matching
-            ``geometry_type``.
+        window_name: Title of the Open3D window.
         window_width: Initial window width in pixels.
         window_height: Initial window height in pixels.
-        geometry_type: ``"point_cloud"`` (default) or ``"mesh"``.
+        geometry_type: ``"auto"`` (default), ``"mesh"``, or
+            ``"point_cloud"``. Auto selects mesh when all requested roles
+            contain triangle data and otherwise selects point cloud.
 
     Example:
         >>> sample = dataset[0]
-        >>> visualize_loaded_point_clouds(sample)
-        >>> visualize_loaded_point_clouds(
+        >>> visualize_loaded_geometry(sample)
+        >>> visualize_loaded_geometry(
         ...     sample, roles=("receptor", "effector"), geometry_type="mesh"
         ... )
     """
-    if "geometry_data" in data:
+    dataset_item = data if "geometry_data" in data else None
+    if dataset_item is not None:
         geometry_data = data["geometry_data"]
     else:
         geometry_data = data
     if not isinstance(geometry_data, dict):
         raise TypeError("data must be a dataset item or geometry-data dictionary.")
 
+    if articulations is None and dataset_item is not None:
+        articulations = {
+            "receptor": dataset_item.get(
+                "receptor_articulation",
+                dataset_item.get("receiver_articulation"),
+            ),
+            "effector": dataset_item.get("effector_articulation"),
+        }
+    role_articulations = dict(articulations or {})
+    if "receptor" not in role_articulations and "receiver" in role_articulations:
+        role_articulations["receptor"] = role_articulations["receiver"]
+
     geometry_keys = {"point_cloud": "part_pcd", "mesh": "part_mesh"}
-    if geometry_type not in geometry_keys:
+    if geometry_type not in {"auto", *geometry_keys}:
         raise ValueError(
-            f"geometry_type must be one of {list(geometry_keys)}; got {geometry_type!r}."
+            "geometry_type must be 'auto', 'mesh', or 'point_cloud'; "
+            f"got {geometry_type!r}."
+        )
+
+    if isinstance(roles, str):
+        requested_roles = [roles]
+    else:
+        requested_roles = list(roles) if roles is not None else None
+    if geometry_type == "auto":
+        candidate_roles = requested_roles or [
+            role
+            for role, role_data in geometry_data.items()
+            if isinstance(role_data, dict) and role != "object"
+        ]
+        geometry_type = (
+            "mesh"
+            if candidate_roles
+            and all(
+                isinstance(geometry_data.get(role), dict)
+                and "part_mesh" in geometry_data[role]
+                for role in candidate_roles
+            )
+            else "point_cloud"
         )
     geometry_key = geometry_keys[geometry_type]
 
@@ -1282,10 +1701,14 @@ def visualize_loaded_point_clouds(
         role for role, role_data in geometry_data.items()
         if isinstance(role_data, dict) and geometry_key in role_data
     ]
-    if isinstance(roles, str):
-        selected_roles = [roles]
+    if requested_roles is None:
+        selected_roles = [
+            role for role in ("receptor", "effector") if role in available_roles
+        ]
+        if not selected_roles:
+            selected_roles = available_roles
     else:
-        selected_roles = list(roles) if roles is not None else available_roles
+        selected_roles = requested_roles
     if not selected_roles:
         raise ValueError(f"No role {geometry_type} data were found to visualize.")
 
@@ -1297,11 +1720,13 @@ def visualize_loaded_point_clouds(
         )
     if point_size <= 0:
         raise ValueError("point_size must be positive.")
+    if articulation_arrow_scale <= 0 or not np.isfinite(articulation_arrow_scale):
+        raise ValueError("articulation_arrow_scale must be positive and finite.")
     if window_width <= 0 or window_height <= 0:
         raise ValueError("Window dimensions must be positive.")
     if window_name is None:
         window_name = (
-            "Loaded role meshes"
+            "Loaded annotated mesh triangles"
             if geometry_type == "mesh"
             else "Loaded role point clouds"
         )
@@ -1320,6 +1745,7 @@ def visualize_loaded_point_clouds(
     requested_colors = dict(role_colors or {})
     role_geometries = []
     all_points = []
+    role_centers = {}
 
     print(f"{geometry_type.replace('_', ' ').title()} visualization legend:")
     for role_index, role in enumerate(selected_roles):
@@ -1383,30 +1809,130 @@ def visualize_loaded_point_clouds(
                 )
 
             points = vertices
-            geometry = o3d.geometry.TriangleMesh(
-                o3d.utility.Vector3dVector(vertices.astype(float, copy=False)),
-                o3d.utility.Vector3iVector(triangles.astype(np.int32, copy=False)),
+            # Legacy Open3D releases do not expose per-triangle colors. Make
+            # each triangle own its three vertices so vertex colors act as
+            # unambiguous face colors without interpolation across parts.
+            colored_vertices = vertices[triangles].reshape(-1, 3)
+            colored_triangles = np.arange(
+                len(colored_vertices), dtype=np.int32
+            ).reshape(-1, 3)
+            colored_vertices_rgb = np.repeat(
+                color[None, :], len(colored_vertices), axis=0
             )
+            geometry = o3d.geometry.TriangleMesh(
+                o3d.utility.Vector3dVector(
+                    colored_vertices.astype(float, copy=False)
+                ),
+                o3d.utility.Vector3iVector(colored_triangles),
+            )
+            geometry.vertex_colors = o3d.utility.Vector3dVector(
+                colored_vertices_rgb
+            )
+            geometry.compute_triangle_normals()
             geometry.compute_vertex_normals()
             count_description = (
                 f"{len(vertices):,} vertices, {len(triangles):,} triangles"
             )
 
-        geometry.paint_uniform_color(color)
+        if geometry_type == "point_cloud":
+            geometry.paint_uniform_color(color)
         role_geometries.append(geometry)
         all_points.append(points)
+        role_centers[role] = points.mean(axis=0)
+        pids = geometry_data[role].get("pids")
+        if pids is None:
+            pid = geometry_data[role].get("pid")
+            pids = [] if pid is None else [pid]
+        pid_description = f", part IDs={list(pids)}" if pids else ""
         print(
-            f"  {role}: {count_description}, RGB={color.tolist()}, "
+            f"  {role}: {count_description}{pid_description}, "
+            f"RGB={color.tolist()}, "
             f"min={points.min(axis=0).tolist()}, max={points.max(axis=0).tolist()}"
         )
 
+    combined_points = np.concatenate(all_points, axis=0)
+    scene_extent = float(
+        np.linalg.norm(combined_points.max(axis=0) - combined_points.min(axis=0))
+    )
+    scene_scale = max(scene_extent, 1e-3)
     geometries = list(role_geometries)
+
+    articulation_colors = {
+        "revolute": np.asarray([1.0, 0.0, 0.0]),
+        "prismatic": np.asarray([0.0, 1.0, 0.0]),
+    }
+    if show_articulations:
+        displayed_joint_count = 0
+        for role in selected_roles:
+            joint = role_articulations.get(role)
+            if joint is None:
+                continue
+            if not isinstance(joint, Mapping):
+                raise ValueError(
+                    f"Articulation for role '{role}' must be a mapping."
+                )
+
+            raw_joint_type = str(
+                joint.get("type", joint.get("joint_type", ""))
+            ).lower()
+            joint_type = (
+                "revolute" if raw_joint_type == "continuous" else raw_joint_type
+            )
+            if joint_type not in articulation_colors:
+                raise ValueError(
+                    f"Unsupported articulation type {raw_joint_type!r} "
+                    f"for role '{role}'."
+                )
+
+            axis = np.asarray(joint.get("axis"), dtype=float)
+            if axis.shape != (3,) or not np.isfinite(axis).all():
+                raise ValueError(
+                    f"Articulation axis for role '{role}' must contain "
+                    "three finite values."
+                )
+            axis_norm = np.linalg.norm(axis)
+            if axis_norm <= 0:
+                raise ValueError(
+                    f"Articulation axis for role '{role}' must be non-zero."
+                )
+            axis = axis / axis_norm
+
+            if joint_type == "revolute":
+                origin = joint.get("origin", joint.get("position", joint.get("pos")))
+                if origin is None:
+                    raise ValueError(
+                        f"Revolute articulation for role '{role}' has no origin."
+                    )
+                shaft_center = np.asarray(origin, dtype=float)
+                if shaft_center.shape != (3,) or not np.isfinite(shaft_center).all():
+                    raise ValueError(
+                        f"Revolute origin for role '{role}' must contain "
+                        "three finite values."
+                    )
+                anchor_description = f"origin={shaft_center.tolist()}"
+            else:
+                shaft_center = role_centers[role]
+                anchor_description = f"part center={shaft_center.tolist()}"
+
+            color = articulation_colors[joint_type]
+            geometries.append(
+                _create_articulation_arrow(
+                    axis=axis,
+                    shaft_center=shaft_center,
+                    length=scene_scale * articulation_arrow_scale,
+                    color=color,
+                )
+            )
+            displayed_joint_count += 1
+            print(
+                f"  {role} articulation: {raw_joint_type}, axis={axis.tolist()}, "
+                f"{anchor_description}, RGB={color.tolist()}"
+            )
+        if displayed_joint_count:
+            print("Articulation legend: revolute/continuous=red, prismatic=green")
+
     if show_coordinate_frame:
-        combined_points = np.concatenate(all_points, axis=0)
-        scene_extent = np.linalg.norm(
-            combined_points.max(axis=0) - combined_points.min(axis=0)
-        )
-        frame_size = max(float(scene_extent) * 0.15, 1e-3)
+        frame_size = scene_scale * 0.15
         geometries.append(
             o3d.geometry.TriangleMesh.create_coordinate_frame(
                 size=frame_size, origin=[0.0, 0.0, 0.0]
@@ -1429,9 +1955,16 @@ def visualize_loaded_point_clouds(
         render_options = visualizer.get_render_option()
         render_options.point_size = float(point_size)
         render_options.background_color = np.asarray([0.03, 0.03, 0.03])
+        if geometry_type == "mesh":
+            render_options.mesh_show_wireframe = bool(show_mesh_wireframe)
+            render_options.mesh_show_back_face = True
         visualizer.run()
     finally:
         visualizer.destroy_window()
+
+
+# Backward-compatible import for existing scripts.
+visualize_loaded_point_clouds = visualize_loaded_geometry
 
 
 def visualize_loaded_video_with_masks(
@@ -1729,6 +2262,20 @@ def build_dataset(dataset_config: dict) -> Dataset:
                 "load_function_annotation", True
             ),
         )
+    elif dataset_name == "CombinedDataset":
+        return CombinedDataset(
+            root_path=dataset_config["root_path"],
+            meta_file_path=dataset_config["meta_file"],
+            image_type=dataset_config.get("image_type", "undistorted"),
+            sample_strategy=dataset_config.get("sample_strategy", "fix_size"),
+            sample_num=dataset_config.get("sample_num", 20),
+            load_2d_masks=dataset_config.get("load_2d_masks", True),
+            load_mesh_data=dataset_config.get("load_mesh_data", True),
+            load_articulation=dataset_config.get("load_articulation", True),
+            load_function_annotation=dataset_config.get(
+                "load_function_annotation", True
+            ),
+        )
     else:
         raise ValueError(f"Unsupported dataset type: {dataset_name}")
 
@@ -1746,9 +2293,9 @@ def build_dataset(dataset_config: dict) -> Dataset:
 #     parser.add_argument("item_index", type=int, help="Index of the dataset item to visualize.")
 #     parser.add_argument(
 #         "--geometry-type",
-#         choices=("point_cloud", "mesh"),
-#         default="point_cloud",
-#         help="Render sampled point clouds (default) or triangle meshes.",
+#         choices=("auto", "point_cloud", "mesh"),
+#         default="auto",
+#         help="Render meshes when available, or explicitly select a geometry type.",
 #     )
 #     parser.add_argument(
 #         "--roles",
@@ -1771,8 +2318,9 @@ def build_dataset(dataset_config: dict) -> Dataset:
 #     for data_count, data in enumerate(eval_dataloader):
 #         if data_count != args.item_index:
 #             continue
+#         # visualize_loaded_video_with_masks(data)
 #         if "geometry_data" in data:
-#             visualize_loaded_point_clouds(
+#             visualize_loaded_geometry(
 #                 data,
 #                 roles=args.roles,
 #                 geometry_type=args.geometry_type,
